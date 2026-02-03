@@ -1,18 +1,13 @@
-import json
 import streamlit as st
+import pandas as pd
+from datetime import datetime, timezone, timedelta, date
+
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
-@st.cache_resource
-def init_firebase():
-    if not firebase_admin._apps:
-        info = json.loads(st.secrets["FIREBASE_SERVICE_ACCOUNT"])
-        cred = credentials.Certificate(info)
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
-
-db = init_firebase()
-
+# (학급 확장용) PDF 텍스트 파싱(간단)
+import re
 
 # =========================
 # 설정
