@@ -1523,116 +1523,116 @@ if "👥 계정 정보/활성화" in tabs:
             st.stop()
 
         # -------------------------------------------------
-        # ✅ (사이드바) 엑셀 일괄 계정 추가 + 샘플 다운로드
-        #   - 표 위에 있는 탭이지만 '사이드바'에 기능 배치
+        # ✅ (탭 상단) 엑셀 일괄 계정 추가 + 샘플 다운로드
+        #   - 사이드바가 아니라 이 탭 본문 최상단에 표시
         # -------------------------------------------------
-        with st.sidebar.expander("📥 일괄 엑셀 계정 추가(이 탭)", expanded=False):
-            st.caption("엑셀을 올리면 아래 리스트(학생 표)에 바로 반영됩니다.")
+        st.markdown("### 📥 일괄 엑셀 계정 추가")
+        st.caption("엑셀을 올리면 아래 리스트(학생 표)에 바로 반영됩니다.")
 
-            # ✅ 샘플 다운로드
-            import io
-            sample_df = pd.DataFrame(
-                [
-                    {"번호": 1, "이름": "홍길동", "비밀번호": "1234", "입출금활성화": True, "투자활성화": True},
-                    {"번호": 2, "이름": "김철수", "비밀번호": "2345", "입출금활성화": True, "투자활성화": False},
-                ]
-            )
-            bio = io.BytesIO()
-            with pd.ExcelWriter(bio, engine="openpyxl") as writer:
-                sample_df.to_excel(writer, index=False, sheet_name="accounts")
-            st.download_button(
-                "📄 샘플 엑셀 다운로드",
-                data=bio.getvalue(),
-                file_name="accounts_sample.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
+        # ✅ 샘플 다운로드
+        import io
+        sample_df = pd.DataFrame(
+            [
+                {"번호": 1, "이름": "홍길동", "비밀번호": "1234", "입출금활성화": True, "투자활성화": True},
+                {"번호": 2, "이름": "김철수", "비밀번호": "2345", "입출금활성화": True, "투자활성화": False},
+            ]
+        )
+        bio = io.BytesIO()
+        with pd.ExcelWriter(bio, engine="openpyxl") as writer:
+            sample_df.to_excel(writer, index=False, sheet_name="accounts")
+        st.download_button(
+            "📄 샘플 엑셀 다운로드",
+            data=bio.getvalue(),
+            file_name="accounts_sample.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="acc_bulk_sample_down",
+        )
 
-            up = st.file_uploader("📤 엑셀 업로드(xlsx)", type=["xlsx"], key="acc_bulk_upl")
+        up = st.file_uploader("📤 엑셀 업로드(xlsx)", type=["xlsx"], key="acc_bulk_upl")
 
-            if st.button("엑셀 일괄 등록 실행", use_container_width=True, key="acc_bulk_run"):
-                if not up:
-                    st.warning("엑셀 파일을 업로드하세요.")
-                else:
-                    try:
-                        df_up = pd.read_excel(up)
-                        need_cols = {"번호", "이름", "비밀번호"}
-                        if not need_cols.issubset(set(df_up.columns)):
-                            st.error("엑셀 컬럼이 부족합니다. 최소: 번호, 이름, 비밀번호")
-                            st.stop()
+        if st.button("엑셀 일괄 등록 실행", use_container_width=True, key="acc_bulk_run"):
+            if not up:
+                st.warning("엑셀 파일을 업로드하세요.")
+            else:
+                try:
+                    df_up = pd.read_excel(up)
+                    need_cols = {"번호", "이름", "비밀번호"}
+                    if not need_cols.issubset(set(df_up.columns)):
+                        st.error("엑셀 컬럼이 부족합니다. 최소: 번호, 이름, 비밀번호")
+                        st.stop()
 
-                        # 활성화 컬럼이 없으면 기본 True
-                        if "입출금활성화" not in df_up.columns:
-                            df_up["입출금활성화"] = True
-                        if "투자활성화" not in df_up.columns:
-                            df_up["투자활성화"] = True
+                    # 활성화 컬럼이 없으면 기본 True
+                    if "입출금활성화" not in df_up.columns:
+                        df_up["입출금활성화"] = True
+                    if "투자활성화" not in df_up.columns:
+                        df_up["투자활성화"] = True
 
-                        # 현재 active 학생들 맵(번호->docid, 이름->docid)
-                        cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-                        by_no = {}
-                        by_name = {}
-                        for d in cur_docs:
-                            x = d.to_dict() or {}
-                            no0 = x.get("no")
-                            nm0 = str(x.get("name", "") or "").strip()
-                            if isinstance(no0, (int, float)) and str(no0) != "nan":
-                                by_no[int(no0)] = d.id
-                            if nm0:
-                                by_name[nm0] = d.id
+                    # 현재 active 학생들 맵(번호->docid, 이름->docid)
+                    cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+                    by_no = {}
+                    by_name = {}
+                    for d in cur_docs:
+                        x = d.to_dict() or {}
+                        no0 = x.get("no")
+                        nm0 = str(x.get("name", "") or "").strip()
+                        if isinstance(no0, (int, float)) and str(no0) != "nan":
+                            by_no[int(no0)] = d.id
+                        if nm0:
+                            by_name[nm0] = d.id
 
-                        created, updated, skipped = 0, 0, 0
+                    created, updated, skipped = 0, 0, 0
 
-                        for _, r in df_up.iterrows():
-                            try:
-                                no = int(r.get("번호"))
-                            except Exception:
-                                skipped += 1
-                                continue
+                    for _, r in df_up.iterrows():
+                        try:
+                            no = int(r.get("번호"))
+                        except Exception:
+                            skipped += 1
+                            continue
 
-                            name = str(r.get("이름", "") or "").strip()
-                            pin = str(r.get("비밀번호", "") or "").strip()
+                        name = str(r.get("이름", "") or "").strip()
+                        pin = str(r.get("비밀번호", "") or "").strip()
 
-                            if not name or not pin_ok(pin):
-                                skipped += 1
-                                continue
+                        if not name or not pin_ok(pin):
+                            skipped += 1
+                            continue
 
-                            io_ok = bool(r.get("입출금활성화", True))
-                            inv_ok = bool(r.get("투자활성화", True))
+                        io_ok = bool(r.get("입출금활성화", True))
+                        inv_ok = bool(r.get("투자활성화", True))
 
-                            payload = {
-                                "no": int(no),
-                                "name": name,
-                                "pin": pin,
-                                "is_active": True,
-                                "io_enabled": io_ok,
-                                "invest_enabled": inv_ok,
-                            }
+                        payload = {
+                            "no": int(no),
+                            "name": name,
+                            "pin": pin,
+                            "is_active": True,
+                            "io_enabled": io_ok,
+                            "invest_enabled": inv_ok,
+                        }
 
-                            # ✅ 번호 우선 업데이트, 없으면 이름으로 업데이트, 없으면 신규 생성
-                            if int(no) in by_no:
-                                db.collection("students").document(by_no[int(no)]).update(payload)
-                                updated += 1
-                            elif name in by_name:
-                                db.collection("students").document(by_name[name]).update(payload)
-                                updated += 1
-                            else:
-                                # 신규 생성
-                                db.collection("students").document().set(
-                                    {
-                                        **payload,
-                                        "balance": 0,
-                                        "role_id": "",
-                                        "created_at": firestore.SERVER_TIMESTAMP,
-                                    }
-                                )
-                                created += 1
+                        # ✅ 번호 우선 업데이트, 없으면 이름으로 업데이트, 없으면 신규 생성
+                        if int(no) in by_no:
+                            db.collection("students").document(by_no[int(no)]).update(payload)
+                            updated += 1
+                        elif name in by_name:
+                            db.collection("students").document(by_name[name]).update(payload)
+                            updated += 1
+                        else:
+                            db.collection("students").document().set(
+                                {
+                                    **payload,
+                                    "balance": 0,
+                                    "role_id": "",
+                                    "created_at": firestore.SERVER_TIMESTAMP,
+                                }
+                            )
+                            created += 1
 
-                        api_list_accounts_cached.clear()
-                        toast(f"엑셀 등록 완료 (신규 {created} / 수정 {updated} / 제외 {skipped})", icon="📥")
-                        st.rerun()
+                    api_list_accounts_cached.clear()
+                    toast(f"엑셀 등록 완료 (신규 {created} / 수정 {updated} / 제외 {skipped})", icon="📥")
+                    st.rerun()
 
-                    except Exception as e:
-                        st.error(f"엑셀 처리 실패: {e}")
+                except Exception as e:
+                    st.error(f"엑셀 처리 실패: {e}")
 
         st.divider()
 
