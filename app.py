@@ -1750,21 +1750,6 @@ if "👥 계정 정보/활성화" in tabs:
             tmp = tmp.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
             st.session_state.account_df = tmp
 
-        # -------------------------------------------------
-        # ✅ 선택 행 '연한 회색' 강조 표시(대체 구현)
-        #   - Streamlit data_editor 자체는 행 스타일링이 제한적이라,
-        #     선택된 행만 아래에 회색 배경으로 한 번 더 보여줌
-        # -------------------------------------------------
-        sel2 = st.session_state.account_df[st.session_state.account_df["선택"] == True]
-        if not sel2.empty:
-            st.markdown("#### ✅ 선택된 항목(강조 표시)")
-            try:
-                styled = sel2.drop(columns=["_sid"], errors="ignore").style.set_table_styles(
-                    [{"selector": "tbody tr", "props": [("background-color", "#f3f4f6")]}]
-                )
-                st.dataframe(styled, use_container_width=True, hide_index=True)
-            except Exception:
-                st.dataframe(sel2.drop(columns=["_sid"], errors="ignore"), use_container_width=True, hide_index=True)
 
         # -------------------------------------------------
         # ✅ (중요) 계정추가/저장 버튼 제거
