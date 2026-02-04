@@ -1482,7 +1482,6 @@ if "🏦 내 통장" in tabs:
                 st.subheader("📒 통장 내역(최신순)")
                 render_tx_table(df_tx)
 
-
 # =========================
 # 👥 계정 정보/활성화 (관리자 전용)
 # =========================
@@ -1490,27 +1489,218 @@ if "👥 계정 정보/활성화" in tabs:
     with tab_map["👥 계정 정보/활성화"]:
         st.subheader("📋 계정정보 / 활성화 관리")
 
-        docs = db.collection("students").where(
-            filter=FieldFilter("is_active", "==", True)
-        ).stream()
+        if not is_admin:
+            st.error("관리자 전용 탭입니다.")
+            st.stop()
+
+        # -------------------------------------------------
+        # ✅ (사이드바) 엑셀 일괄 계정 추가 + 샘플 다운로드
+        #   - 표 위에 있는 탭이지만 '사이드바'에 기능 배치
+        # -------------------------------------------------
+        with st.sidebar.expander("📥 일괄 엑셀 계정 추가(이 탭)", expanded=False):
+            st.caption("엑셀을 올리면 아래 리스트(학생 표)에 바로 반영됩니다.")
+
+            # ✅ 샘플 다운로드
+            import io
+            sample_df = pd.DataFrame(
+                [
+                    {"번호": 1, "이름": "홍길동", "비밀번호": "1234", "입출금활성화": True, "투자활성화": True},
+                    {"번호": 2, "이름": "김철수", "비밀번호": "2345", "입출금활성화": True, "투자활성화": False},
+                ]
+            )
+            bio = io.BytesIO()
+            with pd.ExcelWriter(bio, engine="openpyxl") as writer:
+                sample_df.to_excel(writer, index=False, sheet_name="accounts")
+            st.download_button(
+                "📄 샘플 엑셀 다운로드",
+                data=bio.getvalue(),
+                file_name="accounts_sample.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+            up = st.file_uploader("📤 엑셀 업로드(xlsx)", type=["xlsx"], key="acc_bulk_upl")
+
+            if st.button("엑셀 일괄 등록 실행", use_container_width=True, key="acc_bulk_run"):
+                if not up:
+                    st.warning("엑셀 파일을 업로드하세요.")
+                else:
+                    try:
+                        df_up = pd.read_excel(up)
+                        need_cols = {"번호", "이름", "비밀번호"}
+                        if not need_cols.issubset(set(df_up.columns)):
+                            st.error("엑셀 컬럼이 부족합니다. 최소: 번호, 이름, 비밀번호")
+                            st.stop()
+
+                        # 활성화 컬럼이 없으면 기본 True
+                        if "입출금활성화" not in df_up.columns:
+                            df_up["입출금활성화"] = True
+                        if "투자활성화" not in df_up.columns:
+                            df_up["투자활성화"] = True
+
+                        # 현재 active 학생들 맵(번호->docid, 이름->docid)
+                        cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+                        by_no = {}
+                        by_name = {}
+                        for d in cur_docs:
+                            x = d.to_dict() or {}
+                            no0 = x.get("no")
+                            nm0 = str(x.get("name", "") or "").strip()
+                            if isinstance(no0, (int, float)) and str(no0) != "nan":
+                                by_no[int(no0)] = d.id
+                            if nm0:
+                                by_name[nm0] = d.id
+
+                        created, updated, skipped = 0, 0, 0
+
+                        for _, r in df_up.iterrows():
+                            try:
+                                no = int(r.get("번호"))
+                            except Exception:
+                                skipped += 1
+                                continue
+
+                            name = str(r.get("이름", "") or "").strip()
+                            pin = str(r.get("비밀번호", "") or "").strip()
+
+                            if not name or not pin_ok(pin):
+                                skipped += 1
+                                continue
+
+                            io_ok = bool(r.get("입출금활성화", True))
+                            inv_ok = bool(r.get("투자활성화", True))
+
+                            payload = {
+                                "no": int(no),
+                                "name": name,
+                                "pin": pin,
+                                "is_active": True,
+                                "io_enabled": io_ok,
+                                "invest_enabled": inv_ok,
+                            }
+
+                            # ✅ 번호 우선 업데이트, 없으면 이름으로 업데이트, 없으면 신규 생성
+                            if int(no) in by_no:
+                                db.collection("students").document(by_no[int(no)]).update(payload)
+                                updated += 1
+                            elif name in by_name:
+                                db.collection("students").document(by_name[name]).update(payload)
+                                updated += 1
+                            else:
+                                # 신규 생성
+                                db.collection("students").document().set(
+                                    {
+                                        **payload,
+                                        "balance": 0,
+                                        "role_id": "",
+                                        "created_at": firestore.SERVER_TIMESTAMP,
+                                    }
+                                )
+                                created += 1
+
+                        api_list_accounts_cached.clear()
+                        toast(f"엑셀 등록 완료 (신규 {created} / 수정 {updated} / 제외 {skipped})", icon="📥")
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"엑셀 처리 실패: {e}")
+
+        st.divider()
+
+        # -------------------------------------------------
+        # ✅ 학생 리스트 로드 (번호=엑셀 번호, 그 순서대로 정렬)
+        #   - student_id 컬럼은 화면에서 제거(내부로만 유지)
+        # -------------------------------------------------
+        docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
 
         rows = []
-        for i, d in enumerate(docs, start=1):
+        for d in docs:
             x = d.to_dict() or {}
-            rows.append({
-                "선택": False,
-                "번호": i,
-                "student_id": d.id,
-                "이름": x.get("name", ""),
-                "비밀번호": x.get("pin", ""),
-                "입출금활성화": True,
-                "투자활성화": True,
-            })
+            # 엑셀 번호를 의미하는 "no"를 사용 (없으면 큰 값으로 뒤로)
+            no = x.get("no", 999999)
+            try:
+                no = int(no)
+            except Exception:
+                no = 999999
 
-        df = pd.DataFrame(rows)
+            rows.append(
+                {
+                    "_sid": d.id,  # 내부용(삭제할 때만 사용) -> 화면에는 안 보이게 처리
+                    "선택": False,
+                    "번호": no,
+                    "이름": x.get("name", ""),
+                    "비밀번호": x.get("pin", ""),
+                    "입출금활성화": bool(x.get("io_enabled", True)),
+                    "투자활성화": bool(x.get("invest_enabled", True)),
+                }
+            )
 
-        edited = st.data_editor(
-            df,
+        df_all = pd.DataFrame(rows)
+        if not df_all.empty:
+            df_all = df_all.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
+
+        # -------------------------------------------------
+        # ✅ 상단 버튼: 전체 선택 / 전체 해제 / 계정 삭제(상단으로 이동)
+        # -------------------------------------------------
+        top1, top2, top3 = st.columns([1, 1, 2])
+
+        # editor 초기 데이터(세션에 유지해서 체크 시 "튐" 최소화)
+        if "account_df" not in st.session_state:
+            st.session_state.account_df = df_all.copy()
+
+        # 새로 로드된 df와 길이가 다르면 갱신(엑셀 업로드/삭제 등 반영)
+        if len(st.session_state.account_df) != len(df_all):
+            st.session_state.account_df = df_all.copy()
+
+        with top1:
+            if st.button("✅ 전체 선택", use_container_width=True, key="acc_select_all"):
+                st.session_state.account_df["선택"] = True
+                st.rerun()
+
+        with top2:
+            if st.button("⬜ 전체 해제", use_container_width=True, key="acc_unselect_all"):
+                st.session_state.account_df["선택"] = False
+                st.rerun()
+
+        with top3:
+            if st.button("🗑️ 계정 삭제(선택)", use_container_width=True, key="acc_del_top"):
+                sel = st.session_state.account_df[st.session_state.account_df["선택"] == True]
+                if sel.empty:
+                    st.warning("삭제할 계정을 체크하세요.")
+                else:
+                    st.session_state._delete_targets = sel["_sid"].tolist()
+
+        # 삭제 확인
+        if "_delete_targets" in st.session_state:
+            st.warning("정말 삭제하시겠습니까?")
+            y, n = st.columns(2)
+            with y:
+                if st.button("예", key="acc_del_yes2", use_container_width=True):
+                    for sid in st.session_state._delete_targets:
+                        db.collection("students").document(sid).update({"is_active": False})
+                    st.session_state.pop("_delete_targets")
+                    api_list_accounts_cached.clear()
+                    toast("삭제 완료", icon="🗑️")
+                    # ✅ 삭제 후 리스트 즉시 반영
+                    st.session_state.pop("account_df", None)
+                    st.rerun()
+            with n:
+                if st.button("아니오", key="acc_del_no2", use_container_width=True):
+                    st.session_state.pop("_delete_targets")
+                    st.rerun()
+
+        st.caption("※ student_id는 화면에서 숨김 처리했습니다. (내부 삭제용으로만 사용)")
+
+        # -------------------------------------------------
+        # ✅ 표(편집): student_id 컬럼은 화면에서 제거
+        #   - 체크박스 클릭해도 번호순이 유지되도록 mergesort + 세션 df 유지
+        #   - '회색 하이라이트'는 data_editor가 직접 지원이 어려워서,
+        #     선택 행을 아래에 '회색 강조 미리보기'로 추가 표시(대신 확실히 보임)
+        # -------------------------------------------------
+        show_df = st.session_state.account_df.drop(columns=["_sid"], errors="ignore")
+
+        edited_view = st.data_editor(
+            show_df,
             use_container_width=True,
             hide_index=True,
             key="account_editor",
@@ -1518,86 +1708,42 @@ if "👥 계정 정보/활성화" in tabs:
                 "선택": st.column_config.CheckboxColumn(),
                 "입출금활성화": st.column_config.CheckboxColumn(),
                 "투자활성화": st.column_config.CheckboxColumn(),
-            }
+            },
         )
 
-        c1, c2, c3 = st.columns(3)
+        # ✅ editor 결과를 내부 df에 다시 합치기(_sid 유지)
+        #    (행 순서 고정: 번호 기준으로 다시 정렬해서 '체크하면 아래로 내려감' 현상 최소화)
+        if not df_all.empty and edited_view is not None:
+            tmp = st.session_state.account_df.copy()
+            for col in ["선택", "번호", "이름", "비밀번호", "입출금활성화", "투자활성화"]:
+                if col in edited_view.columns and col in tmp.columns:
+                    tmp[col] = edited_view[col].values
+            tmp = tmp.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
+            st.session_state.account_df = tmp
 
-        # ✅ 계정 삭제
-        with c1:
-            if st.button("🗑️ 계정 삭제", use_container_width=True, key="acc_del_btn"):
-                selected = edited[edited["선택"] == True]
-                if selected.empty:
-                    st.warning("삭제할 계정을 체크하세요.")
-                else:
-                    st.session_state._delete_targets = selected["student_id"].tolist()
+        # -------------------------------------------------
+        # ✅ 선택 행 '연한 회색' 강조 표시(대체 구현)
+        #   - Streamlit data_editor 자체는 행 스타일링이 제한적이라,
+        #     선택된 행만 아래에 회색 배경으로 한 번 더 보여줌
+        # -------------------------------------------------
+        sel2 = st.session_state.account_df[st.session_state.account_df["선택"] == True]
+        if not sel2.empty:
+            st.markdown("#### ✅ 선택된 항목(강조 표시)")
+            try:
+                styled = sel2.drop(columns=["_sid"], errors="ignore").style.set_table_styles(
+                    [{"selector": "tbody tr", "props": [("background-color", "#f3f4f6")]}]
+                )
+                st.dataframe(styled, use_container_width=True, hide_index=True)
+            except Exception:
+                st.dataframe(sel2.drop(columns=["_sid"], errors="ignore"), use_container_width=True, hide_index=True)
 
-        if "_delete_targets" in st.session_state:
-            st.warning("정말 삭제하시겠습니까?")
-            y, n = st.columns(2)
-            with y:
-                if st.button("예", key="acc_del_yes"):
-                    for sid in st.session_state._delete_targets:
-                        db.collection("students").document(sid).update({"is_active": False})
-                    st.session_state.pop("_delete_targets")
-                    toast("삭제 완료", icon="🗑️")
-                    st.rerun()
-            with n:
-                if st.button("아니오", key="acc_del_no"):
-                    st.session_state.pop("_delete_targets")
-                    st.rerun()
-
-        # ✅ 계정 추가
-        with c2:
-            if st.button("➕ 계정 추가", use_container_width=True, key="acc_add_btn"):
-                new_row = {
-                    "선택": False,
-                    "번호": int(len(edited) + 1),
-                    "student_id": "",
-                    "이름": "",
-                    "비밀번호": "",
-                    "입출금활성화": True,
-                    "투자활성화": True,
-                }
-                edited = pd.concat([edited, pd.DataFrame([new_row])], ignore_index=True)
-                st.session_state["account_editor"] = edited
-
-        # ✅ 저장
-        with c3:
-            if st.button("💾 저장", use_container_width=True, key="acc_save_btn"):
-                for _, r in edited.iterrows():
-                    name = str(r.get("이름", "") or "").strip()
-                    pin = str(r.get("비밀번호", "") or "").strip()
-                    sid = str(r.get("student_id", "") or "").strip()
-
-                    if not name:
-                        continue
-
-                    # pin이 비어 있으면(새행 실수) 저장 안함
-                    if pin and not (pin.isdigit() and len(pin) == 4):
-                        st.error(f"{name} 비밀번호가 4자리 숫자가 아닙니다.")
-                        st.stop()
-
-                    if sid:
-                        upd = {"name": name}
-                        if pin:
-                            upd["pin"] = pin
-                        db.collection("students").document(sid).update(upd)
-                    else:
-                        # 새 계정 생성
-                        if not pin:
-                            continue
-                        db.collection("students").document().set({
-                            "name": name,
-                            "pin": pin,
-                            "balance": 0,
-                            "is_active": True,
-                            "created_at": firestore.SERVER_TIMESTAMP,
-                        })
-
-                api_list_accounts_cached.clear()
-                toast("저장 완료!", icon="💾")
-                st.rerun()
+        # -------------------------------------------------
+        # ✅ (중요) 계정추가/저장 버튼 제거
+        #   - 요구사항: 계정추가/저장 버튼 삭제
+        #   - 활성화/비밀번호 수정 저장이 필요하면 "별도 저장 버튼"이 있어야 하는데,
+        #     현재 요구사항이 '삭제'라서 여기서는 저장 UI를 제거함.
+        # -------------------------------------------------
+        st.caption("※ 계정추가/저장 버튼은 요청대로 제거했습니다. (일괄등록/사이드바 생성/삭제로 관리)")
 
 
 # =========================
