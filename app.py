@@ -1669,54 +1669,57 @@ if "👥 계정 정보/활성화" in tabs:
             df_all = df_all.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
 
         # -------------------------------------------------
-        # ✅ 상단 버튼: 전체 선택 / 전체 해제 / 계정 삭제(상단으로 이동)
+        # ✅ 상단 버튼(2줄): [전체선택/전체해제/계정삭제] + [입출금/투자 일괄]
         # -------------------------------------------------
-        top1, top2, top3, top4, top5, top6, top7 = st.columns([1, 1, 1, 1, 1, 1, 2])
+        st.markdown("#### 🧰 일괄 관리")
 
-        with top1:
+        # 1줄: 전체 선택/해제/삭제
+        r1c1, r1c2, r1c3 = st.columns(3)
+
+        with r1c1:
             if st.button("✅ 전체 선택", use_container_width=True, key="acc_select_all"):
                 st.session_state.account_df["선택"] = True
                 st.rerun()
 
-        with top2:
+        with r1c2:
             if st.button("⬜ 전체 해제", use_container_width=True, key="acc_unselect_all"):
                 st.session_state.account_df["선택"] = False
                 st.rerun()
 
-        # ✅ 입출금 활성화 일괄
-        with top3:
-            if st.button("입출금 전체 켜기", use_container_width=True, key="io_all_on"):
-                if "입출금활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["입출금활성화"] = True
-                st.rerun()
-
-        with top4:
-            if st.button("입출금 전체 끄기", use_container_width=True, key="io_all_off"):
-                if "입출금활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["입출금활성화"] = False
-                st.rerun()
-
-        # ✅ 투자 활성화 일괄
-        with top5:
-            if st.button("투자 전체 켜기", use_container_width=True, key="inv_all_on"):
-                if "투자활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["투자활성화"] = True
-                st.rerun()
-
-        with top6:
-            if st.button("투자 전체 끄기", use_container_width=True, key="inv_all_off"):
-                if "투자활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["투자활성화"] = False
-                st.rerun()
-
-        # ✅ 계정 삭제(선택) (기존 유지)
-        with top7:
+        with r1c3:
             if st.button("🗑️ 계정 삭제(선택)", use_container_width=True, key="acc_del_top"):
                 sel = st.session_state.account_df[st.session_state.account_df["선택"] == True]
                 if sel.empty:
                     st.warning("삭제할 계정을 체크하세요.")
                 else:
                     st.session_state._delete_targets = sel["_sid"].tolist()
+
+        # 2줄: 입출금/투자 일괄 켜기/끄기
+        r2c1, r2c2, r2c3, r2c4 = st.columns(4)
+
+        with r2c1:
+            if st.button("🔌 입출금 켜기", use_container_width=True, key="io_all_on"):
+                if "입출금활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["입출금활성화"] = True
+                st.rerun()
+
+        with r2c2:
+            if st.button("⛔ 입출금 끄기", use_container_width=True, key="io_all_off"):
+                if "입출금활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["입출금활성화"] = False
+                st.rerun()
+
+        with r2c3:
+            if st.button("📈 투자 켜기", use_container_width=True, key="inv_all_on"):
+                if "투자활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["투자활성화"] = True
+                st.rerun()
+
+        with r2c4:
+            if st.button("📉 투자 끄기", use_container_width=True, key="inv_all_off"):
+                if "투자활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["투자활성화"] = False
+                st.rerun()
 
         # 삭제 확인
         if "_delete_targets" in st.session_state:
