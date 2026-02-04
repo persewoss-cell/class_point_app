@@ -158,6 +158,7 @@ st.markdown(f'<div class="app-title">🏦 {APP_TITLE}</div>', unsafe_allow_html=
 @st.cache_resource
 def init_firestore():
     firebase_dict = dict(st.secrets["firebase"])
+    firebase_dict["private_key"] = firebase_dict["private_key"].replace("\\n", "\n").strip()
     cred = credentials.Certificate(firebase_dict)
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
