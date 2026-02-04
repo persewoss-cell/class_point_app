@@ -353,6 +353,30 @@ def api_delete_account(name, pin):
     api_list_accounts_cached.clear()
     return {"ok": True}
 
+def api_change_pin_student(name: str, old_pin: str, new_pin: str):
+    """
+    ✅ 학생 본인 비밀번호(PIN) 변경
+    - 이름 + 기존 PIN 인증 후 새 PIN 저장
+    """
+    name = (name or "").strip()
+    old_pin = (old_pin or "").strip()
+    new_pin = (new_pin or "").strip()
+
+    if not name:
+        return {"ok": False, "error": "이름이 필요합니다."}
+    if not pin_ok(old_pin):
+        return {"ok": False, "error": "기존 비밀번호는 4자리 숫자여야 합니다."}
+    if not pin_ok(new_pin):
+        return {"ok": False, "error": "새 비밀번호는 4자리 숫자여야 합니다."}
+
+    doc = fs_auth_student(name, old_pin)  # ✅ 기존 PIN 인증
+    if not doc:
+        return {"ok": False, "error": "이름 또는 기존 비밀번호가 틀립니다."}
+
+    db.collection("students").document(doc.id).update({"pin": str(new_pin)})
+    api_list_accounts_cached.clear()
+    return {"ok": True}
+
 def api_admin_set_role(admin_pin: str, student_id: str, role_id: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
@@ -999,6 +1023,41 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+    # =========================
+    # [학생] 비밀번호 변경 (사이드바 최상단)
+    # =========================
+    st.header("🔑 [학생] 비밀번호 변경")
+
+    stu_name = st.text_input("이름(계정)", key="stu_pw_name").strip()
+    old_pin = st.text_input("기존 비밀번호(4자리)", type="password", key="stu_pw_old").strip()
+    new_pin1 = st.text_input("새 비밀번호(4자리)", type="password", key="stu_pw_new1").strip()
+    new_pin2 = st.text_input("새 비밀번호(확인)", type="password", key="stu_pw_new2").strip()
+
+    if st.button("비밀번호 변경(학생)", key="stu_pw_change_btn", use_container_width=True):
+        if not stu_name:
+            st.error("이름(계정)을 입력해 주세요.")
+        elif not pin_ok(old_pin):
+            st.error("기존 비밀번호는 4자리 숫자여야 해요.")
+        elif not pin_ok(new_pin1) or not pin_ok(new_pin2):
+            st.error("새 비밀번호는 4자리 숫자여야 해요.")
+        elif new_pin1 != new_pin2:
+            st.error("새 비밀번호와 확인이 일치하지 않습니다.")
+        elif old_pin == new_pin1:
+            st.error("새 비밀번호는 기존 비밀번호와 달라야 합니다.")
+        else:
+            res = api_change_pin_student(stu_name, old_pin, new_pin1)
+            if res.get("ok"):
+                toast("비밀번호 변경 완료!", icon="✅")
+                st.session_state.pop("stu_pw_name", None)
+                st.session_state.pop("stu_pw_old", None)
+                st.session_state.pop("stu_pw_new1", None)
+                st.session_state.pop("stu_pw_new2", None)
+                st.rerun()
+            else:
+                st.error(res.get("error", "비밀번호 변경 실패"))
+
+    st.divider()
 
 # =========================
 # Sidebar: 계정 만들기/삭제 + (관리자) 학생 엑셀 샘플 다운로드/일괄 업로드 + PIN 변경
