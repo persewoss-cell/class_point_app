@@ -1004,41 +1004,24 @@ for k, v in defaults.items():
 # Sidebar: 계정 만들기/삭제 + (관리자) 학생 엑셀 샘플 다운로드/일괄 업로드 + PIN 변경
 # =========================
 with st.sidebar:
-    st.header("➕ 계정 만들기 / 삭제")
+    st.header("🔐 [관리자] 계정생성 / PIN변경 / 삭제")
 
-    # ✅ 관리자 비밀번호(관리자만 생성/삭제 가능)
+    # ✅ 공통 입력(한 블록으로 통합)
     admin_manage_pin = st.text_input("관리자 비밀번호(4자리)", type="password", key="admin_manage_pin").strip()
+    manage_name = st.text_input("이름(계정)", key="manage_name").strip()
+    manage_pin = st.text_input("비밀번호(4자리 숫자)", type="password", key="manage_pin").strip()
 
-    new_name = st.text_input("이름(계정)", key="new_name").strip()
-    new_pin = st.text_input("비밀번호(4자리 숫자)", type="password", key="new_pin").strip()
+    # ✅ 공통 체크(관리자 비번)
+    def _admin_guard():
+        if not pin_ok(admin_manage_pin):
+            st.error("관리자 비밀번호는 4자리 숫자여야 해요.")
+            return False
+        if not is_admin_pin(admin_manage_pin):
+            st.error("관리자 비밀번호가 틀립니다.")
+            return False
+        return True
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("계정 생성"):
-            if not is_admin_pin(admin_manage_pin):
-                st.error("관리자 비밀번호가 틀립니다. (계정 생성 불가)")
-            elif not new_name:
-                st.error("이름을 입력해 주세요.")
-            elif not pin_ok(new_pin):
-                st.error("비밀번호는 4자리 숫자여야 해요. (예: 0123)")
-            else:
-                res = api_create_account(new_name, new_pin)
-                if res.get("ok"):
-                    toast("계정 생성 완료!")
-                    st.session_state.pop("new_name", None)
-                    st.session_state.pop("new_pin", None)
-                    api_list_accounts_cached.clear()
-                    st.rerun()
-                else:
-                    st.error(res.get("error", "계정 생성 실패"))
-
-    # ✅ (관리자) 강제 PIN 변경: 계정 생성/삭제 사이에 끼워 넣기
-    st.markdown("#### 🔧 (관리자) PIN 강제 변경")
-    st.caption("관리자 비밀번호 + 대상 이름 + 새 PIN 입력 후 버튼을 누르면 즉시 변경됩니다.")
-
-    force_name = st.text_input("대상 이름", key="force_pin_name").strip()
-    force_new_pin = st.text_input("새 비밀번호(4자리)", type="password", key="force_pin_new").strip()
-
+    # ✅ 관리자 강제 PIN 변경 함수(이 블록 안에서만 사용)
     def api_admin_force_change_pin(admin_pin: str, target_name: str, new_pin: str):
         if not is_admin_pin(admin_pin):
             return {"ok": False, "error": "관리자 비밀번호가 틀립니다."}
@@ -1057,182 +1040,126 @@ with st.sidebar:
         api_list_accounts_cached.clear()
         return {"ok": True}
 
-    if st.button("PIN 변경(관리자)", key="force_pin_btn", use_container_width=True):
-        res = api_admin_force_change_pin(admin_manage_pin, force_name, force_new_pin)
-        if res.get("ok"):
-            toast(f"'{force_name}' PIN 변경 완료!", icon="🔁")
-            st.session_state.pop("force_pin_name", None)
-            st.session_state.pop("force_pin_new", None)
-            st.rerun()
-        else:
-            st.error(res.get("error", "PIN 변경 실패"))
-    
+    # ✅ 버튼 3개: 생성 / PIN변경 / 삭제
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        if st.button("계정 생성", key="btn_create", use_container_width=True):
+            if not _admin_guard():
+                st.stop()
+            if not manage_name:
+                st.error("이름을 입력해 주세요.")
+            elif not pin_ok(manage_pin):
+                st.error("비밀번호는 4자리 숫자여야 해요. (예: 0123)")
+            else:
+                res = api_create_account(manage_name, manage_pin)
+                if res.get("ok"):
+                    toast("계정 생성 완료!", icon="✅")
+                    st.session_state.pop("manage_name", None)
+                    st.session_state.pop("manage_pin", None)
+                    api_list_accounts_cached.clear()
+                    st.rerun()
+                else:
+                    st.error(res.get("error", "계정 생성 실패"))
+
     with c2:
-        if st.button("삭제"):
+        if st.button("PIN 변경", key="btn_pin_change", use_container_width=True):
+            if not _admin_guard():
+                st.stop()
+            if not manage_name:
+                st.error("이름을 입력해 주세요.")
+            elif not pin_ok(manage_pin):
+                st.error("새 비밀번호는 4자리 숫자여야 해요.")
+            else:
+                res = api_admin_force_change_pin(admin_manage_pin, manage_name, manage_pin)
+                if res.get("ok"):
+                    toast("PIN 변경 완료!", icon="🔁")
+                    st.session_state.pop("manage_name", None)
+                    st.session_state.pop("manage_pin", None)
+                    st.rerun()
+                else:
+                    st.error(res.get("error", "PIN 변경 실패"))
+
+    with c3:
+        if st.button("삭제", key="btn_delete", use_container_width=True):
+            # ✅ 삭제는 확인창 띄우기
             st.session_state.delete_confirm = True
 
-    if st.session_state.delete_confirm:
+    # ✅ 삭제 확인
+    if st.session_state.get("delete_confirm", False):
         st.warning("정말로 삭제하시겠습니까?")
         y, n = st.columns(2)
         with y:
-            if st.button("예", key="delete_yes"):
-                if not is_admin_pin(admin_manage_pin):
-                    st.error("관리자 비밀번호가 틀립니다. (삭제 불가)")
-                elif not new_name:
+            if st.button("예", key="delete_yes", use_container_width=True):
+                if not _admin_guard():
+                    st.stop()
+                if not manage_name:
                     st.error("삭제할 이름(계정)을 입력해 주세요.")
-                elif not pin_ok(new_pin):
+                elif not pin_ok(manage_pin):
                     st.error("비밀번호는 4자리 숫자여야 해요.")
                 else:
-                    res = api_delete_account(new_name, new_pin)
-                    if res.get("ok"):
+                    # ✅ 여기서는 '해당 계정 PIN'이 아니라, '관리자 PIN'으로 삭제를 허용하려면
+                    # api_delete_account가 (이름+PIN) 인증 구조라서 아래처럼 "관리자 강제 삭제"로 바꾸는 게 맞음.
+                    # => 기존 api_delete_account는 학생 본인 삭제용 구조이므로, 관리자가 강제 삭제하려면 별도 구현.
+                    doc = fs_get_student_doc_by_name(manage_name)
+                    if not doc:
+                        st.error("해당 이름의 계정을 찾지 못했습니다.")
+                    else:
+                        db.collection("students").document(doc.id).update({"is_active": False})
+                        api_list_accounts_cached.clear()
                         toast("삭제 완료!", icon="🗑️")
                         st.session_state.delete_confirm = False
-                        st.session_state.data.pop(new_name, None)
-                        api_list_accounts_cached.clear()
+                        st.session_state.data.pop(manage_name, None)
+                        st.session_state.pop("manage_name", None)
+                        st.session_state.pop("manage_pin", None)
                         st.rerun()
-                    else:
-                        st.error(res.get("error", "삭제 실패"))
         with n:
-            if st.button("아니오", key="delete_no"):
+            if st.button("아니오", key="delete_no", use_container_width=True):
                 st.session_state.delete_confirm = False
                 st.rerun()
 
     st.divider()
-
-    # =========================
-    # ✅ PIN 변경(버튼 작동하도록 추가)
-    # =========================
-    st.subheader("🔁 PIN 변경")
-    st.caption("이름 + 기존 PIN + 새 PIN으로 변경합니다.")
-    chg_name = st.text_input("이름", key="chg_name").strip()
-    chg_old = st.text_input("기존 PIN(4자리)", type="password", key="chg_old").strip()
-    chg_new = st.text_input("새 PIN(4자리)", type="password", key="chg_new").strip()
-
-    def api_change_pin(name: str, old_pin: str, new_pin: str):
-        doc = fs_auth_student(name, old_pin)
-        if not doc:
-            return {"ok": False, "error": "이름 또는 기존 PIN이 틀립니다."}
-        if not pin_ok(new_pin):
-            return {"ok": False, "error": "새 PIN은 4자리 숫자여야 합니다."}
-        db.collection("students").document(doc.id).update({"pin": str(new_pin)})
-        api_list_accounts_cached.clear()
-        return {"ok": True}
-
-    if st.button("PIN 변경 저장", use_container_width=True):
-        if not chg_name:
-            st.error("이름을 입력해 주세요.")
-        elif not pin_ok(chg_old):
-            st.error("기존 PIN은 4자리 숫자여야 해요.")
-        elif not pin_ok(chg_new):
-            st.error("새 PIN은 4자리 숫자여야 해요.")
-        else:
-            res = api_change_pin(chg_name, chg_old, chg_new)
-            if res.get("ok"):
-                toast("PIN 변경 완료!", icon="🔁")
-                st.session_state.pop("chg_name", None)
-                st.session_state.pop("chg_old", None)
-                st.session_state.pop("chg_new", None)
-                st.rerun()
-            else:
-                st.error(res.get("error", "PIN 변경 실패"))
-
-    st.divider()
-
-    # =========================
-    # ✅ 학생 명단 엑셀 샘플 다운로드 + 업로드(일괄 반영)
-    # =========================
-    st.subheader("📄 학생 명단 엑셀(샘플/일괄 업로드)")
-    st.caption("엑셀 탭(시트)에는 **번호 / 이름 / 비밀번호** 3개 컬럼이 들어가면 됩니다.")
-
-    # ✅ 샘플 다운로드
-    import io
-    sample_df = pd.DataFrame(
-        [
-            {"번호": 1, "이름": "홍길동", "비밀번호": "0123"},
-            {"번호": 2, "이름": "김철수", "비밀번호": "1234"},
-        ]
-    )
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        sample_df.to_excel(writer, index=False, sheet_name="학생명단")
-    st.download_button(
-        label="⬇️ 학생명단 엑셀 샘플 다운로드",
-        data=buf.getvalue(),
-        file_name="학생명단_샘플.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
-
-    st.caption("업로드 후 ‘학생/계정’ 탭에 바로 반영됩니다(캐시 초기화 + rerun).")
-
+    st.subheader("📥 (관리자) 학생 명단 엑셀 업로드")
+    st.caption("엑셀에 name, pin 컬럼이 있으면 일괄 생성합니다.")
     up = st.file_uploader("학생 명단 엑셀(xlsx)", type=["xlsx"], key="upload_students_xlsx")
 
-    def _normalize_pin(x) -> str:
-        s = str(x or "").strip()
-        # 엑셀에서 123.0 같은 형태로 들어오는 경우 대비
-        if s.endswith(".0"):
-            s = s[:-2]
-        # 숫자만 남기기
-        s2 = "".join([ch for ch in s if ch.isdigit()])
-        if not s2:
-            return ""
-        return s2.zfill(4)[:4]
-
-    if st.button("엑셀 업로드 → 학생 일괄 생성(관리자)", use_container_width=True):
-        if not is_admin_pin(admin_manage_pin):
-            st.error("관리자 비밀번호가 틀립니다. (일괄 생성 불가)")
-        elif up is None:
+    if st.button("엑셀로 학생 일괄 생성(관리자)", use_container_width=True):
+        # ✅ 여기서도 관리자 비밀번호로 잠금
+        if not _admin_guard():
+            st.stop()
+        if up is None:
             st.error("엑셀 파일을 올려주세요.")
         else:
             try:
                 df = pd.read_excel(up)
+                cols = [c.lower().strip() for c in df.columns.astype(str)]
+                df.columns = cols
 
-                # ✅ 컬럼명 자동 매핑(번호/이름/비밀번호 or no/name/pin 등)
-                cols_raw = [str(c).strip() for c in df.columns]
-                cols_low = [c.lower().strip() for c in cols_raw]
+                # ✅ 너가 요청한 샘플 컬럼(번호, 이름, 비밀번호) 대응:
+                # - name/pin 이 있으면 그대로 사용
+                # - 없으면 '이름'/'비밀번호' 또는 'name'/'pin' 유사 컬럼을 지원
+                if ("name" not in df.columns or "pin" not in df.columns):
+                    # 한글 컬럼 대응
+                    if ("이름" in df.columns) and ("비밀번호" in df.columns):
+                        df["name"] = df["이름"]
+                        df["pin"] = df["비밀번호"]
 
-                # 가능한 이름 컬럼 후보
-                name_col = None
-                pin_col = None
-
-                for c, cl in zip(cols_raw, cols_low):
-                    if cl in ("이름", "name", "student", "학생명", "학생"):
-                        name_col = c
-                    if cl in ("비밀번호", "pin", "password", "pwd"):
-                        pin_col = c
-
-                # 혹시 기존 안내대로 name/pin인 경우도 처리
-                if name_col is None and "name" in cols_low:
-                    name_col = cols_raw[cols_low.index("name")]
-                if pin_col is None and "pin" in cols_low:
-                    pin_col = cols_raw[cols_low.index("pin")]
-
-                if name_col is None or pin_col is None:
-                    st.error("엑셀 컬럼이 필요합니다: (번호), 이름, 비밀번호  또는  name, pin")
+                if "name" not in df.columns or "pin" not in df.columns:
+                    st.error("엑셀에 name, pin (또는 이름, 비밀번호) 컬럼이 필요합니다.")
                 else:
                     created = 0
-                    skipped = 0
-
                     for _, r in df.iterrows():
-                        nm = str(r.get(name_col, "") or "").strip()
-                        pn = _normalize_pin(r.get(pin_col, ""))
-
-                        if not nm or not pin_ok(pn):
-                            skipped += 1
-                            continue
-
-                        if not fs_get_student_doc_by_name(nm):
-                            api_create_account(nm, pn)
-                            created += 1
-                        else:
-                            skipped += 1
-
-                    toast(f"일괄 생성 완료! (+{created}) / 건너뜀 {skipped}", icon="📥")
+                        nm = str(r.get("name", "") or "").strip()
+                        pn = str(r.get("pin", "") or "").strip()
+                        if nm and pn.isdigit() and len(pn) == 4:
+                            if not fs_get_student_doc_by_name(nm):
+                                api_create_account(nm, pn)
+                                created += 1
+                    toast(f"일괄 생성 완료! (+{created})", icon="📥")
                     api_list_accounts_cached.clear()
                     st.rerun()
             except Exception as e:
                 st.error(f"업로드 실패: {e}")
-
 
 # =========================
 # Main: 로그인 (너 코드 방식 유지: form)
