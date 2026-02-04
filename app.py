@@ -1748,10 +1748,22 @@ if "👥 계정 정보/활성화" in tabs:
         # -------------------------------------------------
         show_df = st.session_state.account_df.drop(columns=["_sid"], errors="ignore")
 
+        # ✅ 표 높이: 화면에 최대한 크게(표 안 스크롤 최소화)
+        # - row_height는 Streamlit 버전에 따라 무시될 수 있음(무시돼도 문제 없음)
+        # - height는 가장 확실하게 적용됨
+        # - 계정이 많으면 너무 길어질 수 있어서 "최대 900" 같은 캡을 둠
+        row_h = 35
+        try:
+            nrows = int(len(show_df)) + 2
+        except Exception:
+            nrows = 20
+        desired_h = min(900, max(420, nrows * row_h))
+
         edited_view = st.data_editor(
             show_df,
             use_container_width=True,
             hide_index=True,
+            height=desired_h,
             key="account_editor",
             column_config={
                 "선택": st.column_config.CheckboxColumn(),
@@ -1759,6 +1771,7 @@ if "👥 계정 정보/활성화" in tabs:
                 "투자활성화": st.column_config.CheckboxColumn(),
             },
         )
+
 
         # ✅ editor 결과를 내부 df에 다시 합치기(_sid 유지)
         #    (행 순서 고정: 번호 기준으로 다시 정렬해서 '체크하면 아래로 내려감' 현상 최소화)
