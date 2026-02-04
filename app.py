@@ -1671,15 +1671,7 @@ if "👥 계정 정보/활성화" in tabs:
         # -------------------------------------------------
         # ✅ 상단 버튼: 전체 선택 / 전체 해제 / 계정 삭제(상단으로 이동)
         # -------------------------------------------------
-        top1, top2, top3 = st.columns([1, 1, 2])
-
-        # editor 초기 데이터(세션에 유지해서 체크 시 "튐" 최소화)
-        if "account_df" not in st.session_state:
-            st.session_state.account_df = df_all.copy()
-
-        # 새로 로드된 df와 길이가 다르면 갱신(엑셀 업로드/삭제 등 반영)
-        if len(st.session_state.account_df) != len(df_all):
-            st.session_state.account_df = df_all.copy()
+        top1, top2, top3, top4, top5, top6, top7 = st.columns([1, 1, 1, 1, 1, 1, 2])
 
         with top1:
             if st.button("✅ 전체 선택", use_container_width=True, key="acc_select_all"):
@@ -1691,7 +1683,34 @@ if "👥 계정 정보/활성화" in tabs:
                 st.session_state.account_df["선택"] = False
                 st.rerun()
 
+        # ✅ 입출금 활성화 일괄
         with top3:
+            if st.button("입출금 전체 켜기", use_container_width=True, key="io_all_on"):
+                if "입출금활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["입출금활성화"] = True
+                st.rerun()
+
+        with top4:
+            if st.button("입출금 전체 끄기", use_container_width=True, key="io_all_off"):
+                if "입출금활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["입출금활성화"] = False
+                st.rerun()
+
+        # ✅ 투자 활성화 일괄
+        with top5:
+            if st.button("투자 전체 켜기", use_container_width=True, key="inv_all_on"):
+                if "투자활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["투자활성화"] = True
+                st.rerun()
+
+        with top6:
+            if st.button("투자 전체 끄기", use_container_width=True, key="inv_all_off"):
+                if "투자활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["투자활성화"] = False
+                st.rerun()
+
+        # ✅ 계정 삭제(선택) (기존 유지)
+        with top7:
             if st.button("🗑️ 계정 삭제(선택)", use_container_width=True, key="acc_del_top"):
                 sel = st.session_state.account_df[st.session_state.account_df["선택"] == True]
                 if sel.empty:
