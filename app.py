@@ -1032,6 +1032,41 @@ with st.sidebar:
                 else:
                     st.error(res.get("error", "계정 생성 실패"))
 
+    # ✅ (관리자) 강제 PIN 변경: 계정 생성/삭제 사이에 끼워 넣기
+    st.markdown("#### 🔧 (관리자) PIN 강제 변경")
+    st.caption("관리자 비밀번호 + 대상 이름 + 새 PIN 입력 후 버튼을 누르면 즉시 변경됩니다.")
+
+    force_name = st.text_input("대상 이름", key="force_pin_name").strip()
+    force_new_pin = st.text_input("새 비밀번호(4자리)", type="password", key="force_pin_new").strip()
+
+    def api_admin_force_change_pin(admin_pin: str, target_name: str, new_pin: str):
+        if not is_admin_pin(admin_pin):
+            return {"ok": False, "error": "관리자 비밀번호가 틀립니다."}
+        target_name = (target_name or "").strip()
+        new_pin = (new_pin or "").strip()
+        if not target_name:
+            return {"ok": False, "error": "대상 이름을 입력해 주세요."}
+        if not pin_ok(new_pin):
+            return {"ok": False, "error": "새 비밀번호는 4자리 숫자여야 합니다."}
+
+        doc = fs_get_student_doc_by_name(target_name)
+        if not doc:
+            return {"ok": False, "error": "해당 이름의 계정을 찾지 못했습니다."}
+
+        db.collection("students").document(doc.id).update({"pin": str(new_pin)})
+        api_list_accounts_cached.clear()
+        return {"ok": True}
+
+    if st.button("PIN 변경(관리자)", key="force_pin_btn", use_container_width=True):
+        res = api_admin_force_change_pin(admin_manage_pin, force_name, force_new_pin)
+        if res.get("ok"):
+            toast(f"'{force_name}' PIN 변경 완료!", icon="🔁")
+            st.session_state.pop("force_pin_name", None)
+            st.session_state.pop("force_pin_new", None)
+            st.rerun()
+        else:
+            st.error(res.get("error", "PIN 변경 실패"))
+    
     with c2:
         if st.button("삭제"):
             st.session_state.delete_confirm = True
