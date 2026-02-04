@@ -2,4 +2,5 @@ streamlit
 pandas
 firebase-admin
 google-cloud-firestore
-requests
+pymupdf
+openpyxl
