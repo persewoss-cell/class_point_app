@@ -1790,60 +1790,354 @@ if "💼 직업/월급" in tabs:
     with tab_map["💼 직업/월급"]:
         st.subheader("💼 직업/월급 시스템")
 
-        roles = api_list_roles_cached().get("roles", [])
-        if not roles:
-            st.warning("roles(직업)이 아직 없습니다. 먼저 직업/월급 xlsx를 업로드하세요.")
-        else:
-            df_roles = pd.DataFrame(roles)[["role_id","role_name","salary_gross","tax_rate","desk_rent","electric_fee","health_fee","permissions"]]
-            st.dataframe(df_roles, use_container_width=True, hide_index=True)
+        if not is_admin:
+            st.info("관리자 전용 탭입니다.")
+            st.stop()
+
+        # -------------------------------------------------
+        # ✅ 계정 목록(드롭다운: 번호+이름)
+        # -------------------------------------------------
+        accounts = api_list_accounts_cached().get("accounts", [])
+        # students 컬렉션에서 'no'도 같이 가져와서 "번호+이름" 만들기
+        docs_acc = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        acc_rows = []
+        for d in docs_acc:
+            x = d.to_dict() or {}
+            try:
+                no = int(x.get("no", 999999) or 999999)
+            except Exception:
+                no = 999999
+            acc_rows.append(
+                {
+                    "student_id": d.id,
+                    "no": no,
+                    "name": str(x.get("name", "") or ""),
+                }
+            )
+        acc_rows.sort(key=lambda r: (r["no"], r["name"]))
+        acc_options = ["(선택 없음)"] + [f"{r['no']} {r['name']}" for r in acc_rows]
+        label_to_id = {f"{r['no']} {r['name']}": r["student_id"] for r in acc_rows}
+        id_to_label = {r["student_id"]: f"{r['no']} {r['name']}" for r in acc_rows}
+
+        # -------------------------------------------------
+        # ✅ 공제 설정(세금% / 자리임대료 / 전기세 / 건강보험료)
+        #   - Firestore config/salary_deductions 에 저장
+        # -------------------------------------------------
+        def _get_salary_cfg():
+            ref = db.collection("config").document("salary_deductions")
+            snap = ref.get()
+            if not snap.exists:
+                return {
+                    "tax_percent": 10.0,
+                    "desk_rent": 50,
+                    "electric_fee": 10,
+                    "health_fee": 10,
+                }
+            d = snap.to_dict() or {}
+            return {
+                "tax_percent": float(d.get("tax_percent", 10.0) or 10.0),
+                "desk_rent": int(d.get("desk_rent", 50) or 50),
+                "electric_fee": int(d.get("electric_fee", 10) or 10),
+                "health_fee": int(d.get("health_fee", 10) or 10),
+            }
+
+        def _save_salary_cfg(cfg: dict):
+            db.collection("config").document("salary_deductions").set(
+                {
+                    "tax_percent": float(cfg.get("tax_percent", 10.0) or 10.0),
+                    "desk_rent": int(cfg.get("desk_rent", 50) or 50),
+                    "electric_fee": int(cfg.get("electric_fee", 10) or 10),
+                    "health_fee": int(cfg.get("health_fee", 10) or 10),
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+
+        def _calc_net(gross: int, cfg: dict) -> int:
+            gross = int(gross or 0)
+            tax_percent = float(cfg.get("tax_percent", 10.0) or 10.0)
+            desk = int(cfg.get("desk_rent", 50) or 50)
+            elec = int(cfg.get("electric_fee", 10) or 10)
+            health = int(cfg.get("health_fee", 10) or 10)
+
+            tax = int(round(gross * (tax_percent / 100.0)))
+            net = gross - tax - desk - elec - health
+            return max(0, int(net))
+
+        cfg = _get_salary_cfg()
+
+        with st.expander("⚙️ 실수령액 계산식(공제 설정) 변경", expanded=False):
+            c1, c2, c3, c4, c5 = st.columns([1.2, 1, 1, 1, 1.2])
+            with c1:
+                tax_percent = st.number_input("세금(%)", min_value=0.0, max_value=100.0, step=0.5, value=float(cfg["tax_percent"]), key="sal_cfg_tax")
+            with c2:
+                desk_rent = st.number_input("자리임대료", min_value=0, step=1, value=int(cfg["desk_rent"]), key="sal_cfg_desk")
+            with c3:
+                electric_fee = st.number_input("전기세", min_value=0, step=1, value=int(cfg["electric_fee"]), key="sal_cfg_elec")
+            with c4:
+                health_fee = st.number_input("건강보험료", min_value=0, step=1, value=int(cfg["health_fee"]), key="sal_cfg_health")
+            with c5:
+                if st.button("✅ 공제 설정 저장", use_container_width=True, key="sal_cfg_save"):
+                    _save_salary_cfg(
+                        {
+                            "tax_percent": tax_percent,
+                            "desk_rent": desk_rent,
+                            "electric_fee": electric_fee,
+                            "health_fee": health_fee,
+                        }
+                    )
+                    toast("공제 설정 저장 완료!", icon="✅")
+                    st.rerun()
 
         st.divider()
-        st.subheader("💸 월급 지급(관리자)")
-        st.caption("학생별 role_id(직업)에 있는 급여/세금/공과금을 적용해 자동 지급/징수합니다.")
 
-        accounts = api_list_accounts_cached().get("accounts", [])
-        name_map = {a["name"]: a for a in accounts}
-        pick = st.selectbox("지급 대상", ["(전체)"] + list(name_map.keys()))
-        pay_date = st.date_input("지급 날짜", value=date.today())
+        # -------------------------------------------------
+        # ✅ 직업/월급 표 데이터 로드 (job_salary 컬렉션)
+        # -------------------------------------------------
+        def _list_job_rows():
+            q = db.collection("job_salary").order_by("order").stream()
+            rows = []
+            for d in q:
+                x = d.to_dict() or {}
+                rows.append(
+                    {
+                        "_id": d.id,
+                        "order": int(x.get("order", 999999) or 999999),
+                        "job": str(x.get("job", "") or ""),
+                        "salary": int(x.get("salary", 0) or 0),
+                        "student_count": int(x.get("student_count", 1) or 1),
+                        "assigned_ids": list(x.get("assigned_ids", []) or []),
+                    }
+                )
+            rows.sort(key=lambda r: r["order"])
+            return rows
 
-        if st.button("월급 실행(관리자)", use_container_width=True):
-            if not is_admin:
-                st.error("관리자만 가능합니다.")
-            else:
-                targets = accounts if pick == "(전체)" else [name_map[pick]]
-                role_dict = {r["role_id"]: r for r in roles}
+        def _next_order(rows):
+            if not rows:
+                return 1
+            return int(max(r["order"] for r in rows) + 1)
 
-                done = 0
-                for a in targets:
-                    sid = a["student_id"]
-                    rid = str(a.get("role_id","") or "")
-                    if not rid or rid not in role_dict:
-                        continue
-                    r = role_dict[rid]
-                    gross = int(r.get("salary_gross",0) or 0)
-                    tax = int(round(gross * float(r.get("tax_rate",0.1) or 0.1)))
-                    desk = int(r.get("desk_rent",50) or 50)
-                    elec = int(r.get("electric_fee",10) or 10)
-                    health = int(r.get("health_fee",10) or 10)
-                    net = gross - tax - desk - elec - health
+        def _swap_order(a_id, a_order, b_id, b_order):
+            batch = db.batch()
+            batch.update(db.collection("job_salary").document(a_id), {"order": int(b_order)})
+            batch.update(db.collection("job_salary").document(b_id), {"order": int(a_order)})
+            batch.commit()
 
-                    memo = f"월급({rid}) {pay_date.isoformat()}"
+        rows = _list_job_rows()
 
-                    if net != 0:
-                        if net > 0:
-                            api_admin_add_tx_by_student_id(ADMIN_PIN, sid, memo, net, 0)
-                        else:
-                            api_admin_add_tx_by_student_id(ADMIN_PIN, sid, memo, 0, abs(net))
+        # -------------------------------------------------
+        # ✅ 표 헤더
+        # -------------------------------------------------
+        st.markdown("### 📋 직업/월급 목록")
+        st.caption("• 아래에 직업을 추가/수정하면 이 표에 들어갑니다. • 학생 수를 늘리면 ‘이름(계정)’ 드롭다운이 자동으로 늘어납니다.")
 
-                    if tax > 0:
-                        add_treasury_income(ADMIN_PIN, pay_date, f"{a['name']} 세금(월급)", tax)
+        head = st.columns([0.6, 2.0, 1.2, 1.4, 1.0, 3.4, 1.0])
+        head[0].markdown("**순**")
+        head[1].markdown("**직업**")
+        head[2].markdown("**월급**")
+        head[3].markdown("**실수령액**")
+        head[4].markdown("**학생 수**")
+        head[5].markdown("**이름(계정)**")
+        head[6].markdown("**순서**")
 
-                    done += 1
+        # -------------------------------------------------
+        # ✅ 행 렌더 + 학생수(+/-) + 계정 드롭다운(학생수만큼)
+        # -------------------------------------------------
+        for i, r in enumerate(rows):
+            rid = r["_id"]
+            order = int(r["order"])
+            job = r["job"]
+            salary = int(r["salary"])
+            cnt = max(1, int(r.get("student_count", 1) or 1))
+            assigned_ids = list(r.get("assigned_ids", []) or [])
 
-                api_list_accounts_cached.clear()
-                toast(f"월급 처리 완료 ({done}명)", icon="💸")
+            # assigned 길이를 student_count에 맞추기
+            if len(assigned_ids) < cnt:
+                assigned_ids = assigned_ids + [""] * (cnt - len(assigned_ids))
+            if len(assigned_ids) > cnt:
+                assigned_ids = assigned_ids[:cnt]
+
+            net = _calc_net(salary, cfg)
+
+            c = st.columns([0.6, 2.0, 1.2, 1.4, 1.0, 3.4, 1.0])
+
+            c[0].write(str(order))
+            c[1].write(job)
+            c[2].write(str(salary))
+            c[3].write(str(net))
+
+            # 학생 수 +/- (1 미만 불가)
+            with c[4]:
+                a1, a2, a3 = st.columns([1, 1.2, 1])
+                with a1:
+                    if st.button("➖", use_container_width=True, key=f"job_cnt_minus_{rid}"):
+                        new_cnt = max(1, cnt - 1)
+                        db.collection("job_salary").document(rid).update(
+                            {
+                                "student_count": new_cnt,
+                                "assigned_ids": assigned_ids[:new_cnt],
+                            }
+                        )
+                        st.rerun()
+                with a2:
+                    st.write(str(cnt))
+                with a3:
+                    if st.button("➕", use_container_width=True, key=f"job_cnt_plus_{rid}"):
+                        new_cnt = cnt + 1
+                        db.collection("job_salary").document(rid).update(
+                            {
+                                "student_count": new_cnt,
+                                "assigned_ids": assigned_ids + [""],
+                            }
+                        )
+                        st.rerun()
+
+            # 이름(계정) 드롭다운들 (학생수만큼)
+            with c[5]:
+                new_ids = []
+                for k in range(cnt):
+                    cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
+                    cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
+                    sel = st.selectbox(
+                        f"계정{k+1}",
+                        acc_options,
+                        index=acc_options.index(cur_label) if cur_label in acc_options else 0,
+                        key=f"job_assign_{rid}_{k}",
+                        label_visibility="collapsed",
+                    )
+                    new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
+
+                # 변경되면 저장
+                if new_ids != assigned_ids:
+                    db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
+
+            # 순서 위/아래 (하우스포인트 방식: 위/아래로 바꾸기)
+            with c[6]:
+                up_disabled = (i == 0)
+                dn_disabled = (i == len(rows) - 1)
+                b1, b2 = st.columns(2)
+                with b1:
+                    if st.button("⬆️", use_container_width=True, disabled=up_disabled, key=f"job_up_{rid}"):
+                        prev = rows[i - 1]
+                        _swap_order(rid, order, prev["_id"], int(prev["order"]))
+                        st.rerun()
+                with b2:
+                    if st.button("⬇️", use_container_width=True, disabled=dn_disabled, key=f"job_dn_{rid}"):
+                        nxt = rows[i + 1]
+                        _swap_order(rid, order, nxt["_id"], int(nxt["order"]))
+                        st.rerun()
+
+        st.divider()
+
+        # -------------------------------------------------
+        # ✅ 하단: 직업 추가/수정 (하우스포인트 템플릿처럼)
+        # -------------------------------------------------
+        st.markdown("### ➕ 직업 추가 / 수정")
+
+        # 편집 대상 선택
+        pick_labels = ["(새로 추가)"] + [f"{r['order']} | {r['job']} (월급 {int(r['salary'])})" for r in rows]
+        picked = st.selectbox("편집 대상", pick_labels, key="job_edit_pick")
+
+        edit_row = None
+        if picked != "(새로 추가)":
+            # order|job로 찾기(표시 문자열 기준)
+            for rr in rows:
+                label = f"{rr['order']} | {rr['job']} (월급 {int(rr['salary'])})"
+                if label == picked:
+                    edit_row = rr
+                    break
+
+        # 입력폼(직업/월급)
+        f1, f2, f3 = st.columns([2.2, 1.2, 1.2])
+        with f1:
+            job_in = st.text_input("직업", value=(edit_row["job"] if edit_row else ""), key="job_in_job").strip()
+        with f2:
+            sal_in = st.number_input("월급", min_value=0, step=1, value=int(edit_row["salary"]) if edit_row else 0, key="job_in_salary")
+        with f3:
+            # 실수령 미리보기
+            st.metric("실수령액(자동)", _calc_net(int(sal_in), cfg))
+
+        # 학생 수(기본 1)
+        sc_in = st.number_input(
+            "학생 수(최소 1)",
+            min_value=1,
+            step=1,
+            value=int(edit_row["student_count"]) if edit_row else 1,
+            key="job_in_count",
+        )
+
+        b1, b2, b3 = st.columns([1, 1, 1])
+        with b1:
+            if st.button("✅ 저장", use_container_width=True, key="job_save_btn"):
+                if not job_in:
+                    st.error("직업을 입력해 주세요.")
+                    st.stop()
+
+                if edit_row:
+                    # 수정
+                    rid = edit_row["_id"]
+                    # assigned_ids 길이 맞추기(수정 시 학생수 바뀔 수 있음)
+                    cur_ids = list(edit_row.get("assigned_ids", []) or [])
+                    if len(cur_ids) < int(sc_in):
+                        cur_ids = cur_ids + [""] * (int(sc_in) - len(cur_ids))
+                    if len(cur_ids) > int(sc_in):
+                        cur_ids = cur_ids[: int(sc_in)]
+
+                    db.collection("job_salary").document(rid).update(
+                        {
+                            "job": job_in,
+                            "salary": int(sal_in),
+                            "student_count": int(sc_in),
+                            "assigned_ids": cur_ids,
+                            "updated_at": firestore.SERVER_TIMESTAMP,
+                        }
+                    )
+                    toast("수정 완료!", icon="✅")
+                    st.rerun()
+                else:
+                    # 신규 추가(order는 입력 순서대로 마지막+1)
+                    new_order = _next_order(rows)
+                    db.collection("job_salary").document().set(
+                        {
+                            "order": int(new_order),
+                            "job": job_in,
+                            "salary": int(sal_in),
+                            "student_count": int(sc_in),
+                            "assigned_ids": [""] * int(sc_in),
+                            "created_at": firestore.SERVER_TIMESTAMP,
+                            "updated_at": firestore.SERVER_TIMESTAMP,
+                        }
+                    )
+                    toast("추가 완료!", icon="✅")
+                    st.rerun()
+
+        with b2:
+            if st.button("🧹 입력 초기화", use_container_width=True, key="job_clear_btn"):
+                st.session_state.pop("job_in_job", None)
+                st.session_state.pop("job_in_salary", None)
+                st.session_state.pop("job_in_count", None)
+                st.session_state["job_edit_pick"] = "(새로 추가)"
                 st.rerun()
 
+        with b3:
+            if st.button("🗑️ 삭제", use_container_width=True, key="job_delete_btn", disabled=(edit_row is None)):
+                if not edit_row:
+                    st.stop()
+                st.session_state._job_delete_id = edit_row["_id"]
+
+        if "_job_delete_id" in st.session_state:
+            st.warning("정말 삭제하시겠습니까?")
+            y, n = st.columns(2)
+            with y:
+                if st.button("예", use_container_width=True, key="job_del_yes"):
+                    db.collection("job_salary").document(st.session_state._job_delete_id).delete()
+                    st.session_state.pop("_job_delete_id", None)
+                    toast("삭제 완료", icon="🗑️")
+                    st.rerun()
+            with n:
+                if st.button("아니오", use_container_width=True, key="job_del_no"):
+                    st.session_state.pop("_job_delete_id", None)
+                    st.rerun()
 
 # =========================
 # 10) 🗓️ 일정 (권한별 수정)
