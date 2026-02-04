@@ -1104,7 +1104,7 @@ with st.sidebar:
     # ✅ 버튼 3개: 생성 / PIN변경 / 삭제
     c1, c2, c3 = st.columns(3)
 
-        with c1:
+    with c1:
         if st.button("계정 생성", key="btn_create", use_container_width=True):
             if not _admin_guard():
                 st.stop()
