@@ -1001,10 +1001,13 @@ for k, v in defaults.items():
         st.session_state[k] = v
 
 # =========================
-# Sidebar: 계정 만들기/삭제 + (관리자) 학생 엑셀 일괄 업로드
+# Sidebar: 계정 만들기/삭제 + (관리자) 학생 엑셀 샘플 다운로드/일괄 업로드 + PIN 변경
 # =========================
 with st.sidebar:
     st.header("➕ 계정 만들기 / 삭제")
+
+    # ✅ 관리자 비밀번호(관리자만 생성/삭제 가능)
+    admin_manage_pin = st.text_input("관리자 비밀번호(4자리)", type="password", key="admin_manage_pin").strip()
 
     new_name = st.text_input("이름(계정)", key="new_name").strip()
     new_pin = st.text_input("비밀번호(4자리 숫자)", type="password", key="new_pin").strip()
@@ -1012,7 +1015,9 @@ with st.sidebar:
     c1, c2 = st.columns(2)
     with c1:
         if st.button("계정 생성"):
-            if not new_name:
+            if not is_admin_pin(admin_manage_pin):
+                st.error("관리자 비밀번호가 틀립니다. (계정 생성 불가)")
+            elif not new_name:
                 st.error("이름을 입력해 주세요.")
             elif not pin_ok(new_pin):
                 st.error("비밀번호는 4자리 숫자여야 해요. (예: 0123)")
@@ -1036,7 +1041,9 @@ with st.sidebar:
         y, n = st.columns(2)
         with y:
             if st.button("예", key="delete_yes"):
-                if not new_name:
+                if not is_admin_pin(admin_manage_pin):
+                    st.error("관리자 비밀번호가 틀립니다. (삭제 불가)")
+                elif not new_name:
                     st.error("삭제할 이름(계정)을 입력해 주세요.")
                 elif not pin_ok(new_pin):
                     st.error("비밀번호는 4자리 숫자여야 해요.")
@@ -1056,35 +1063,141 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
-    st.subheader("📥 (관리자) 학생 명단 엑셀 업로드")
-    st.caption("엑셀에 name, pin 컬럼이 있으면 일괄 생성합니다.")
+
+    # =========================
+    # ✅ PIN 변경(버튼 작동하도록 추가)
+    # =========================
+    st.subheader("🔁 PIN 변경")
+    st.caption("이름 + 기존 PIN + 새 PIN으로 변경합니다.")
+    chg_name = st.text_input("이름", key="chg_name").strip()
+    chg_old = st.text_input("기존 PIN(4자리)", type="password", key="chg_old").strip()
+    chg_new = st.text_input("새 PIN(4자리)", type="password", key="chg_new").strip()
+
+    def api_change_pin(name: str, old_pin: str, new_pin: str):
+        doc = fs_auth_student(name, old_pin)
+        if not doc:
+            return {"ok": False, "error": "이름 또는 기존 PIN이 틀립니다."}
+        if not pin_ok(new_pin):
+            return {"ok": False, "error": "새 PIN은 4자리 숫자여야 합니다."}
+        db.collection("students").document(doc.id).update({"pin": str(new_pin)})
+        api_list_accounts_cached.clear()
+        return {"ok": True}
+
+    if st.button("PIN 변경 저장", use_container_width=True):
+        if not chg_name:
+            st.error("이름을 입력해 주세요.")
+        elif not pin_ok(chg_old):
+            st.error("기존 PIN은 4자리 숫자여야 해요.")
+        elif not pin_ok(chg_new):
+            st.error("새 PIN은 4자리 숫자여야 해요.")
+        else:
+            res = api_change_pin(chg_name, chg_old, chg_new)
+            if res.get("ok"):
+                toast("PIN 변경 완료!", icon="🔁")
+                st.session_state.pop("chg_name", None)
+                st.session_state.pop("chg_old", None)
+                st.session_state.pop("chg_new", None)
+                st.rerun()
+            else:
+                st.error(res.get("error", "PIN 변경 실패"))
+
+    st.divider()
+
+    # =========================
+    # ✅ 학생 명단 엑셀 샘플 다운로드 + 업로드(일괄 반영)
+    # =========================
+    st.subheader("📄 학생 명단 엑셀(샘플/일괄 업로드)")
+    st.caption("엑셀 탭(시트)에는 **번호 / 이름 / 비밀번호** 3개 컬럼이 들어가면 됩니다.")
+
+    # ✅ 샘플 다운로드
+    import io
+    sample_df = pd.DataFrame(
+        [
+            {"번호": 1, "이름": "홍길동", "비밀번호": "0123"},
+            {"번호": 2, "이름": "김철수", "비밀번호": "1234"},
+        ]
+    )
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        sample_df.to_excel(writer, index=False, sheet_name="학생명단")
+    st.download_button(
+        label="⬇️ 학생명단 엑셀 샘플 다운로드",
+        data=buf.getvalue(),
+        file_name="학생명단_샘플.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+
+    st.caption("업로드 후 ‘학생/계정’ 탭에 바로 반영됩니다(캐시 초기화 + rerun).")
+
     up = st.file_uploader("학생 명단 엑셀(xlsx)", type=["xlsx"], key="upload_students_xlsx")
-    if st.button("엑셀로 학생 일괄 생성(관리자)", use_container_width=True):
-        if not st.session_state.get("admin_ok", False):
-            st.error("관리자 로그인 후 사용하세요.")
+
+    def _normalize_pin(x) -> str:
+        s = str(x or "").strip()
+        # 엑셀에서 123.0 같은 형태로 들어오는 경우 대비
+        if s.endswith(".0"):
+            s = s[:-2]
+        # 숫자만 남기기
+        s2 = "".join([ch for ch in s if ch.isdigit()])
+        if not s2:
+            return ""
+        return s2.zfill(4)[:4]
+
+    if st.button("엑셀 업로드 → 학생 일괄 생성(관리자)", use_container_width=True):
+        if not is_admin_pin(admin_manage_pin):
+            st.error("관리자 비밀번호가 틀립니다. (일괄 생성 불가)")
         elif up is None:
             st.error("엑셀 파일을 올려주세요.")
         else:
             try:
                 df = pd.read_excel(up)
-                cols = [c.lower().strip() for c in df.columns.astype(str)]
-                df.columns = cols
-                if "name" not in df.columns or "pin" not in df.columns:
-                    st.error("엑셀에 name, pin 컬럼이 필요합니다.")
+
+                # ✅ 컬럼명 자동 매핑(번호/이름/비밀번호 or no/name/pin 등)
+                cols_raw = [str(c).strip() for c in df.columns]
+                cols_low = [c.lower().strip() for c in cols_raw]
+
+                # 가능한 이름 컬럼 후보
+                name_col = None
+                pin_col = None
+
+                for c, cl in zip(cols_raw, cols_low):
+                    if cl in ("이름", "name", "student", "학생명", "학생"):
+                        name_col = c
+                    if cl in ("비밀번호", "pin", "password", "pwd"):
+                        pin_col = c
+
+                # 혹시 기존 안내대로 name/pin인 경우도 처리
+                if name_col is None and "name" in cols_low:
+                    name_col = cols_raw[cols_low.index("name")]
+                if pin_col is None and "pin" in cols_low:
+                    pin_col = cols_raw[cols_low.index("pin")]
+
+                if name_col is None or pin_col is None:
+                    st.error("엑셀 컬럼이 필요합니다: (번호), 이름, 비밀번호  또는  name, pin")
                 else:
                     created = 0
+                    skipped = 0
+
                     for _, r in df.iterrows():
-                        nm = str(r.get("name", "") or "").strip()
-                        pn = str(r.get("pin", "") or "").strip()
-                        if nm and pn.isdigit() and len(pn) == 4:
-                            if not fs_get_student_doc_by_name(nm):
-                                api_create_account(nm, pn)
-                                created += 1
-                    toast(f"일괄 생성 완료! (+{created})", icon="📥")
+                        nm = str(r.get(name_col, "") or "").strip()
+                        pn = _normalize_pin(r.get(pin_col, ""))
+
+                        if not nm or not pin_ok(pn):
+                            skipped += 1
+                            continue
+
+                        if not fs_get_student_doc_by_name(nm):
+                            api_create_account(nm, pn)
+                            created += 1
+                        else:
+                            skipped += 1
+
+                    toast(f"일괄 생성 완료! (+{created}) / 건너뜀 {skipped}", icon="📥")
                     api_list_accounts_cached.clear()
                     st.rerun()
             except Exception as e:
                 st.error(f"업로드 실패: {e}")
+
 
 # =========================
 # Main: 로그인 (너 코드 방식 유지: form)
