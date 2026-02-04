@@ -1763,6 +1763,7 @@ if "👥 계정 정보/활성화" in tabs:
             show_df,
             use_container_width=True,
             hide_index=True,
+            height=desired_h,
             key="account_editor",
             column_config={
                 "선택": st.column_config.CheckboxColumn(),
@@ -1904,4 +1905,3 @@ if "🗓️ 일정" in tabs:
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         else:
             st.info("일정이 없습니다.")
-
