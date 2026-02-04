@@ -1104,7 +1104,7 @@ with st.sidebar:
     # ✅ 버튼 3개: 생성 / PIN변경 / 삭제
     c1, c2, c3 = st.columns(3)
 
-    with c1:
+        with c1:
         if st.button("계정 생성", key="btn_create", use_container_width=True):
             if not _admin_guard():
                 st.stop()
@@ -1113,15 +1113,43 @@ with st.sidebar:
             elif not pin_ok(manage_pin):
                 st.error("비밀번호는 4자리 숫자여야 해요. (예: 0123)")
             else:
-                res = api_create_account(manage_name, manage_pin)
-                if res.get("ok"):
-                    toast("계정 생성 완료!", icon="✅")
+                # ✅ 새 계정은 '마지막 번호 + 1'로 저장 (students.no 사용)
+                if fs_get_student_doc_by_name(manage_name):
+                    st.error("이미 존재하는 계정입니다.")
+                else:
+                    # 현재 활성 계정 중 최대 번호 찾기
+                    cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+                    max_no = 0
+                    for d in cur_docs:
+                        x = d.to_dict() or {}
+                        try:
+                            n0 = int(x.get("no", 0) or 0)
+                            if n0 > max_no:
+                                max_no = n0
+                        except Exception:
+                            pass
+                    new_no = int(max_no + 1)
+
+                    # 계정 생성(no 포함)
+                    db.collection("students").document().set(
+                        {
+                            "no": new_no,
+                            "name": manage_name,
+                            "pin": manage_pin,
+                            "balance": 0,
+                            "is_active": True,
+                            "role_id": "",
+                            "io_enabled": True,
+                            "invest_enabled": True,
+                            "created_at": firestore.SERVER_TIMESTAMP,
+                        }
+                    )
+
+                    toast(f"계정 생성 완료! (번호 {new_no})", icon="✅")
                     st.session_state.pop("manage_name", None)
                     st.session_state.pop("manage_pin", None)
                     api_list_accounts_cached.clear()
                     st.rerun()
-                else:
-                    st.error(res.get("error", "계정 생성 실패"))
 
     with c2:
         if st.button("PIN 변경", key="btn_pin_change", use_container_width=True):
@@ -1140,6 +1168,7 @@ with st.sidebar:
                     st.rerun()
                 else:
                     st.error(res.get("error", "PIN 변경 실패"))
+
 
     with c3:
         if st.button("삭제", key="btn_delete", use_container_width=True):
