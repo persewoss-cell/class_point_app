@@ -1262,17 +1262,18 @@ ALL_TABS = [
     "🛒 구입/벌금",
     "🗓️ 일정",
     "👥 계정 정보/활성화",
-
 ]
 
 def tab_visible(tab_name: str):
     if is_admin:
         return True
+
     # 학생은 기본 "내 통장" + 일정(읽기)
     if tab_name == "🏦 내 통장":
         return True
     if tab_name == "🗓️ 일정":
         return True
+
     # 권한별 탭 표시
     if tab_name == "🏛️ 국세청(국고)":
         return can(my_perms, "treasury_read") or can(my_perms, "treasury_write")
@@ -1282,16 +1283,22 @@ def tab_visible(tab_name: str):
         return can(my_perms, "credit_write")
     if tab_name == "🏦 은행(예금)":
         return can(my_perms, "bank_read") or can(my_perms, "bank_write")
+
     if tab_name == "📈 투자":
-        return True  # 투자 참여는 전원 가능(원하면 권한으로 제한 가능)
+        return True
     if tab_name == "🛒 구입/벌금":
         return True
-    if tab_name in ("👥 학생/계정", "💼 직업/월급"):
+
+    # 학생에게 숨김
+    if tab_name in ("💼 직업/월급", "👥 계정 정보/활성화"):
         return False
+
     return False
 
 tabs = [t for t in ALL_TABS if tab_visible(t)]
 tab_objs = st.tabs(tabs)
+tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
+
 
 # =========================
 # 1) 🏦 내 통장 (기존 사용자 화면 거의 그대로)
@@ -1346,141 +1353,141 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
         "ts": now,
     }
 
-# 탭 렌더
-idx = 0
 
-with tab_objs[idx]:
-    if is_admin:
-        st.info("관리자는 ‘내 통장’ 대신 아래 탭에서 학급 전체를 관리합니다.")
-    else:
-        refresh_account_data_light(login_name, login_pin, force=True)
-        slot = st.session_state.data.get(login_name, {})
-        if slot.get("error"):
-            st.error(slot["error"])
-            st.stop()
+# =========================
+# 🏦 내 통장 탭
+# =========================
+if "🏦 내 통장" in tabs:
+    with tab_map["🏦 내 통장"]:
+        if is_admin:
+            st.info("관리자는 ‘내 통장’ 대신 아래 탭에서 학급 전체를 관리합니다.")
+        else:
+            refresh_account_data_light(login_name, login_pin, force=True)
+            slot = st.session_state.data.get(login_name, {})
+            if slot.get("error"):
+                st.error(slot["error"])
+                st.stop()
 
-        df_tx = slot["df_tx"]
-        balance = int(slot["balance"])
-        student_id = slot.get("student_id")
+            df_tx = slot["df_tx"]
+            balance = int(slot["balance"])
+            student_id = slot.get("student_id")
 
-        st.markdown(f"## 🧾 {login_name} 통장")
-        st.markdown(f"#### 통장 잔액: **{balance} 포인트**")
+            st.markdown(f"## 🧾 {login_name} 통장")
+            st.markdown(f"#### 통장 잔액: **{balance} 포인트**")
 
-        sub1, sub2 = st.tabs(["📝 거래", "📒 내역"])
+            sub1, sub2 = st.tabs(["📝 거래", "📒 내역"])
 
-        with sub1:
-            st.subheader("📝 거래 기록(통장에 찍기)")
+            with sub1:
+                st.subheader("📝 거래 기록(통장에 찍기)")
 
-            memo_u, dep_u, wd_u = render_admin_trade_ui(
-                prefix=f"user_trade_{login_name}",
-                templates_list=TEMPLATES,
-                template_by_display=TEMPLATE_BY_DISPLAY,
-            )
+                memo_u, dep_u, wd_u = render_admin_trade_ui(
+                    prefix=f"user_trade_{login_name}",
+                    templates_list=TEMPLATES,
+                    template_by_display=TEMPLATE_BY_DISPLAY,
+                )
 
-            col_btn1, col_btn2 = st.columns([1, 1])
+                col_btn1, col_btn2 = st.columns([1, 1])
 
-            with col_btn1:
-                if st.button("저장", key=f"save_{login_name}", use_container_width=True):
-                    memo = str(memo_u or "").strip()
-                    deposit = int(dep_u or 0)
-                    withdraw = int(wd_u or 0)
+                with col_btn1:
+                    if st.button("저장", key=f"save_{login_name}", use_container_width=True):
+                        memo = str(memo_u or "").strip()
+                        deposit = int(dep_u or 0)
+                        withdraw = int(wd_u or 0)
 
-                    if not memo:
-                        st.error("내역을 입력해 주세요.")
-                    elif (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
-                        st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
-                    else:
-                        res = api_add_tx(login_name, login_pin, memo, deposit, withdraw)
-                        if res.get("ok"):
-                            toast("저장 완료!", icon="✅")
-
-                            new_bal = int(res.get("balance", balance) or balance)
-                            st.session_state.data.setdefault(login_name, {})
-                            st.session_state.data[login_name]["balance"] = new_bal
-
-                            if student_id:
-                                tx_res = api_get_txs_by_student_id(student_id, limit=120)
-                                if tx_res.get("ok"):
-                                    df_new = pd.DataFrame(tx_res.get("rows", []))
-                                    if not df_new.empty:
-                                        df_new = df_new.sort_values("created_at_utc", ascending=False)
-                                    st.session_state.data[login_name]["df_tx"] = df_new
-
-                            pfx = f"user_trade_{login_name}"
-                            st.session_state[f"{pfx}_reset_request"] = True
-                            st.rerun()
+                        if not memo:
+                            st.error("내역을 입력해 주세요.")
+                        elif (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
+                            st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
                         else:
-                            st.error(res.get("error", "저장 실패"))
+                            res = api_add_tx(login_name, login_pin, memo, deposit, withdraw)
+                            if res.get("ok"):
+                                toast("저장 완료!", icon="✅")
 
-            with col_btn2:
-                if st.button("되돌리기(관리자)", key=f"undo_btn_{login_name}", use_container_width=True):
-                    st.session_state.undo_mode = not st.session_state.undo_mode
+                                new_bal = int(res.get("balance", balance) or balance)
+                                st.session_state.data.setdefault(login_name, {})
+                                st.session_state.data[login_name]["balance"] = new_bal
 
-            if st.session_state.undo_mode:
-                st.divider()
-                st.subheader("↩️ 선택 되돌리기(관리자 전용)")
-                admin_pin2 = st.text_input("관리자 PIN 입력", type="password", key=f"undo_admin_pin_{login_name}").strip()
+                                if student_id:
+                                    tx_res = api_get_txs_by_student_id(student_id, limit=120)
+                                    if tx_res.get("ok"):
+                                        df_new = pd.DataFrame(tx_res.get("rows", []))
+                                        if not df_new.empty:
+                                            df_new = df_new.sort_values("created_at_utc", ascending=False)
+                                        st.session_state.data[login_name]["df_tx"] = df_new
 
-                if df_tx is None or df_tx.empty:
-                    st.info("거래 내역이 없어요.")
-                else:
-                    view_df = df_tx.head(50).copy()
-
-                    def _can_rollback_row(row):
-                        if str(row.get("type", "")) == "rollback":
-                            return False
-                        if _is_savings_memo(row.get("memo", "")) or str(row.get("type", "")) in ("maturity",):
-                            return False
-                        return True
-
-                    view_df["가능"] = view_df.apply(_can_rollback_row, axis=1)
-                    st.caption("✅ 체크한 항목만 되돌립니다. (이미 되돌림/적금은 제외)")
-
-                    selected_ids = []
-                    for _, r in view_df.iterrows():
-                        tx_id = r["tx_id"]
-                        label = f"{r['created_at_kr']} | {r['memo']} | +{int(r['deposit'])} / -{int(r['withdraw'])}"
-                        ck = st.checkbox(label, key=f"rb_ck_{login_name}_{tx_id}", disabled=(not bool(r["가능"])))
-                        if ck and bool(r["가능"]):
-                            selected_ids.append(tx_id)
-
-                    if st.button("선택 항목 되돌리기", key=f"do_rb_{login_name}", use_container_width=True):
-                        if not is_admin_pin(admin_pin2):
-                            st.error("관리자 PIN이 틀립니다.")
-                        elif not selected_ids:
-                            st.warning("체크된 항목이 없어요.")
-                        else:
-                            res2 = api_admin_rollback_selected(admin_pin2, student_id, selected_ids)
-                            if res2.get("ok"):
-                                toast(f"선택 {res2.get('undone')}건 되돌림 완료", icon="↩️")
-                                tx_res2 = api_get_txs_by_student_id(student_id, limit=120)
-                                if tx_res2.get("ok"):
-                                    df_new2 = pd.DataFrame(tx_res2.get("rows", []))
-                                    if not df_new2.empty:
-                                        df_new2 = df_new2.sort_values("created_at_utc", ascending=False)
-                                    st.session_state.data[login_name]["df_tx"] = df_new2
-
-                                bal_res2 = api_get_balance(login_name, login_pin)
-                                if bal_res2.get("ok"):
-                                    st.session_state.data[login_name]["balance"] = int(bal_res2.get("balance", 0) or 0)
-
-                                st.session_state.undo_mode = False
+                                pfx = f"user_trade_{login_name}"
+                                st.session_state[f"{pfx}_reset_request"] = True
                                 st.rerun()
                             else:
-                                st.error(res2.get("error", "되돌리기 실패"))
+                                st.error(res.get("error", "저장 실패"))
 
-        with sub2:
-            st.subheader("📒 통장 내역(최신순)")
-            render_tx_table(df_tx)
+                with col_btn2:
+                    if st.button("되돌리기(관리자)", key=f"undo_btn_{login_name}", use_container_width=True):
+                        st.session_state.undo_mode = not st.session_state.undo_mode
 
-# 다음 탭 인덱스
-idx += 1
+                if st.session_state.undo_mode:
+                    st.divider()
+                    st.subheader("↩️ 선택 되돌리기(관리자 전용)")
+                    admin_pin2 = st.text_input("관리자 PIN 입력", type="password", key=f"undo_admin_pin_{login_name}").strip()
+
+                    if df_tx is None or df_tx.empty:
+                        st.info("거래 내역이 없어요.")
+                    else:
+                        view_df = df_tx.head(50).copy()
+
+                        def _can_rollback_row(row):
+                            if str(row.get("type", "")) == "rollback":
+                                return False
+                            if _is_savings_memo(row.get("memo", "")) or str(row.get("type", "")) in ("maturity",):
+                                return False
+                            return True
+
+                        view_df["가능"] = view_df.apply(_can_rollback_row, axis=1)
+                        st.caption("✅ 체크한 항목만 되돌립니다. (이미 되돌림/적금은 제외)")
+
+                        selected_ids = []
+                        for _, r in view_df.iterrows():
+                            tx_id = r["tx_id"]
+                            label = f"{r['created_at_kr']} | {r['memo']} | +{int(r['deposit'])} / -{int(r['withdraw'])}"
+                            ck = st.checkbox(label, key=f"rb_ck_{login_name}_{tx_id}", disabled=(not bool(r["가능"])))
+                            if ck and bool(r["가능"]):
+                                selected_ids.append(tx_id)
+
+                        if st.button("선택 항목 되돌리기", key=f"do_rb_{login_name}", use_container_width=True):
+                            if not is_admin_pin(admin_pin2):
+                                st.error("관리자 PIN이 틀립니다.")
+                            elif not selected_ids:
+                                st.warning("체크된 항목이 없어요.")
+                            else:
+                                res2 = api_admin_rollback_selected(admin_pin2, student_id, selected_ids)
+                                if res2.get("ok"):
+                                    toast(f"선택 {res2.get('undone')}건 되돌림 완료", icon="↩️")
+                                    tx_res2 = api_get_txs_by_student_id(student_id, limit=120)
+                                    if tx_res2.get("ok"):
+                                        df_new2 = pd.DataFrame(tx_res2.get("rows", []))
+                                        if not df_new2.empty:
+                                            df_new2 = df_new2.sort_values("created_at_utc", ascending=False)
+                                        st.session_state.data[login_name]["df_tx"] = df_new2
+
+                                    bal_res2 = api_get_balance(login_name, login_pin)
+                                    if bal_res2.get("ok"):
+                                        st.session_state.data[login_name]["balance"] = int(bal_res2.get("balance", 0) or 0)
+
+                                    st.session_state.undo_mode = False
+                                    st.rerun()
+                                else:
+                                    st.error(res2.get("error", "되돌리기 실패"))
+
+            with sub2:
+                st.subheader("📒 통장 내역(최신순)")
+                render_tx_table(df_tx)
+
 
 # =========================
-# 계정 정보/활성화 (관리자 전용)
+# 👥 계정 정보/활성화 (관리자 전용)
 # =========================
 if "👥 계정 정보/활성화" in tabs:
-    with tab_objs[idx]:
+    with tab_map["👥 계정 정보/활성화"]:
         st.subheader("📋 계정정보 / 활성화 관리")
 
         docs = db.collection("students").where(
@@ -1518,7 +1525,7 @@ if "👥 계정 정보/활성화" in tabs:
 
         # ✅ 계정 삭제
         with c1:
-            if st.button("🗑️ 계정 삭제", use_container_width=True):
+            if st.button("🗑️ 계정 삭제", use_container_width=True, key="acc_del_btn"):
                 selected = edited[edited["선택"] == True]
                 if selected.empty:
                     st.warning("삭제할 계정을 체크하세요.")
@@ -1529,61 +1536,80 @@ if "👥 계정 정보/활성화" in tabs:
             st.warning("정말 삭제하시겠습니까?")
             y, n = st.columns(2)
             with y:
-                if st.button("예"):
+                if st.button("예", key="acc_del_yes"):
                     for sid in st.session_state._delete_targets:
                         db.collection("students").document(sid).update({"is_active": False})
                     st.session_state.pop("_delete_targets")
                     toast("삭제 완료", icon="🗑️")
                     st.rerun()
             with n:
-                if st.button("아니오"):
+                if st.button("아니오", key="acc_del_no"):
                     st.session_state.pop("_delete_targets")
                     st.rerun()
 
         # ✅ 계정 추가
         with c2:
-            if st.button("➕ 계정 추가", use_container_width=True):
-                edited.loc[len(edited)] = [False, len(edited)+1, "", "", "", True, True]
-                st.session_state.account_editor = edited
+            if st.button("➕ 계정 추가", use_container_width=True, key="acc_add_btn"):
+                new_row = {
+                    "선택": False,
+                    "번호": int(len(edited) + 1),
+                    "student_id": "",
+                    "이름": "",
+                    "비밀번호": "",
+                    "입출금활성화": True,
+                    "투자활성화": True,
+                }
+                edited = pd.concat([edited, pd.DataFrame([new_row])], ignore_index=True)
+                st.session_state["account_editor"] = edited
 
         # ✅ 저장
         with c3:
-            if st.button("💾 저장", use_container_width=True):
+            if st.button("💾 저장", use_container_width=True, key="acc_save_btn"):
                 for _, r in edited.iterrows():
-                    name = str(r["이름"]).strip()
-                    pin = str(r["비밀번호"]).strip()
-                    sid = r["student_id"]
+                    name = str(r.get("이름", "") or "").strip()
+                    pin = str(r.get("비밀번호", "") or "").strip()
+                    sid = str(r.get("student_id", "") or "").strip()
 
-                    if name and pin:
-                        if sid:
-                            db.collection("students").document(sid).update({
-                                "name": name,
-                                "pin": pin,
-                            })
-                        else:
-                            db.collection("students").document().set({
-                                "name": name,
-                                "pin": pin,
-                                "balance": 0,
-                                "is_active": True,
-                            })
+                    if not name:
+                        continue
 
+                    # pin이 비어 있으면(새행 실수) 저장 안함
+                    if pin and not (pin.isdigit() and len(pin) == 4):
+                        st.error(f"{name} 비밀번호가 4자리 숫자가 아닙니다.")
+                        st.stop()
+
+                    if sid:
+                        upd = {"name": name}
+                        if pin:
+                            upd["pin"] = pin
+                        db.collection("students").document(sid).update(upd)
+                    else:
+                        # 새 계정 생성
+                        if not pin:
+                            continue
+                        db.collection("students").document().set({
+                            "name": name,
+                            "pin": pin,
+                            "balance": 0,
+                            "is_active": True,
+                            "created_at": firestore.SERVER_TIMESTAMP,
+                        })
+
+                api_list_accounts_cached.clear()
                 toast("저장 완료!", icon="💾")
                 st.rerun()
-
-    idx += 1
 
 
 # =========================
 # 3) 💼 직업/월급 (관리자 중심, 학생은 읽기만)
 # =========================
 if "💼 직업/월급" in tabs:
-    with tab_objs[idx]:
+    with tab_map["💼 직업/월급"]:
         st.subheader("💼 직업/월급 시스템")
 
         roles = api_list_roles_cached().get("roles", [])
         if not roles:
-            st.warning("roles(직업)이 아직 없습니다. 먼저 ‘학생/계정’ 탭에서 직업/월급 xlsx를 업로드하세요.")
+            st.warning("roles(직업)이 아직 없습니다. 먼저 직업/월급 xlsx를 업로드하세요.")
         else:
             df_roles = pd.DataFrame(roles)[["role_id","role_name","salary_gross","tax_rate","desk_rent","electric_fee","health_fee","permissions"]]
             st.dataframe(df_roles, use_container_width=True, hide_index=True)
@@ -1620,14 +1646,12 @@ if "💼 직업/월급" in tabs:
 
                     memo = f"월급({rid}) {pay_date.isoformat()}"
 
-                    # 지급은 +net (단, 0 이하도 가능하게 하고 싶으면 관리자 tx로 처리)
                     if net != 0:
                         if net > 0:
                             api_admin_add_tx_by_student_id(ADMIN_PIN, sid, memo, net, 0)
                         else:
                             api_admin_add_tx_by_student_id(ADMIN_PIN, sid, memo, 0, abs(net))
 
-                    # 국세청(국고)에도 세금 수입 반영
                     if tax > 0:
                         add_treasury_income(ADMIN_PIN, pay_date, f"{a['name']} 세금(월급)", tax)
 
@@ -1636,463 +1660,7 @@ if "💼 직업/월급" in tabs:
                 api_list_accounts_cached.clear()
                 toast(f"월급 처리 완료 ({done}명)", icon="💸")
                 st.rerun()
-    idx += 1
 
-# =========================
-# 국세청(국고): ledger helper
-# =========================
-def get_latest_treasury_balance() -> int:
-    q = db.collection("treasury_ledger").order_by("created_at", direction=firestore.Query.DESCENDING).limit(1).stream()
-    docs = list(q)
-    if not docs:
-        return 0
-    return int((docs[0].to_dict() or {}).get("balance_after", 0) or 0)
-
-def add_treasury_income(admin_pin: str, d: date, memo: str, income: int):
-    if not is_admin_pin(admin_pin):
-        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
-    income = int(income or 0)
-    if income <= 0:
-        return {"ok": False, "error": "수입은 1 이상"}
-    bal = get_latest_treasury_balance()
-    new_bal = bal + income
-    db.collection("treasury_ledger").document().set(
-        {
-            "date": str(d.isoformat()),
-            "memo": str(memo or ""),
-            "income": income,
-            "expense": 0,
-            "balance_after": new_bal,
-            "created_by": "admin",
-            "created_at": firestore.SERVER_TIMESTAMP,
-        }
-    )
-    return {"ok": True, "balance": new_bal}
-
-def add_treasury_expense(admin_pin: str, d: date, memo: str, expense: int):
-    if not is_admin_pin(admin_pin):
-        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
-    expense = int(expense or 0)
-    if expense <= 0:
-        return {"ok": False, "error": "지출은 1 이상"}
-    bal = get_latest_treasury_balance()
-    new_bal = bal - expense
-    db.collection("treasury_ledger").document().set(
-        {
-            "date": str(d.isoformat()),
-            "memo": str(memo or ""),
-            "income": 0,
-            "expense": expense,
-            "balance_after": new_bal,
-            "created_by": "admin",
-            "created_at": firestore.SERVER_TIMESTAMP,
-        }
-    )
-    return {"ok": True, "balance": new_bal}
-
-def list_treasury(limit=200):
-    q = db.collection("treasury_ledger").order_by("created_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
-    rows = []
-    for d in q:
-        x = d.to_dict() or {}
-        rows.append(
-            {
-                "date": x.get("date",""),
-                "memo": x.get("memo",""),
-                "income": int(x.get("income",0) or 0),
-                "expense": int(x.get("expense",0) or 0),
-                "balance_after": int(x.get("balance_after",0) or 0),
-            }
-        )
-    return rows
-
-# =========================
-# 4) 🏛️ 국세청(국고)
-# =========================
-if "🏛️ 국세청(국고)" in tabs:
-    with tab_objs[idx]:
-        st.subheader("🏛️ 국세청(국고 장부)")
-        bal = get_latest_treasury_balance()
-        st.metric("현재 국고 잔액", f"{bal}")
-
-        writable = can(my_perms, "treasury_write") or is_admin
-
-        c1, c2 = st.columns(2)
-        with c1:
-            d = st.date_input("날짜", value=date.today(), key="treasury_date")
-            memo = st.text_input("내용", key="treasury_memo")
-        with c2:
-            t = st.radio("구분", ["수입", "지출"], horizontal=True, key="treasury_type")
-            amt = st.number_input("금액", min_value=1, step=1, key="treasury_amt")
-
-        if st.button("국고 기록 저장", use_container_width=True, disabled=(not writable)):
-            if not memo.strip():
-                st.error("내용을 입력하세요.")
-            else:
-                if t == "수입":
-                    res = add_treasury_income(ADMIN_PIN if is_admin else ADMIN_PIN, d, memo, int(amt))
-                else:
-                    res = add_treasury_expense(ADMIN_PIN if is_admin else ADMIN_PIN, d, memo, int(amt))
-                if res.get("ok"):
-                    toast("국고 기록 저장 완료", icon="🏛️")
-                    st.rerun()
-                else:
-                    st.error(res.get("error","실패"))
-
-        st.divider()
-        df = pd.DataFrame(list_treasury(200))
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    idx += 1
-
-# =========================
-# 5) 📊 통계청
-# =========================
-def upsert_stats_sheet(d: date, title: str, marks: dict, created_by: str):
-    db.collection("stats_submissions").document(f"{d.isoformat()}__{title}").set(
-        {
-            "date": d.isoformat(),
-            "title": title,
-            "marks": marks,
-            "created_by": created_by,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        },
-        merge=True,
-    )
-    return {"ok": True}
-
-def list_stats(limit=50):
-    q = db.collection("stats_submissions").order_by("updated_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
-    rows = []
-    for d in q:
-        x = d.to_dict() or {}
-        rows.append(x)
-    return rows
-
-if "📊 통계청" in tabs:
-    with tab_objs[idx]:
-        st.subheader("📊 통계청(제출 통계)")
-        writable = can(my_perms, "stats_write") or is_admin
-        accounts = api_list_accounts_cached().get("accounts", [])
-
-        d = st.date_input("제출 날짜", value=date.today(), key="stats_date")
-        title = st.text_input("제출물 이름(가정통신문/배움공책 등)", key="stats_title").strip()
-
-        st.caption("O / X / (빈칸=사유결석 등)")
-        marks = {}
-        for a in accounts:
-            cols = st.columns([2, 2])
-            cols[0].write(a["name"])
-            pick = cols[1].selectbox(
-                "제출",
-                ["", "O", "X"],
-                key=f"stats_{d.isoformat()}_{title}_{a['student_id']}",
-                label_visibility="collapsed",
-            )
-            marks[a["student_id"]] = pick
-
-        if st.button("통계 저장", use_container_width=True, disabled=(not writable)):
-            if not title:
-                st.error("제출물 이름을 입력하세요.")
-            else:
-                upsert_stats_sheet(d, title, marks, created_by=("admin" if is_admin else login_name))
-                toast("통계 저장 완료", icon="📊")
-                st.rerun()
-
-        st.divider()
-        st.subheader("최근 통계")
-        rows = list_stats(20)
-        if rows:
-            st.write(pd.DataFrame([{"date":r["date"],"title":r["title"],"updated_at":str(r.get("updated_at",""))} for r in rows]))
-        else:
-            st.info("저장된 통계가 없습니다.")
-    idx += 1
-
-# =========================
-# 6) 💳 신용등급 (통계청 marks 기반 +1/-3)
-# =========================
-def calc_credit_from_marks(marks_list: list[dict], student_ids: list[str]):
-    score = {sid: 0 for sid in student_ids}
-    for sheet in marks_list:
-        marks = sheet.get("marks", {}) or {}
-        for sid in student_ids:
-            v = str(marks.get(sid, "") or "")
-            if v == "O":
-                score[sid] += 1
-            elif v == "X":
-                score[sid] -= 3
-    # clamp 0~100
-    for sid in score:
-        score[sid] = max(0, min(100, int(score[sid])))
-    return score
-
-def grade_from_score(s: int) -> int:
-    # pdf 하단 기준(대략): 90이상=1등급 ... 0~19=10등급
-    s = int(s or 0)
-    if s >= 90: return 1
-    if s >= 80: return 2
-    if s >= 70: return 3
-    if s >= 60: return 4
-    if s >= 50: return 5
-    if s >= 40: return 6
-    if s >= 30: return 7
-    if s >= 20: return 8
-    if s >= 10: return 9
-    return 10
-
-def save_credit_week(week_date: date, scores: dict, grades: dict, created_by: str):
-    db.collection("credit_weekly").document(str(week_date.isoformat())).set(
-        {
-            "week_date": week_date.isoformat(),
-            "scores": scores,
-            "grades": grades,
-            "created_by": created_by,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        },
-        merge=True,
-    )
-    return {"ok": True}
-
-def get_latest_credit_grades():
-    q = db.collection("credit_weekly").order_by("updated_at", direction=firestore.Query.DESCENDING).limit(1).stream()
-    docs = list(q)
-    if not docs:
-        return {}
-    return (docs[0].to_dict() or {}).get("grades", {}) or {}
-
-if "💳 신용등급" in tabs:
-    with tab_objs[idx]:
-        st.subheader("💳 신용등급")
-        writable = can(my_perms, "credit_write") or is_admin
-        accounts = api_list_accounts_cached().get("accounts", [])
-        student_ids = [a["student_id"] for a in accounts]
-
-        week_date = st.date_input("기록 날짜(월요일 권장)", value=date.today(), key="credit_week_date")
-
-        st.caption("최근 통계청 기록을 가져와 점수(+1/-3)를 자동 계산합니다.")
-        recent_stats = list_stats(10)
-        scores = calc_credit_from_marks(recent_stats, student_ids)
-        grades = {sid: grade_from_score(scores[sid]) for sid in student_ids}
-
-        df = pd.DataFrame(
-            [
-                {"이름": a["name"], "점수": scores[a["student_id"]], "등급": grades[a["student_id"]]}
-                for a in accounts
-            ]
-        )
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-        if st.button("이번 주 신용등급 저장", use_container_width=True, disabled=(not writable)):
-            save_credit_week(week_date, scores, grades, created_by=("admin" if is_admin else login_name))
-            toast("신용등급 저장 완료", icon="💳")
-            st.rerun()
-    idx += 1
-
-# =========================
-# 7) 🏦 은행(예금) - 금리표 + 예금장부(별도)
-# =========================
-def create_bank_deposit(student_id: str, principal: int, weeks: int, credit_grade: int):
-    principal = int(principal or 0)
-    weeks = int(weeks or 0)
-    if principal <= 0 or principal % 100 != 0:
-        return {"ok": False, "error": "예금은 100 단위만 가능합니다."}
-    if weeks not in (2,4,6,8,10):
-        return {"ok": False, "error": "기간은 2/4/6/8/10주만 가능합니다."}
-
-    rate = get_bank_rate(weeks, credit_grade)  # %
-    if rate <= 0:
-        return {"ok": False, "error": "금리표가 없습니다. 관리자 탭에서 금리표를 업로드하세요."}
-
-    # (중요) 예금은 "내 통장"에서 돈이 빠져나가야 함 => 기존 입출금 시스템 사용(그대로)
-    # 학생 출금은 잔액 부족이면 막히므로, 예금 가입은 학생이 스스로 할 때만 가능
-    # 여기서는 관리자/은행원이 대신 처리하려면 api_admin_add_tx_by_student_id를 쓰면 됨
-    # → 정책은 원하면 바꿀 수 있지만, 여기선 “학생 본인 가입”을 기본으로 둠.
-    return {"ok": True, "rate": rate}
-
-def upsert_bank_deposit_record(student_id: str, weeks: int, principal: int, rate: int, start: date):
-    start_dt = datetime.now(timezone.utc)
-    due_dt = (datetime.now(timezone.utc) + timedelta(days=weeks*7))
-    interest = int(round(principal * (rate/100)))
-    payout = principal + interest
-
-    ref = db.collection("bank_deposits").document()
-    ref.set(
-        {
-            "student_id": student_id,
-            "weeks": weeks,
-            "principal": principal,
-            "rate": rate,
-            "start_at": start_dt,
-            "due_at": due_dt,
-            "interest": interest,
-            "payout": payout,
-            "status": "active",
-            "created_at": firestore.SERVER_TIMESTAMP,
-        }
-    )
-    return {"ok": True, "deposit_id": ref.id, "payout": payout, "interest": interest, "due_at": due_dt}
-
-def list_bank_deposits(student_id: str, limit=50):
-    q = (
-        db.collection("bank_deposits")
-        .where(filter=FieldFilter("student_id", "==", student_id))
-        .order_by("created_at", direction=firestore.Query.DESCENDING)
-        .limit(int(limit))
-        .stream()
-    )
-    out = []
-    for d in q:
-        x = d.to_dict() or {}
-        out.append(
-            {
-                "id": d.id,
-                "weeks": int(x.get("weeks",0) or 0),
-                "principal": int(x.get("principal",0) or 0),
-                "rate": int(x.get("rate",0) or 0),
-                "interest": int(x.get("interest",0) or 0),
-                "payout": int(x.get("payout",0) or 0),
-                "status": x.get("status",""),
-                "due_at": _to_utc_datetime(x.get("due_at")),
-            }
-        )
-    return out
-
-def bank_close_as_mature(student_id: str, dep_id: str, name: str, pin: str):
-    # 만기: payout 입금 + 장부 status 변경
-    snap = db.collection("bank_deposits").document(dep_id).get()
-    if not snap.exists:
-        return {"ok": False, "error": "예금 기록이 없습니다."}
-    d = snap.to_dict() or {}
-    if d.get("student_id") != student_id:
-        return {"ok": False, "error": "권한이 없습니다."}
-    if d.get("status") != "active":
-        return {"ok": False, "error": "이미 처리된 예금입니다."}
-
-    payout = int(d.get("payout",0) or 0)
-
-    # 기존 입금/출금 시스템 그대로 사용: payout 입금
-    res = api_add_tx(name, pin, f"은행 예금 만기({d.get('weeks')}주)", payout, 0)
-    if not res.get("ok"):
-        return res
-
-    db.collection("bank_deposits").document(dep_id).update({"status":"matured", "closed_at": firestore.SERVER_TIMESTAMP})
-    return {"ok": True}
-
-if "🏦 은행(예금)" in tabs:
-    with tab_objs[idx]:
-        st.subheader("🏦 은행(예금)")
-        st.caption("예금은 100 단위, 기간은 2/4/6/8/10주(금리표 필요). 신용등급에 따라 금리 적용.")
-
-        accounts = api_list_accounts_cached().get("accounts", [])
-        latest_grades = get_latest_credit_grades()
-
-        # 은행원/관리자는 다른 학생 처리 가능, 그 외는 본인만
-        if is_admin or can(my_perms, "bank_write"):
-            pick_name = st.selectbox("대상 학생", [a["name"] for a in accounts], key="bank_pick_student")
-        else:
-            pick_name = login_name
-
-        target_doc = fs_get_student_doc_by_name(pick_name)
-        if not target_doc:
-            st.error("대상 학생을 찾지 못했습니다.")
-        else:
-            sid = target_doc.id
-            target_pin_needed = (pick_name == login_name and not is_admin)
-
-            grade = int(latest_grades.get(sid, 10) or 10)
-            st.write(f"현재 신용등급(최근 기록 기준): **{grade}등급**")
-
-            principal = st.number_input("예금 금액(100단위)", min_value=100, step=100, value=200, key="bank_principal")
-            weeks = st.selectbox("기간(주)", [2,4,6,8,10], key="bank_weeks")
-
-            rate = get_bank_rate(int(weeks), int(grade))
-            st.info(f"적용 금리(%) : **{rate}%**  → 이자 = 금리×예금금액/100")
-
-            if st.button("예금 가입", use_container_width=True):
-                # 1) 내 통장에서 출금 (학생 본인일 때는 api_add_tx 사용)
-                if pick_name == login_name and not is_admin:
-                    # 학생 본인 PIN으로 출금
-                    out = api_add_tx(login_name, login_pin, f"은행 예금 가입({weeks}주)", 0, int(principal))
-                    if not out.get("ok"):
-                        st.error(out.get("error","가입 실패"))
-                    else:
-                        up = upsert_bank_deposit_record(sid, int(weeks), int(principal), int(rate), date.today())
-                        toast("예금 가입 완료!", icon="🏦")
-                        st.rerun()
-                else:
-                    # 은행원/관리자가 대신 처리: 관리자 tx로 출금(벌금처럼 음수 허용이 아니라 출금)
-                    out = api_admin_add_tx_by_student_id(ADMIN_PIN, sid, f"은행 예금 가입({weeks}주)", 0, int(principal))
-                    if not out.get("ok"):
-                        st.error(out.get("error","가입 실패"))
-                    else:
-                        up = upsert_bank_deposit_record(sid, int(weeks), int(principal), int(rate), date.today())
-                        toast("예금 가입(대리) 완료!", icon="🏦")
-                        st.rerun()
-
-            st.divider()
-            st.subheader("예금 장부")
-            deposits = list_bank_deposits(sid)
-            if deposits:
-                df = pd.DataFrame(
-                    [
-                        {
-                            "상태": x["status"],
-                            "원금": x["principal"],
-                            "기간(주)": x["weeks"],
-                            "금리%": x["rate"],
-                            "이자": x["interest"],
-                            "만기수령": x["payout"],
-                            "만기일": format_kr_datetime(x["due_at"].astimezone(KST)) if x["due_at"] else "",
-                            "id": x["id"],
-                        }
-                        for x in deposits
-                    ]
-                )
-                st.dataframe(df.drop(columns=["id"]), use_container_width=True, hide_index=True)
-
-                # 만기 처리(본인 또는 은행권한자)
-                active_ids = [x["id"] for x in deposits if x["status"] == "active"]
-                if active_ids:
-                    sel = st.selectbox("만기/해지 처리할 예금", active_ids, key="bank_close_pick")
-                    if st.button("만기 처리(수령)", use_container_width=True):
-                        if pick_name == login_name and not is_admin:
-                            res = bank_close_as_mature(sid, sel, login_name, login_pin)
-                        else:
-                            # 대리 만기 지급: 관리자 tx로 지급
-                            snap = db.collection("bank_deposits").document(sel).get()
-                            d0 = snap.to_dict() or {}
-                            payout = int(d0.get("payout",0) or 0)
-                            api_admin_add_tx_by_student_id(ADMIN_PIN, sid, f"은행 예금 만기({d0.get('weeks')}주)", payout, 0)
-                            db.collection("bank_deposits").document(sel).update({"status":"matured", "closed_at": firestore.SERVER_TIMESTAMP})
-                            res = {"ok": True}
-
-                        if res.get("ok"):
-                            toast("만기 처리 완료", icon="✅")
-                            st.rerun()
-                        else:
-                            st.error(res.get("error","실패"))
-            else:
-                st.info("예금 기록이 없습니다.")
-    idx += 1
-
-# =========================
-# 8) 📈 투자(뼈대)
-# =========================
-if "📈 투자" in tabs:
-    with tab_objs[idx]:
-        st.subheader("📈 투자")
-        st.caption("투자 장부/주가 그래프(ppt)는 ‘참고자료’. 여기서는 거래 기록(구매/환수) 저장 뼈대만 제공합니다.")
-        st.info("다음 단계에서: ‘국어/수학/사회’ 주가(%)를 교사가 입력 → 학생 포지션의 손익 자동 계산으로 확장하면 됩니다.")
-    idx += 1
-
-# =========================
-# 9) 🛒 구입/벌금(뼈대)
-# =========================
-if "🛒 구입/벌금" in tabs:
-    with tab_objs[idx]:
-        st.subheader("🛒 구입/벌금")
-        st.caption("구입표/벌금표를 Firestore에 규칙으로 저장해두고, 버튼으로 자동 적용하는 구조가 좋습니다.")
-        st.info("다음 단계에서: store_items / fine_rules 업로드 + 적용 버튼(= 관리자 지급/출금) 연결하면 완성됩니다.")
-    idx += 1
 
 # =========================
 # 10) 🗓️ 일정 (권한별 수정)
@@ -2121,7 +1689,6 @@ def list_schedule(limit=200):
 def can_edit_schedule(area: str, perms: set) -> bool:
     if "admin_all" in perms:
         return True
-    # area 별 권한 키 규칙
     if area == "bank":
         return "schedule_bank_write" in perms
     if area == "treasury":
@@ -2131,7 +1698,7 @@ def can_edit_schedule(area: str, perms: set) -> bool:
     return False
 
 if "🗓️ 일정" in tabs:
-    with tab_objs[idx]:
+    with tab_map["🗓️ 일정"]:
         st.subheader("🗓️ 일정")
         st.caption("예: 은행 담당자는 bank 일정만 수정 가능 / 국세청 담당자는 treasury 일정만 수정 가능")
 
@@ -2155,3 +1722,4 @@ if "🗓️ 일정" in tabs:
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         else:
             st.info("일정이 없습니다.")
+
