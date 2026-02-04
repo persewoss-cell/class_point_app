@@ -1180,47 +1180,6 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
-    st.subheader("📥 (관리자) 학생 명단 엑셀 업로드")
-    st.caption("엑셀에 name, pin 컬럼이 있으면 일괄 생성합니다.")
-    up = st.file_uploader("학생 명단 엑셀(xlsx)", type=["xlsx"], key="upload_students_xlsx")
-
-    if st.button("엑셀로 학생 일괄 생성(관리자)", use_container_width=True):
-        # ✅ 여기서도 관리자 비밀번호로 잠금
-        if not _admin_guard():
-            st.stop()
-        if up is None:
-            st.error("엑셀 파일을 올려주세요.")
-        else:
-            try:
-                df = pd.read_excel(up)
-                cols = [c.lower().strip() for c in df.columns.astype(str)]
-                df.columns = cols
-
-                # ✅ 너가 요청한 샘플 컬럼(번호, 이름, 비밀번호) 대응:
-                # - name/pin 이 있으면 그대로 사용
-                # - 없으면 '이름'/'비밀번호' 또는 'name'/'pin' 유사 컬럼을 지원
-                if ("name" not in df.columns or "pin" not in df.columns):
-                    # 한글 컬럼 대응
-                    if ("이름" in df.columns) and ("비밀번호" in df.columns):
-                        df["name"] = df["이름"]
-                        df["pin"] = df["비밀번호"]
-
-                if "name" not in df.columns or "pin" not in df.columns:
-                    st.error("엑셀에 name, pin (또는 이름, 비밀번호) 컬럼이 필요합니다.")
-                else:
-                    created = 0
-                    for _, r in df.iterrows():
-                        nm = str(r.get("name", "") or "").strip()
-                        pn = str(r.get("pin", "") or "").strip()
-                        if nm and pn.isdigit() and len(pn) == 4:
-                            if not fs_get_student_doc_by_name(nm):
-                                api_create_account(nm, pn)
-                                created += 1
-                    toast(f"일괄 생성 완료! (+{created})", icon="📥")
-                    api_list_accounts_cached.clear()
-                    st.rerun()
-            except Exception as e:
-                st.error(f"업로드 실패: {e}")
 
 # =========================
 # Main: 로그인 (너 코드 방식 유지: form)
@@ -1294,7 +1253,6 @@ my_perms = get_my_permissions(my_student_id, is_admin=is_admin)
 # =========================
 ALL_TABS = [
     "🏦 내 통장",
-    "👥 학생/계정",
     "💼 직업/월급",
     "🏛️ 국세청(국고)",
     "📊 통계청",
@@ -1302,7 +1260,9 @@ ALL_TABS = [
     "🏦 은행(예금)",
     "📈 투자",
     "🛒 구입/벌금",
-    "🗓️ 일정",
+    "🗓️ 일정"
+    "👥 계정 정보/활성화",
+,
 ]
 
 def tab_visible(tab_name: str):
@@ -1517,86 +1477,102 @@ with tab_objs[idx]:
 idx += 1
 
 # =========================
-# 2) 👥 학생/계정 (관리자 전용)
+# 계정 정보/활성화 (관리자 전용)
 # =========================
-if "👥 학생/계정" in tabs:
+if "👥 계정정보/활성화" in tabs:
     with tab_objs[idx]:
-        st.subheader("👥 학생/계정 관리(관리자)")
-        accounts = api_list_accounts_cached().get("accounts", [])
+        st.subheader("📋 계정정보 / 활성화 관리")
 
-        # 역할 목록
-        roles_res = api_list_roles_cached()
-        roles = roles_res.get("roles", []) if roles_res.get("ok") else []
-        role_options = ["(없음)"] + [r["role_id"] for r in roles]  # role_id가 직업명(문서ID)
-        role_label = {r["role_id"]: r["role_name"] for r in roles}
+        docs = db.collection("students").where(
+            filter=FieldFilter("is_active", "==", True)
+        ).stream()
 
-        st.caption("학생을 선택해 직업(역할)을 부여하세요. 직업별 권한이 탭 수정 권한이 됩니다.")
-        for a in accounts:
-            cols = st.columns([2.2, 1.2, 2.6])
-            cols[0].write(f"👤 {a['name']} (잔액 {a['balance']})")
-            cur = a.get("role_id", "") or ""
-            pick = cols[1].selectbox(
-                "직업",
-                role_options,
-                index=role_options.index(cur) if cur in role_options else 0,
-                key=f"role_pick_{a['student_id']}",
-                format_func=lambda x: "(없음)" if x == "(없음)" else f"{role_label.get(x,x)}",
-                label_visibility="collapsed",
-            )
-            if cols[2].button("직업 저장", key=f"role_save_{a['student_id']}", use_container_width=True):
-                rid = "" if pick == "(없음)" else pick
-                res = api_admin_set_role(ADMIN_PIN, a["student_id"], rid)
-                if res.get("ok"):
-                    toast(f"{a['name']} 직업 저장 완료", icon="💼")
-                    api_list_accounts_cached.clear()
-                    st.rerun()
+        rows = []
+        for i, d in enumerate(docs, start=1):
+            x = d.to_dict() or {}
+            rows.append({
+                "선택": False,
+                "번호": i,
+                "student_id": d.id,
+                "이름": x.get("name", ""),
+                "비밀번호": x.get("pin", ""),
+                "입출금활성화": True,
+                "투자활성화": True,
+            })
+
+        df = pd.DataFrame(rows)
+
+        edited = st.data_editor(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            key="account_editor",
+            column_config={
+                "선택": st.column_config.CheckboxColumn(),
+                "입출금활성화": st.column_config.CheckboxColumn(),
+                "투자활성화": st.column_config.CheckboxColumn(),
+            }
+        )
+
+        c1, c2, c3 = st.columns(3)
+
+        # ✅ 계정 삭제
+        with c1:
+            if st.button("🗑️ 계정 삭제", use_container_width=True):
+                selected = edited[edited["선택"] == True]
+                if selected.empty:
+                    st.warning("삭제할 계정을 체크하세요.")
                 else:
-                    st.error(res.get("error", "저장 실패"))
+                    st.session_state._delete_targets = selected["student_id"].tolist()
 
-        st.divider()
-        st.subheader("📥 초기 데이터 업로드(관리자)")
-        st.caption("1) 직업표/월급(xlsx) → roles 생성, 2) 은행 금리표(pdf 텍스트) → bank_rates 저장")
+        if "_delete_targets" in st.session_state:
+            st.warning("정말 삭제하시겠습니까?")
+            y, n = st.columns(2)
+            with y:
+                if st.button("예"):
+                    for sid in st.session_state._delete_targets:
+                        db.collection("students").document(sid).update({"is_active": False})
+                    st.session_state.pop("_delete_targets")
+                    toast("삭제 완료", icon="🗑️")
+                    st.rerun()
+            with n:
+                if st.button("아니오"):
+                    st.session_state.pop("_delete_targets")
+                    st.rerun()
 
-        up_jobs = st.file_uploader("직업표 및 월급 명세서(xlsx)", type=["xlsx"], key="up_jobs_pay")
-        if st.button("직업/월급 업로드 → 직업(roles) 생성", use_container_width=True):
-            if up_jobs is None:
-                st.error("xlsx 파일을 올려주세요.")
-            else:
-                try:
-                    jobs_df, pay_df = parse_jobs_xlsx(up_jobs)
-                    res = upsert_roles_from_paytable(ADMIN_PIN, pay_df)
-                    if res.get("ok"):
-                        toast("직업(roles) 생성 완료!", icon="💼")
-                        st.dataframe(pay_df, use_container_width=True, hide_index=True)
-                        st.rerun()
-                    else:
-                        st.error(res.get("error", "실패"))
-                except Exception as e:
-                    st.error(f"처리 실패: {e}")
+        # ✅ 계정 추가
+        with c2:
+            if st.button("➕ 계정 추가", use_container_width=True):
+                edited.loc[len(edited)] = [False, len(edited)+1, "", "", "", True, True]
+                st.session_state.account_editor = edited
 
-        up_rate_pdf = st.file_uploader("은행 금리표(pdf)", type=["pdf"], key="up_bank_rate_pdf")
-        if st.button("금리표 업로드 → bank_products_rates 저장", use_container_width=True):
-            if up_rate_pdf is None:
-                st.error("pdf 파일을 올려주세요.")
-            else:
-                try:
-                    # Streamlit 업로드 파일은 bytes -> 텍스트 간단 추출: PyMuPDF 없이 '문자열'만 필요하면 한계가 있어
-                    # 여기서는 매우 단순하게: pdf가 텍스트 레이어를 가진 경우만 처리(너 pdf는 텍스트가 잡히는 편)
-                    import fitz
-                    doc = fitz.open(stream=up_rate_pdf.read(), filetype="pdf")
-                    text = ""
-                    for p in range(min(2, doc.page_count)):
-                        text += doc.load_page(p).get_text("text") + "\n"
-                    rows = parse_bank_rate_pdf_text(text)
-                    res = upsert_bank_rates(ADMIN_PIN, rows)
-                    if res.get("ok"):
-                        toast("금리표 저장 완료!", icon="🏦")
-                        st.write(rows)
-                    else:
-                        st.error(res.get("error", "실패"))
-                except Exception as e:
-                    st.error(f"처리 실패: {e}")
+        # ✅ 저장
+        with c3:
+            if st.button("💾 저장", use_container_width=True):
+                for _, r in edited.iterrows():
+                    name = str(r["이름"]).strip()
+                    pin = str(r["비밀번호"]).strip()
+                    sid = r["student_id"]
+
+                    if name and pin:
+                        if sid:
+                            db.collection("students").document(sid).update({
+                                "name": name,
+                                "pin": pin,
+                            })
+                        else:
+                            db.collection("students").document().set({
+                                "name": name,
+                                "pin": pin,
+                                "balance": 0,
+                                "is_active": True,
+                            })
+
+                toast("저장 완료!", icon="💾")
+                st.rerun()
+
     idx += 1
+
 
 # =========================
 # 3) 💼 직업/월급 (관리자 중심, 학생은 읽기만)
