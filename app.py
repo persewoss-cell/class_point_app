@@ -2082,21 +2082,41 @@ if "💼 직업/월급" in tabs:
             .job-table .stMarkdown p { margin-bottom: 0.2rem !important; }
 
             /* ✅ 원형버튼(학생수/순서) 내부 텍스트: span/div/p 모두 잡기 */
+            .jobcnt-wrap div[data-testid="stButton"] button,
+            .joborder-wrap div[data-testid="stButton"] button{
+                width: 2.15rem !important;
+                height: 2.15rem !important;
+                min-width: 2.15rem !important;
+                min-height: 2.15rem !important;
+                max-width: 2.15rem !important;
+                max-height: 2.15rem !important;
+                padding: 0 !important;
+                border-radius: 9999px !important;
+                line-height: 1 !important;
+                display:flex !important;
+                align-items:center !important;
+                justify-content:center !important;
+                color: #111 !important;          /* ✅ 버튼 글자색 강제(핵심) */
+                overflow: visible !important;     /* ✅ + 잘림 방지 */
+            }
+
             .jobcnt-wrap div[data-testid="stButton"] button > span,
             .jobcnt-wrap div[data-testid="stButton"] button > div,
             .jobcnt-wrap div[data-testid="stButton"] button > p,
             .joborder-wrap div[data-testid="stButton"] button > span,
             .joborder-wrap div[data-testid="stButton"] button > div,
             .joborder-wrap div[data-testid="stButton"] button > p{
+                color: #111 !important;          /* ✅ 내부 요소도 강제 */
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 line-height: 1 !important;
-                font-size: clamp(1.0rem, 2.6vw, 1.2rem) !important;
-                font-weight: 800 !important;
+                font-size: 1.15rem !important;
+                font-weight: 900 !important;
                 margin: 0 !important;
                 padding: 0 !important;
             }
+
             </style>
             """,
             unsafe_allow_html=True,
@@ -2150,13 +2170,17 @@ if "💼 직업/월급" in tabs:
             # -------------------------
             # 학생 수 +/-
             # -------------------------
+            # -------------------------
+            # 학생 수 +/-  (✅ 원형 버튼 + 겹침/튐 방지)
+            # -------------------------
             with c[4]:
                 st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
 
-                a1, a2, a3 = st.columns([1, 1.2, 1])
+                # ✅ 모바일에서 너무 꽉 끼지 않게 가운데 숫자 폭을 조금 줄임
+                a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
 
                 with a1:
-                    if st.button("−", use_container_width=True, key=f"job_cnt_minus_{rid}"):
+                    if st.button("−", use_container_width=False, key=f"job_cnt_minus_{rid}"):
                         new_cnt = max(0, cnt - 1)
                         new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
                         db.collection("job_salary").document(rid).update(
@@ -2171,9 +2195,8 @@ if "💼 직업/월급" in tabs:
                     st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
 
                 with a3:
-                    if st.button("+", use_container_width=True, key=f"job_cnt_plus_{rid}"):
+                    if st.button("+", use_container_width=False, key=f"job_cnt_plus_{rid}"):
                         new_cnt = cnt + 1
-                        # cnt가 늘어나면 assigned_ids도 1칸 늘려줌
                         new_assigned = assigned_ids + [""]
                         db.collection("job_salary").document(rid).update(
                             {
@@ -2210,30 +2233,28 @@ if "💼 직업/월급" in tabs:
                         db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
 
             # -------------------------
-            # 순서 위/아래
+            # 순서 위/아래  (✅ 원형 버튼 + 칸 밖 튐 방지)
             # -------------------------
             with c[6]:
                 st.markdown("<div class='joborder-wrap'>", unsafe_allow_html=True)
 
                 up_disabled = (i == 0)
                 dn_disabled = (i == len(rows) - 1)
-                b1, b2 = st.columns(2)
+                b1, b2 = st.columns([1, 1])
 
                 with b1:
-                    if st.button("⬆️", use_container_width=True, disabled=up_disabled, key=f"job_up_{rid}"):
+                    if st.button("⬆️", use_container_width=False, disabled=up_disabled, key=f"job_up_{rid}"):
                         prev = rows[i - 1]
                         _swap_order(rid, order, prev["_id"], int(prev["order"]))
                         st.rerun()
 
                 with b2:
-                    if st.button("⬇️", use_container_width=True, disabled=dn_disabled, key=f"job_dn_{rid}"):
+                    if st.button("⬇️", use_container_width=False, disabled=dn_disabled, key=f"job_dn_{rid}"):
                         nxt = rows[i + 1]
                         _swap_order(rid, order, nxt["_id"], int(nxt["order"]))
                         st.rerun()
 
                 st.markdown("</div>", unsafe_allow_html=True)
-
-            st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
 
