@@ -2052,80 +2052,86 @@ if "💼 직업/월급" in tabs:
             c[3].markdown(f"<div class='cell center'><b>{net}</b></div>", unsafe_allow_html=True)
 
             # 학생 수 +/- (1 미만 불가) — 버튼 튀어나옴 방지용 3칸
+    # 학생 수 +/-
     with c[4]:
-    st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
+        st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
 
-    a1, a2, a3 = st.columns([1, 1.2, 1])
+        a1, a2, a3 = st.columns([1, 1.2, 1])
 
-    with a1:
-        if st.button("➖", use_container_width=True, key=f"job_cnt_minus_{rid}"):
-            new_cnt = max(0, cnt - 1)  # ✅ 최소 0
-            # cnt=0이면 assigned_ids는 비움
-            new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
-            db.collection("job_salary").document(rid).update(
-                {
-                    "student_count": new_cnt,
-                    "assigned_ids": new_assigned,
-                }
-            )
-            st.rerun()
+        with a1:
+            if st.button("➖", use_container_width=True, key=f"job_cnt_minus_{rid}"):
+                new_cnt = max(0, cnt - 1)
+                new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
+                db.collection("job_salary").document(rid).update(
+                    {
+                        "student_count": new_cnt,
+                        "assigned_ids": new_assigned,
+                    }
+                )
+                st.rerun()
 
-    with a2:
-        st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
+        with a2:
+            st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
 
-    with a3:
-        if st.button("➕", use_container_width=True, key=f"job_cnt_plus_{rid}"):
-            new_cnt = cnt + 1
-            # cnt=0에서 1로 늘릴 때도 정상 동작
-            new_assigned = assigned_ids + [""] if new_cnt > len(assigned_ids) else assigned_ids
-            db.collection("job_salary").document(rid).update(
-                {
-                    "student_count": new_cnt,
-                    "assigned_ids": (new_assigned[:new_cnt] if new_cnt > 0 else []),
-                }
-            )
-            st.rerun()
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-            # 이름(계정) 드롭다운들 (학생수만큼)
-            with c[5]:
-                new_ids = []
-                for k in range(cnt):
-                    cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
-                    cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
-                    sel = st.selectbox(
-                        f"계정{k+1}",
-                        acc_options,
-                        index=acc_options.index(cur_label) if cur_label in acc_options else 0,
-                        key=f"job_assign_{rid}_{k}",
-                        label_visibility="collapsed",
-                    )
-                    new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
-
-                # 변경되면 저장(기존 유지)
-                if new_ids != assigned_ids:
-                    db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
-
-            # 순서 위/아래 (기존 로직 그대로)
-            with c[6]:
-                up_disabled = (i == 0)
-                dn_disabled = (i == len(rows) - 1)
-                b1, b2 = st.columns(2)
-                with b1:
-                    if st.button("⬆️", use_container_width=True, disabled=up_disabled, key=f"job_up_{rid}"):
-                        prev = rows[i - 1]
-                        _swap_order(rid, order, prev["_id"], int(prev["order"]))
-                        st.rerun()
-                with b2:
-                    if st.button("⬇️", use_container_width=True, disabled=dn_disabled, key=f"job_dn_{rid}"):
-                        nxt = rows[i + 1]
-                        _swap_order(rid, order, nxt["_id"], int(nxt["order"]))
-                        st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
+        with a3:
+            if st.button("➕", use_container_width=True, key=f"job_cnt_plus_{rid}"):
+                new_cnt = cnt + 1
+                new_assigned = assigned_ids + [""] if new_cnt > len(assigned_ids) else assigned_ids
+                db.collection("job_salary").document(rid).update(
+                    {
+                        "student_count": new_cnt,
+                        "assigned_ids": (new_assigned[:new_cnt] if new_cnt > 0 else []),
+                    }
+                )
+                st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+    # 이름(계정) 드롭다운 (학생수 0이면 숨김)
+    with c[5]:
+        if cnt <= 0:
+            st.markdown("<div class='job-empty'>-</div>", unsafe_allow_html=True)
+        else:
+            new_ids = []
+            for k in range(cnt):
+                cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
+                cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
+                sel = st.selectbox(
+                    f"계정{k+1}",
+                    acc_options,
+                    index=acc_options.index(cur_label) if cur_label in acc_options else 0,
+                    key=f"job_assign_{rid}_{k}",
+                    label_visibility="collapsed",
+                )
+                new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
+
+            if new_ids != assigned_ids:
+                db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
+
+
+    # 순서 위/아래
+    with c[6]:
+        st.markdown("<div class='joborder-wrap'>", unsafe_allow_html=True)
+
+        up_disabled = (i == 0)
+        dn_disabled = (i == len(rows) - 1)
+        b1, b2 = st.columns(2)
+
+        with b1:
+            if st.button("⬆️", use_container_width=True, disabled=up_disabled, key=f"job_up_{rid}"):
+                prev = rows[i - 1]
+                _swap_order(rid, order, prev["_id"], int(prev["order"]))
+                st.rerun()
+
+        with b2:
+            if st.button("⬇️", use_container_width=True, disabled=dn_disabled, key=f"job_dn_{rid}"):
+                nxt = rows[i + 1]
+                _swap_order(rid, order, nxt["_id"], int(nxt["order"]))
+                st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
 
         st.divider()
 
