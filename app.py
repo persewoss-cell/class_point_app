@@ -2033,7 +2033,7 @@ if "💼 직업/월급" in tabs:
                         db.collection("job_salary").document(rid).update(
                             {
                                 "student_count": new_cnt,
-                                "assigned_ids": assigned_ids + [""],
+                                "assigned_ids": assigned_ids[:new_cnt],
                             }
                         )
                         st.rerun()
@@ -2052,22 +2052,25 @@ if "💼 직업/월급" in tabs:
 
             # 이름(계정) 드롭다운들 (학생수만큼)
             with c[5]:
-                new_ids = []
-                for k in range(cnt):
-                    cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
-                    cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
-                    sel = st.selectbox(
-                        f"계정{k+1}",
-                        acc_options,
-                        index=acc_options.index(cur_label) if cur_label in acc_options else 0,
-                        key=f"job_assign_{rid}_{k}",
-                        label_visibility="collapsed",
-                    )
-                    new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
+                if cnt <= 0:
+                    st.markdown("<div class='cell muted center'>—</div>", unsafe_allow_html=True)
+                else:
+                    new_ids = []
+                    for k in range(cnt):
+                        cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
+                        cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
+                        sel = st.selectbox(
+                            f"계정{k+1}",
+                            acc_options,
+                            index=acc_options.index(cur_label) if cur_label in acc_options else 0,
+                            key=f"job_assign_{rid}_{k}",
+                            label_visibility="collapsed",
+                        )
+                        new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
 
-                # 변경되면 저장(기존 유지)
-                if new_ids != assigned_ids:
-                    db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
+                    # 변경되면 저장
+                    if new_ids != assigned_ids:
+                        db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
 
             # 순서 위/아래 (기존 로직 그대로)
             with c[6]:
