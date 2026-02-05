@@ -154,6 +154,36 @@ st.markdown(
         line-height: 1 !important;
     }
 
+/* ✅ 학생수 버튼 stButton 래퍼를 강제로 원형 고정 (핵심) */
+.jobcnt-num{
+    position: relative;
+}
+
+.jobcnt-num:has(+ div[data-testid="stButton"]) + div[data-testid="stButton"],
+.jobcnt-num:has(+ div[data-testid="stButton"]) + div[data-testid="stButton"] > button{
+    width: 2.35rem !important;
+    height: 2.35rem !important;
+    min-width: 2.35rem !important;
+    min-height: 2.35rem !important;
+    max-width: 2.35rem !important;
+    max-height: 2.35rem !important;
+
+    border-radius: 9999px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+
+    display:flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+
+    color: #111 !important;
+    font-weight: 900 !important;
+    font-size: 1.15rem !important;
+
+    overflow: visible !important;
+}
+
+
     /* 가운데 숫자(학생 수) */
     .jobcnt-wrap + div .jobcnt-num{
         width: 2.2rem !important;
