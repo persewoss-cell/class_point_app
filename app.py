@@ -2342,72 +2342,14 @@ if "💼 직업/월급" in tabs:
         # ✅ 표 헤더 + 행 렌더(보기 좋게: 중앙정렬/버튼 안삐져나가게)
         #   - 로직(저장/순서/학생수/드롭다운)은 그대로, UI만 정리
         # -------------------------------------------------
-        st.markdown("### 📋 직업/월급 목록")
-        st.caption("• 아래에 직업을 추가/수정하면 이 리스트에 반영됩니다. • 체크 후 상단 버튼으로 순서 이동/삭제가 됩니다.")
-
-        # -------------------------
-        # ✅ 선택(체크박스) 세션 상태 준비
-        # -------------------------
-        if "job_sel" not in st.session_state:
-            st.session_state.job_sel = {}
-
-        current_ids = [rr["_id"] for rr in rows]
-        # 새로 생긴 job은 기본 False로
-        for rid0 in current_ids:
-            st.session_state.job_sel.setdefault(rid0, False)
-        # 이미 삭제된 job은 세션에서 제거
-        for rid0 in list(st.session_state.job_sel.keys()):
-            if rid0 not in current_ids:
-                st.session_state.job_sel.pop(rid0, None)
-
-        def _selected_job_ids():
-            return [rid0 for rid0 in current_ids if bool(st.session_state.job_sel.get(rid0, False))]
-
-        # -------------------------
-        # ✅ 일괄 순서 이동(체크된 행을 한 칸 위/아래로)
-        # -------------------------
-        def _bulk_move(direction: str):
-            sel = set(_selected_job_ids())
-            if not sel:
-                st.warning("체크된 직업이 없습니다.")
-                return
-
-            # rows는 order로 이미 정렬되어 있음
-            # ✅ 위로: 위에서 아래로 훑으며, 바로 위가 미선택이면 서로 swap
-            if direction == "up":
-                for i0 in range(1, len(rows)):
-                    cur = rows[i0]
-                    prev = rows[i0 - 1]
-                    if (cur["_id"] in sel) and (prev["_id"] not in sel):
-                        _swap_order(cur["_id"], int(cur["order"]), prev["_id"], int(prev["order"]))
-                        rows[i0 - 1], rows[i0] = rows[i0], rows[i0 - 1]
-
-            # ✅ 아래로: 아래에서 위로 훑으며, 바로 아래가 미선택이면 서로 swap
-            elif direction == "down":
-                for i0 in range(len(rows) - 2, -1, -1):
-                    cur = rows[i0]
-                    nxt = rows[i0 + 1]
-                    if (cur["_id"] in sel) and (nxt["_id"] not in sel):
-                        _swap_order(cur["_id"], int(cur["order"]), nxt["_id"], int(nxt["order"]))
-                        rows[i0], rows[i0 + 1] = rows[i0 + 1], rows[i0]
-
-            st.rerun()
-
-        # -------------------------
-        # ✅ 일괄 삭제(체크된 행 삭제)
-        # -------------------------
-        def _bulk_delete_prepare():
-            sel_ids = _selected_job_ids()
-            if not sel_ids:
-                st.warning("체크된 직업이 없습니다.")
-                return
-            st.session_state["_job_bulk_delete_ids"] = sel_ids
-
-        # -------------------------
-        # ✅ 상단 오른쪽: ⬆️⬇️🗑️ 버튼 배치
-        # -------------------------
-        top_left, top_right = st.columns([3.2, 1.6])
-        with top_right:
+        # -------------------------------------------------
+        # ✅ 직업/월급 목록: 제목 1개 + 버튼(표 바로 위) + 헤더 정렬(내용과 딱 맞춤)
+        # -------------------------------------------------
+        head_l, head_r = st.columns([7.0, 2.0])
+        with head_l:
+            st.markdown("### 📋 직업/월급 목록")
+            st.caption("• 아래에 직업을 추가/수정하면 이 리스트에 반영됩니다. • 체크 후 ⬆️⬇️🗑️ 버튼으로 순서 이동/삭제가 됩니다.")
+        with head_r:
             b1, b2, b3 = st.columns(3)
             with b1:
                 if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
@@ -2420,7 +2362,25 @@ if "💼 직업/월급" in tabs:
                     _bulk_delete_prepare()
                     st.rerun()
 
-        # ✅ 삭제 확인(일괄)
+        # -------------------------
+        # ✅ 선택(체크박스) 세션 상태 준비
+        # -------------------------
+        if "job_sel" not in st.session_state:
+            st.session_state.job_sel = {}
+
+        current_ids = [rr["_id"] for rr in rows]
+        for rid0 in current_ids:
+            st.session_state.job_sel.setdefault(rid0, False)
+        for rid0 in list(st.session_state.job_sel.keys()):
+            if rid0 not in current_ids:
+                st.session_state.job_sel.pop(rid0, None)
+
+        def _selected_job_ids():
+            return [rid0 for rid0 in current_ids if bool(st.session_state.job_sel.get(rid0, False))]
+
+        # -------------------------
+        # ✅ 일괄 삭제 확인(그대로 유지)
+        # -------------------------
         if "_job_bulk_delete_ids" in st.session_state:
             st.warning("체크된 직업을 삭제하시겠습니까?")
             y, n = st.columns(2)
@@ -2439,32 +2399,36 @@ if "💼 직업/월급" in tabs:
                     st.rerun()
 
         # -------------------------------------------------
-        # ✅ 표(계정정보 탭 느낌)로 리스트 렌더링 + 헤더
-        #   - 기능(체크/학생수+/-/드롭다운/실수령 계산) 그대로
+        # ✅ 열 제목(헤더) - 내용 columns 비율과 동일하게 맞춰 정렬
         # -------------------------------------------------
-        st.markdown("### 📋 직업/월급 목록")
-        st.caption("• 체크 후 상단 버튼(⬆️⬇️🗑️)으로 순서 이동/삭제 가능합니다. • 학생수/배정은 행에서 바로 수정됩니다.")
+        st.markdown(
+            """
+            <style>
+            .jobhdr { font-weight: 900; color:#111; padding: 6px 4px; }
+            .jobhdr-center { display:flex; align-items:center; justify-content:center; }
+            .jobhdr-left { display:flex; align-items:center; justify-content:flex-start; }
+            .jobhdr-line { border-bottom: 2px solid #ddd; margin: 6px 0 10px 0; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        # ✅ 표 헤더(컬럼명)
-        h = st.columns([0.8, 1.0, 2.6, 1.3, 1.3, 1.6, 4.0])
-        with h[0]:
-            st.markdown("**선택**")
-        with h[1]:
-            st.markdown("**순**")
-        with h[2]:
-            st.markdown("**직업**")
-        with h[3]:
-            st.markdown("**월급**")
-        with h[4]:
-            st.markdown("**실수령**")
-        with h[5]:
-            st.markdown("**학생수**")
-        with h[6]:
-            st.markdown("**배정 계정**")
+        hdr = st.columns([1.1, 2.2, 1.1, 1.2, 1.4, 4.0])
+        with hdr[0]:
+            st.markdown("<div class='jobhdr jobhdr-center'>선택/순</div>", unsafe_allow_html=True)
+        with hdr[1]:
+            st.markdown("<div class='jobhdr jobhdr-left'>직업</div>", unsafe_allow_html=True)
+        with hdr[2]:
+            st.markdown("<div class='jobhdr jobhdr-center'>월급</div>", unsafe_allow_html=True)
+        with hdr[3]:
+            st.markdown("<div class='jobhdr jobhdr-center'>실수령</div>", unsafe_allow_html=True)
+        with hdr[4]:
+            st.markdown("<div class='jobhdr jobhdr-center'>학생수</div>", unsafe_allow_html=True)
+        with hdr[5]:
+            st.markdown("<div class='jobhdr jobhdr-left'>배정 계정</div>", unsafe_allow_html=True)
 
-        st.markdown("---")
+        st.markdown("<div class='jobhdr-line'></div>", unsafe_allow_html=True)
 
-        for i, r in enumerate(rows):
             rid = r["_id"]
             order = int(r["order"])
             job = r["job"]
