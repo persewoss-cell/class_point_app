@@ -29,11 +29,11 @@ st.markdown(
     """
     <style>
     section.main > div:first-child { padding-top: 2.6rem; }
-    @media (max-width: 768px) {
+    @media (max-768px) {
         section.main > div:first-child { padding-top: 3.2rem; }
     }
     .block-container { padding-bottom: 2.0rem; }
-    @media (max-width: 768px) {
+    @media (max-768px) {
         .block-container { padding-bottom: 6.0rem; }
     }
 
@@ -65,7 +65,7 @@ st.markdown(
         white-space: normal;
         word-break: keep-all;
     }
-    @media (max-width: 768px) {
+    @media (max-768px) {
         .app-title { font-size: clamp(2.05rem, 7.9vw, 3.3rem); }
     }
 
@@ -77,7 +77,7 @@ st.markdown(
     .tpl-head { font-weight: 800; padding: 6px 6px; border-bottom: 2px solid #ddd; margin-bottom: 4px; }
     .tpl-cell { padding: 4px 6px; border-bottom: 1px solid #eee; line-height: 1.15; font-size: 0.95rem; }
     .tpl-label { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    @media (max-width: 768px){
+    @media (max-768px){
         .tpl-cell { padding: 6px 6px; font-size: 1.02rem; line-height: 1.18; }
         .tpl-label{
             white-space: normal;
@@ -311,8 +311,8 @@ st.markdown(
 @media (max-width: 768px){
     .jobcnt-wrap div[data-testid="stButton"] button svg,
     .joborder-wrap div[data-testid="stButton"] button svg{
-        width: 12px !important;
-        height: 12px !important;
+        width: 5px !important;
+        height: 5px !important;
     }
 }
 
