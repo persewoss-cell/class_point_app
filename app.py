@@ -106,103 +106,123 @@ st.markdown(
     }
 
     /* =========================
-       💼 직업/월급 탭: 학생수(+/-), 순서(⬆️⬇️) 버튼(원형) 안정화
-       - "+" 안 보임 해결(색/라인높이/정렬/클리핑)
-       - ⬆️⬇️ 버튼 칸 밖 튐 해결(고정크기 + max-width)
-       - 모바일 겹침 완화(사이즈 소폭 축소)
+       💼 직업/월급 탭: 학생수(+/-), 순서(⬆️⬇️) 버튼(원형) 안정화 - 최종
+       ✅ Streamlit은 markdown div로 '위젯을 감싸지' 않음
+       ✅ 그래서 .jobcnt-wrap "바로 다음 형제 블록"을 잡아서 스타일 적용해야 함
        ========================= */
 
-    /* ✅ 래퍼(칸) 자체를 가운데 정렬 + 넘침 방지 */
-    .jobcnt-wrap, .joborder-wrap{
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-        width: 100% !important;
-        overflow: hidden !important;   /* 칸 밖으로 튀는 것 방지 */
+    /* ---- 학생수 영역: .jobcnt-wrap 다음에 오는 컬럼 블록을 잡는다 ---- */
+    .jobcnt-wrap + div,
+    .jobcnt-wrap + div div[data-testid="stHorizontalBlock"]{
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        gap: 0.35rem !important;
+        overflow: visible !important;
     }
 
-    /* ✅ Streamlit 버튼이 use_container_width로 커지는 것 방지 */
-    .jobcnt-wrap div[data-testid="stButton"],
-    .joborder-wrap div[data-testid="stButton"]{
-        width: auto !important;
-        max-width: 100% !important;
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-    }
-
-    /* ✅ 원형 버튼(고정 크기) */
-    .jobcnt-wrap div[data-testid="stButton"] button,
-    .joborder-wrap div[data-testid="stButton"] button{
-        width: 2.45rem !important;
-        height: 2.45rem !important;
-        min-width: 2.45rem !important;
-        min-height: 2.45rem !important;
-        max-width: 2.45rem !important;
-        max-height: 2.45rem !important;
+    /* 학생수 영역 버튼(−/+) */
+    .jobcnt-wrap + div div[data-testid="stButton"] button{
+        width: 2.35rem !important;
+        height: 2.35rem !important;
+        min-width: 2.35rem !important;
+        min-height: 2.35rem !important;
+        max-width: 2.35rem !important;
+        max-height: 2.35rem !important;
 
         padding: 0 !important;
         margin: 0 !important;
         border-radius: 9999px !important;
 
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
 
         line-height: 1 !important;
         box-sizing: border-box !important;
+        overflow: visible !important;
 
-        overflow: visible !important;  /* 글자/아이콘 잘림 방지 */
+        color: #111 !important;       /* ✅ + 안보임 해결 */
     }
 
-    /* ✅ 버튼 안 글자(+, −, ⬆️, ⬇️)가 안 보이는 문제 해결 */
-    .jobcnt-wrap div[data-testid="stButton"] button span,
-    .jobcnt-wrap div[data-testid="stButton"] button div,
-    .jobcnt-wrap div[data-testid="stButton"] button p,
-    .joborder-wrap div[data-testid="stButton"] button span,
-    .joborder-wrap div[data-testid="stButton"] button div,
-    .joborder-wrap div[data-testid="stButton"] button p{
-        color: #111 !important;              /* ✅ + 글자 색 강제 */
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        line-height: 1 !important;
-        font-size: 1.15rem !important;
+    /* 버튼 내부(텍스트/이모지/아이콘) 전부 강제 */
+    .jobcnt-wrap + div div[data-testid="stButton"] button *{
+        color: #111 !important;
+        fill:  #111 !important;
+        stroke:#111 !important;
         font-weight: 900 !important;
+        line-height: 1 !important;
+    }
+
+    /* 가운데 숫자(학생 수) */
+    .jobcnt-wrap + div .jobcnt-num{
+        width: 2.2rem !important;
+        height: 2.2rem !important;
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        font-weight: 900 !important;
+        flex: 0 0 auto !important;
         margin: 0 !important;
         padding: 0 !important;
     }
 
-    /* ✅ 모바일에서는 살짝 더 작게 해서 ‘겹침’ 완화 */
-    @media (max-width: 768px){
-        .jobcnt-wrap div[data-testid="stButton"] button,
-        .joborder-wrap div[data-testid="stButton"] button{
-            width: 2.15rem !important;
-            height: 2.15rem !important;
-            min-width: 2.15rem !important;
-            min-height: 2.15rem !important;
-            max-width: 2.15rem !important;
-            max-height: 2.15rem !important;
-        }
-        .jobcnt-wrap div[data-testid="stButton"] button span,
-        .jobcnt-wrap div[data-testid="stButton"] button div,
-        .jobcnt-wrap div[data-testid="stButton"] button p,
-        .joborder-wrap div[data-testid="stButton"] button span,
-        .joborder-wrap div[data-testid="stButton"] button div,
-        .joborder-wrap div[data-testid="stButton"] button p{
-            font-size: 1.08rem !important;
-        }
+    /* ---- 순서 영역: .joborder-wrap 다음 형제 블록을 잡는다 ---- */
+    .joborder-wrap + div,
+    .joborder-wrap + div div[data-testid="stHorizontalBlock"]{
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        gap: 0.25rem !important;
+        overflow: visible !important;
     }
 
-    /* 가운데 숫자(학생 수) */
-    .jobcnt-num{
-        width: 2.3rem;
-        height: 2.3rem;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        font-weight: 900;
-        flex: 0 0 auto;
+    .joborder-wrap + div div[data-testid="stButton"] button{
+        width: 2.35rem !important;
+        height: 2.35rem !important;
+        min-width: 2.35rem !important;
+        min-height: 2.35rem !important;
+        max-width: 2.35rem !important;
+        max-height: 2.35rem !important;
+
+        padding: 0 !important;
+        margin: 0 !important;
+        border-radius: 9999px !important;
+
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+
+        line-height: 1 !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+
+        color: #111 !important;
+    }
+
+    .joborder-wrap + div div[data-testid="stButton"] button *{
+        color: #111 !important;
+        fill:  #111 !important;
+        stroke:#111 !important;
+        font-weight: 900 !important;
+        line-height: 1 !important;
+    }
+
+    /* ✅ 모바일에서 겹침 방지: 크기만 살짝 다운 */
+    @media (max-width: 768px){
+        .jobcnt-wrap + div div[data-testid="stButton"] button,
+        .joborder-wrap + div div[data-testid="stButton"] button{
+            width: 2.05rem !important;
+            height: 2.05rem !important;
+            min-width: 2.05rem !important;
+            min-height: 2.05rem !important;
+            max-width: 2.05rem !important;
+            max-height: 2.05rem !important;
+        }
+        .jobcnt-wrap + div .jobcnt-num{
+            width: 2.0rem !important;
+            height: 2.0rem !important;
+        }
     }
 
     .job-empty{
