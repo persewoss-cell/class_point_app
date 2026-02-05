@@ -2066,6 +2066,239 @@ if "💼 직업/월급" in tabs:
 
         st.divider()
 
+                # -------------------------------------------------
+        # ✅ 월급 지급 설정(자동/수동)
+        #  - config/salary_payroll : pay_day(1~31), auto_enabled(bool)
+        #  - payroll_log/{YYYY-MM}_{student_id} 로 "이번달 지급 여부" 기록
+        # -------------------------------------------------
+        def _get_payroll_cfg():
+            ref = db.collection("config").document("salary_payroll")
+            snap = ref.get()
+            if not snap.exists:
+                return {"pay_day": 25, "auto_enabled": False}
+            d = snap.to_dict() or {}
+            return {
+                "pay_day": int(d.get("pay_day", 25) or 25),
+                "auto_enabled": bool(d.get("auto_enabled", False)),
+            }
+
+        def _save_payroll_cfg(cfg2: dict):
+            db.collection("config").document("salary_payroll").set(
+                {
+                    "pay_day": int(cfg2.get("pay_day", 25) or 25),
+                    "auto_enabled": bool(cfg2.get("auto_enabled", False)),
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+
+        def _month_key(dt: datetime) -> str:
+            return f"{dt.year:04d}-{dt.month:02d}"
+
+        def _paylog_id(month_key: str, student_id: str) -> str:
+            return f"{month_key}_{student_id}"
+
+        def _already_paid_this_month(month_key: str, student_id: str) -> bool:
+            snap = db.collection("payroll_log").document(_paylog_id(month_key, student_id)).get()
+            return bool(snap.exists)
+
+        def _write_paylog(month_key: str, student_id: str, amount: int, job_name: str, method: str):
+            db.collection("payroll_log").document(_paylog_id(month_key, student_id)).set(
+                {
+                    "month": month_key,
+                    "student_id": student_id,
+                    "amount": int(amount),
+                    "job": str(job_name or ""),
+                    "method": str(method or ""),  # "auto" / "manual"
+                    "paid_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+
+        def _pay_one_student(student_id: str, amount: int, memo: str):
+            # 관리자 지급으로 통장 입금(+)
+            return api_admin_add_tx_by_student_id(
+                admin_pin=ADMIN_PIN,
+                student_id=student_id,
+                memo=memo,
+                deposit=int(amount),
+                withdraw=0,
+            )
+
+        def _run_auto_payroll_if_due(cfg_pay: dict):
+            # ✅ 자동지급: 매월 지정일에만 실행
+            if not bool(cfg_pay.get("auto_enabled", False)):
+                return
+
+            now = datetime.now(KST)
+            pay_day = int(cfg_pay.get("pay_day", 25) or 25)
+            pay_day = max(1, min(31, pay_day))
+
+            if int(now.day) != pay_day:
+                return
+
+            mkey = _month_key(now)
+
+            # 학생 id -> 이름 맵 (메모용)
+            accs = api_list_accounts_cached().get("accounts", []) or []
+            id_to_name = {a.get("student_id"): a.get("name") for a in accs if a.get("student_id")}
+
+            # job_salary 기준으로 배정된 학생들에게 지급
+            q = db.collection("job_salary").order_by("order").stream()
+            paid_cnt, skip_cnt, err_cnt = 0, 0, 0
+
+            for d in q:
+                x = d.to_dict() or {}
+                job_name = str(x.get("job", "") or "")
+                gross = int(x.get("salary", 0) or 0)
+                net_amt = int(_calc_net(gross, cfg) or 0)
+                assigned_ids = list(x.get("assigned_ids", []) or [])
+
+                if net_amt <= 0:
+                    continue
+
+                for sid in assigned_ids:
+                    sid = str(sid or "").strip()
+                    if not sid:
+                        continue
+
+                    # ✅ 이번 달에 수동/자동 지급 기록이 있으면 자동 지급은 패스
+                    if _already_paid_this_month(mkey, sid):
+                        skip_cnt += 1
+                        continue
+
+                    nm = id_to_name.get(sid, "")
+                    memo = f"월급 자동지급({mkey}) {job_name}" + (f" - {nm}" if nm else "")
+                    res = _pay_one_student(sid, net_amt, memo)
+                    if res.get("ok"):
+                        _write_paylog(mkey, sid, net_amt, job_name, method="auto")
+                        paid_cnt += 1
+                    else:
+                        err_cnt += 1
+
+            # 자동지급 결과는 너무 시끄럽지 않게 토스트 1번만
+            if paid_cnt > 0:
+                toast(f"월급 자동지급 완료: {paid_cnt}명(패스 {skip_cnt})", icon="💸")
+                api_list_accounts_cached.clear()
+            elif err_cnt > 0:
+                st.warning("월급 자동지급 중 일부 오류가 있었어요. (로그 확인)")
+
+        payroll_cfg = _get_payroll_cfg()
+
+        # ✅ 자동지급 조건이면 즉시 한번 실행(해당 날짜일 때만 실제 지급됨)
+        _run_auto_payroll_if_due(payroll_cfg)
+
+        with st.expander("💸 월급 지급 설정", expanded=False):
+            cc1, cc2, cc3 = st.columns([1.4, 1.2, 1.4])
+
+            with cc1:
+                pay_day_in = st.number_input(
+                    "월급 지급 날짜 지정: 매월 (일)",
+                    min_value=1,
+                    max_value=31,
+                    step=1,
+                    value=int(payroll_cfg.get("pay_day", 25) or 25),
+                    key="payroll_day_in",
+                )
+
+            with cc2:
+                auto_on = st.checkbox(
+                    "자동지급",
+                    value=bool(payroll_cfg.get("auto_enabled", False)),
+                    key="payroll_auto_on",
+                    help="해당 날짜에 매월, 학생의 직업 실수령액 기준으로 자동 지급합니다.\n이미 이번 달에 수동지급을 했으면 자동지급은 그 달에는 패스됩니다.",
+                )
+
+            with cc3:
+                if st.button("✅ 지급 설정 저장", use_container_width=True, key="payroll_save_cfg"):
+                    _save_payroll_cfg({"pay_day": int(pay_day_in), "auto_enabled": bool(auto_on)})
+                    toast("월급 지급 설정 저장 완료!", icon="✅")
+                    st.rerun()
+
+            st.caption("• 수동지급: 이번 달(현재 월)에 즉시 지급합니다. 이미 지급한 기록이 있으면 확인 후 재지급합니다.")
+
+            # -------------------------
+            # 수동지급 버튼 + 이미 지급 여부 확인(이번 달)
+            # -------------------------
+            now = datetime.now(KST)
+            cur_mkey = _month_key(now)
+
+            # 이번 달에 지급된 로그가 있는지 빠르게 확인
+            # (수동지급은 '모든 배정 학생' 대상으로 동일 로직)
+            q2 = db.collection("job_salary").order_by("order").stream()
+            targets = []  # (student_id, amount, job_name)
+            for d in q2:
+                x = d.to_dict() or {}
+                job_name = str(x.get("job", "") or "")
+                gross = int(x.get("salary", 0) or 0)
+                net_amt = int(_calc_net(gross, cfg) or 0)
+                if net_amt <= 0:
+                    continue
+                for sid in list(x.get("assigned_ids", []) or []):
+                    sid = str(sid or "").strip()
+                    if sid:
+                        targets.append((sid, net_amt, job_name))
+
+            # 중복 학생(여러 직업에 배정되는 경우) 방지: 마지막 것만 남김
+            dedup = {}
+            for sid, amt, jb in targets:
+                dedup[sid] = (amt, jb)
+            targets = [(sid, v[0], v[1]) for sid, v in dedup.items()]
+
+            already_any = any(_already_paid_this_month(cur_mkey, sid) for sid, _, _ in targets)
+
+            if st.button("💸 수동지급(이번 달 즉시 지급)", use_container_width=True, key="payroll_manual_btn"):
+                # 이미 지급된 적 있으면 확인창 띄우기
+                if already_any:
+                    st.session_state["payroll_manual_confirm"] = True
+                else:
+                    st.session_state["payroll_manual_confirm"] = False
+                    st.session_state["payroll_manual_do"] = True
+                st.rerun()
+
+            if st.session_state.get("payroll_manual_confirm", False):
+                st.warning("이번 달에 이미 월급 지급(자동/수동)한 기록이 있습니다. 그래도 지급하시겠습니까?")
+                y1, n1 = st.columns(2)
+                with y1:
+                    if st.button("예", use_container_width=True, key="payroll_manual_yes"):
+                        st.session_state["payroll_manual_confirm"] = False
+                        st.session_state["payroll_manual_do"] = True
+                        st.rerun()
+                with n1:
+                    if st.button("아니오", use_container_width=True, key="payroll_manual_no"):
+                        st.session_state["payroll_manual_confirm"] = False
+                        st.session_state["payroll_manual_do"] = False
+                        toast("수동지급 취소", icon="🛑")
+                        st.rerun()
+
+            # 실제 수동지급 실행(1회)
+            if st.session_state.get("payroll_manual_do", False):
+                st.session_state["payroll_manual_do"] = False
+
+                accs2 = api_list_accounts_cached().get("accounts", []) or []
+                id_to_name2 = {a.get("student_id"): a.get("name") for a in accs2 if a.get("student_id")}
+
+                paid_cnt, err_cnt = 0, 0
+                for sid, amt, jb in targets:
+                    nm = id_to_name2.get(sid, "")
+                    memo = f"월급 수동지급({cur_mkey}) {jb}" + (f" - {nm}" if nm else "")
+                    res = _pay_one_student(sid, int(amt), memo)
+                    if res.get("ok"):
+                        # ✅ 수동지급도 이번달 지급 기록 남김(자동 패스 조건 충족)
+                        _write_paylog(cur_mkey, sid, int(amt), jb, method="manual")
+                        paid_cnt += 1
+                    else:
+                        err_cnt += 1
+
+                api_list_accounts_cached.clear()
+                if paid_cnt > 0:
+                    toast(f"월급 수동지급 완료: {paid_cnt}명", icon="💸")
+                if err_cnt > 0:
+                    st.warning(f"일부 지급 실패가 있었어요: {err_cnt}건")
+                st.rerun()
+
+        st.divider()
+
         # -------------------------------------------------
         # ✅ 직업/월급 표 데이터 로드 (job_salary 컬렉션)
         # -------------------------------------------------
