@@ -823,6 +823,239 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
 # ✅ 너는 지금 코드에 이미 들어있으니, 그대로 두면 된다.
 
 # =========================
+# 🏛️ Treasury(국세청/국고) - helpers + templates + UI
+# =========================
+
+TREASURY_UNIT = "드림"   # ✅ 표시 단위만 드림(시스템 숫자는 그대로 int)
+
+@st.cache_data(ttl=30, show_spinner=False)
+def api_get_treasury_state_cached():
+    ref = db.collection("treasury").document("state")
+    snap = ref.get()
+    if not snap.exists:
+        ref.set({"balance": 0, "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        return {"ok": True, "balance": 0}
+    d = snap.to_dict() or {}
+    return {"ok": True, "balance": int(d.get("balance", 0) or 0)}
+
+def api_add_treasury_tx(admin_pin: str, memo: str, income: int, expense: int, actor: str = "treasury"):
+    """
+    국고 거래(세입/세출)
+    - income: 세입(+) 입력
+    - expense: 세출(+) 입력
+    - amount는 +income 또는 -expense 로 저장
+    """
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    memo = str(memo or "").strip()
+    income = int(income or 0)
+    expense = int(expense or 0)
+
+    if not memo:
+        return {"ok": False, "error": "내역이 필요합니다."}
+    if (income > 0 and expense > 0) or (income == 0 and expense == 0):
+        return {"ok": False, "error": "세입/세출 중 하나만 입력하세요."}
+
+    state_ref = db.collection("treasury").document("state")
+    led_ref = db.collection("treasury_ledger").document()
+
+    amount = income if income > 0 else -expense
+    tx_type = "income" if income > 0 else "expense"
+
+    @firestore.transactional
+    def _do(transaction):
+        st_snap = state_ref.get(transaction=transaction)
+        cur_bal = 0
+        if st_snap.exists:
+            cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+
+        new_bal = int(cur_bal + amount)
+
+        transaction.set(
+            state_ref,
+            {
+                "balance": int(new_bal),
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+        transaction.set(
+            led_ref,
+            {
+                "type": tx_type,
+                "amount": int(amount),          # +세입 / -세출
+                "income": int(income if income > 0 else 0),
+                "expense": int(expense if expense > 0 else 0),
+                "balance_after": int(new_bal),
+                "memo": memo,
+                "actor": str(actor or ""),
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+        return new_bal
+
+    try:
+        new_bal = _do(db.transaction())
+        api_get_treasury_state_cached.clear()
+        api_list_treasury_ledger_cached.clear()
+        return {"ok": True, "balance": int(new_bal)}
+    except Exception as e:
+        return {"ok": False, "error": f"국고 저장 실패: {e}"}
+
+@st.cache_data(ttl=30, show_spinner=False)
+def api_list_treasury_ledger_cached(limit=300):
+    q = (
+        db.collection("treasury_ledger")
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .limit(int(limit))
+        .stream()
+    )
+    rows = []
+    for d in q:
+        x = d.to_dict() or {}
+        created_dt_utc = _to_utc_datetime(x.get("created_at"))
+        rows.append(
+            {
+                "created_at_utc": created_dt_utc,
+                "created_at_kr": format_kr_datetime(created_dt_utc.astimezone(KST)) if created_dt_utc else "",
+                "memo": str(x.get("memo", "") or ""),
+                "income": int(x.get("income", 0) or 0),
+                "expense": int(x.get("expense", 0) or 0),
+                "balance_after": int(x.get("balance_after", 0) or 0),
+            }
+        )
+    return {"ok": True, "rows": rows}
+
+# ---------- 국고 전용 템플릿 ----------
+@st.cache_data(ttl=120, show_spinner=False)
+def api_list_treasury_templates_cached():
+    docs = db.collection("treasury_templates").stream()
+    templates = []
+    for d in docs:
+        t = d.to_dict() or {}
+        label = str(t.get("label", "") or "").strip()
+        if label:
+            templates.append(
+                {
+                    "template_id": d.id,
+                    "label": label,
+                    "kind": str(t.get("kind", "income") or "income"),  # income/expense
+                    "amount": int(t.get("amount", 0) or 0),
+                    "order": int(t.get("order", 999999) or 999999),
+                }
+            )
+    templates.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
+    return {"ok": True, "templates": templates}
+
+def api_upsert_treasury_template(admin_pin: str, template_id: str, label: str, kind: str, amount: int, order: int):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    label = str(label or "").strip()
+    kind = str(kind or "income").strip()
+    amount = int(amount or 0)
+    order = int(order or 999999)
+
+    if not label:
+        return {"ok": False, "error": "라벨(내역)이 필요합니다."}
+    if kind not in ("income", "expense"):
+        return {"ok": False, "error": "kind는 income/expense 중 하나여야 합니다."}
+    if amount <= 0:
+        return {"ok": False, "error": "금액은 0보다 커야 합니다."}
+
+    if template_id:
+        ref = db.collection("treasury_templates").document(str(template_id))
+    else:
+        ref = db.collection("treasury_templates").document()
+
+    ref.set(
+        {
+            "label": label,
+            "kind": kind,
+            "amount": amount,
+            "order": order,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+
+    api_list_treasury_templates_cached.clear()
+    return {"ok": True}
+
+def api_delete_treasury_template(admin_pin: str, template_id: str):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+    if not template_id:
+        return {"ok": False, "error": "template_id가 없습니다."}
+    db.collection("treasury_templates").document(str(template_id)).delete()
+    api_list_treasury_templates_cached.clear()
+    return {"ok": True}
+
+def treasury_template_display(t):
+    kind_kr = "세입" if t.get("kind") == "income" else "세출"
+    return f"{t.get('label')}[{kind_kr} {int(t.get('amount', 0))}]"
+
+def build_treasury_template_maps():
+    res = api_list_treasury_templates_cached()
+    items = res.get("templates", []) if res.get("ok") else []
+    disp = [treasury_template_display(t) for t in items]
+    by_disp = {treasury_template_display(t): t for t in items}
+    by_id = {str(t.get("template_id")): t for t in items if t.get("template_id")}
+    return items, disp, by_disp, by_id
+
+# ---------- 국고 입력 UI (개별 관리자 입금/출금과 동일한 원리) ----------
+def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_display: dict):
+    memo_key = f"{prefix}_memo"
+    inc_key = f"{prefix}_inc"
+    exp_key = f"{prefix}_exp"
+    tpl_key = f"{prefix}_tpl"
+
+    st.session_state.setdefault(memo_key, "")
+    st.session_state.setdefault(inc_key, 0)
+    st.session_state.setdefault(exp_key, 0)
+    st.session_state.setdefault(tpl_key, "(직접 입력)")
+
+    tpl_prev_key = f"{prefix}_tpl_prev"
+    st.session_state.setdefault(tpl_prev_key, "(직접 입력)")
+
+    tpl_labels = ["(직접 입력)"] + [treasury_template_display(t) for t in templates_list]
+    sel = st.selectbox("국고 템플릿", tpl_labels, key=tpl_key)
+
+    if sel != st.session_state.get(tpl_prev_key):
+        st.session_state[tpl_prev_key] = sel
+
+        # 템플릿 선택 시 내역+금액 자동 채움
+        if sel != "(직접 입력)":
+            t = template_by_display.get(sel)
+            if t:
+                st.session_state[memo_key] = str(t.get("label", "") or "")
+                amt = int(t.get("amount", 0) or 0)
+                if str(t.get("kind")) == "income":
+                    st.session_state[inc_key] = amt
+                    st.session_state[exp_key] = 0
+                else:
+                    st.session_state[inc_key] = 0
+                    st.session_state[exp_key] = amt
+
+        st.rerun()
+
+    st.text_input("내역", key=memo_key)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.number_input("세입", min_value=0, step=1, key=inc_key)
+    with c2:
+        st.number_input("세출", min_value=0, step=1, key=exp_key)
+
+    memo = str(st.session_state.get(memo_key, "") or "").strip()
+    inc = int(st.session_state.get(inc_key, 0) or 0)
+    exp = int(st.session_state.get(exp_key, 0) or 0)
+
+    return memo, inc, exp
+
+# =========================
 # Templates (공용) - 너 코드 유지
 # =========================
 tpl_res = api_list_templates_cached()
@@ -2177,6 +2410,16 @@ if "💼 직업/월급" in tabs:
                     nm = id_to_name.get(sid, "")
                     memo = f"월급 자동지급({mkey}) {job_name}" + (f" - {nm}" if nm else "")
                     res = _pay_one_student(sid, net_amt, memo)
+                                        # ✅ (국고 세입) 월급 공제액을 국고로 입금
+                    deduction = int(max(0, gross - net_amt))
+                    if deduction > 0:
+                        api_add_treasury_tx(
+                            admin_pin=ADMIN_PIN,
+                            memo=f"월급 공제 세입({mkey}) {job_name}",
+                            income=deduction,
+                            expense=0,
+                            actor="system_salary",
+                        )
                     if res.get("ok"):
                         _write_paylog(mkey, sid, net_amt, job_name, method="auto")
                         paid_cnt += 1
@@ -2244,13 +2487,13 @@ if "💼 직업/월급" in tabs:
                 for sid in list(x.get("assigned_ids", []) or []):
                     sid = str(sid or "").strip()
                     if sid:
-                        targets.append((sid, net_amt, job_name))
+                        targets.append((sid, net_amt, job_name, gross))
 
             # 중복 학생(여러 직업에 배정되는 경우) 방지: 마지막 것만 남김
             dedup = {}
             for sid, amt, jb in targets:
-                dedup[sid] = (amt, jb)
-            targets = [(sid, v[0], v[1]) for sid, v in dedup.items()]
+                dedup[sid] = (amt, jb, g)
+            targets = [(sid, v[0], v[1], v[2]) for sid, v in dedup.items()]
 
             already_any = any(_already_paid_this_month(cur_mkey, sid) for sid, _, _ in targets)
 
@@ -2286,10 +2529,21 @@ if "💼 직업/월급" in tabs:
                 id_to_name2 = {a.get("student_id"): a.get("name") for a in accs2 if a.get("student_id")}
 
                 paid_cnt, err_cnt = 0, 0
-                for sid, amt, jb in targets:
+                for sid, amt, jb, gross in targets:
                     nm = id_to_name2.get(sid, "")
                     memo = f"월급 수동지급({cur_mkey}) {jb}" + (f" - {nm}" if nm else "")
                     res = _pay_one_student(sid, int(amt), memo)
+                    # ✅ (국고 세입) 월급 공제액을 국고로 입금
+                    deduction = int(max(0, int(gross) - int(amt))) if "gross" in locals() else 0
+                    if deduction > 0:
+                        api_add_treasury_tx(
+                            admin_pin=ADMIN_PIN,
+                            memo=f"월급 공제 세입({cur_mkey}) {jb}",
+                            income=deduction,
+                            expense=0,
+                            actor="system_salary",
+                        )
+
                     if res.get("ok"):
                         # ✅ 수동지급도 이번달 지급 기록 남김(자동 패스 조건 충족)
                         _write_paylog(cur_mkey, sid, int(amt), jb, method="manual")
@@ -2712,6 +2966,154 @@ if "💼 직업/월급" in tabs:
                 if st.button("아니오", use_container_width=True, key="job_del_no"):
                     st.session_state.pop("_job_delete_id", None)
                     st.rerun()
+
+# =========================
+# 🏛️ 국세청(국고) 탭
+# =========================
+if "🏛️ 국세청(국고)" in tabs:
+    with tab_map["🏛️ 국세청(국고)"]:
+        st.subheader("🏛️ 국세청(국고)")
+
+        # 관리자만 쓰기 가능 / 학생은 읽기만(원하면 later: treasury_read 권한으로 확장)
+        writable = bool(is_admin)
+
+        # 1) 상단 잔액 표시: [국고] : 00000드림
+        st_res = api_get_treasury_state_cached()
+        treasury_bal = int(st_res.get("balance", 0) or 0)
+        st.markdown(f"## [국고] : **{treasury_bal:,}{TREASURY_UNIT}**")
+
+        st.markdown("### [세입/세출 내역]")
+
+        # 2) 세입/세출 내역(최신순 표)
+        led = api_list_treasury_ledger_cached(limit=300)
+        df_led = pd.DataFrame(led.get("rows", [])) if led.get("ok") else pd.DataFrame()
+
+        if df_led.empty:
+            st.info("국고 내역이 아직 없어요.")
+        else:
+            view = df_led.rename(
+                columns={
+                    "memo": "내역",
+                    "income": "세입",
+                    "expense": "세출",
+                    "balance_after": "총액",
+                    "created_at_kr": "날짜-시간",
+                }
+            )
+            st.dataframe(
+                view[["내역", "세입", "세출", "총액", "날짜-시간"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.divider()
+
+        # 3) 세입/세출 입력(개별 관리자 입금/출금과 같은 원리)
+        st.markdown("### 📝 세입/세출 내역 입력")
+
+        tre_tpls, _, tre_by_disp, _ = build_treasury_template_maps()
+        memo_t, inc_t, exp_t = render_treasury_trade_ui(
+            prefix="treasury_trade",
+            templates_list=tre_tpls,
+            template_by_display=tre_by_disp,
+        )
+
+        btnc1, btnc2 = st.columns([1.2, 1.0])
+        with btnc1:
+            if st.button("저장 (관리자, 국세청)", use_container_width=True, key="treasury_save_btn", disabled=(not writable)):
+                if not writable:
+                    st.error("관리자 전용입니다.")
+                else:
+                    res = api_add_treasury_tx(
+                        admin_pin=ADMIN_PIN,
+                        memo=memo_t,
+                        income=int(inc_t),
+                        expense=int(exp_t),
+                        actor="treasury",
+                    )
+                    if res.get("ok"):
+                        toast("국고 저장 완료!", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error(res.get("error", "국고 저장 실패"))
+
+        with btnc2:
+            st.caption("※ 세입/세출 중 하나만 입력")
+
+        st.divider()
+
+        # 4) 국고 템플릿 추가/수정/삭제 (국고 전용)
+        st.markdown("### 🧩 국고 템플릿 추가/수정/삭제")
+
+        tpls = api_list_treasury_templates_cached().get("templates", [])
+        pick_labels = ["(새로 추가)"] + [f"{t.get('order', 999999)} | {treasury_template_display(t)}" for t in tpls]
+        picked = st.selectbox("편집 대상", pick_labels, key="tre_tpl_pick")
+
+        edit_tpl = None
+        if picked != "(새로 추가)":
+            for t in tpls:
+                lab = f"{t.get('order', 999999)} | {treasury_template_display(t)}"
+                if lab == picked:
+                    edit_tpl = t
+                    break
+
+        f1, f2, f3, f4 = st.columns([2.2, 1.2, 1.2, 1.0])
+        with f1:
+            lab_in = st.text_input("라벨(내역)", value=(edit_tpl.get("label") if edit_tpl else ""), key="tre_tpl_label").strip()
+        with f2:
+            kind_in = st.selectbox(
+                "종류",
+                ["income", "expense"],
+                index=(0 if (not edit_tpl or edit_tpl.get("kind") == "income") else 1),
+                key="tre_tpl_kind",
+                help="income=세입, expense=세출",
+            )
+        with f3:
+            amt_in = st.number_input("금액", min_value=0, step=1, value=int(edit_tpl.get("amount", 0)) if edit_tpl else 0, key="tre_tpl_amount")
+        with f4:
+            ord_in = st.number_input("순서", min_value=1, step=1, value=int(edit_tpl.get("order", 1)) if edit_tpl else 1, key="tre_tpl_order")
+
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            if st.button("✅ 저장", use_container_width=True, key="tre_tpl_save", disabled=(not writable)):
+                if not writable:
+                    st.error("관리자 전용입니다.")
+                else:
+                    res = api_upsert_treasury_template(
+                        admin_pin=ADMIN_PIN,
+                        template_id=(edit_tpl.get("template_id") if edit_tpl else ""),
+                        label=lab_in,
+                        kind=kind_in,
+                        amount=int(amt_in),
+                        order=int(ord_in),
+                    )
+                    if res.get("ok"):
+                        toast("국고 템플릿 저장 완료!", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error(res.get("error", "저장 실패"))
+
+        with b2:
+            if st.button("🧹 입력 초기화", use_container_width=True, key="tre_tpl_clear"):
+                st.session_state.pop("tre_tpl_label", None)
+                st.session_state.pop("tre_tpl_amount", None)
+                st.session_state.pop("tre_tpl_order", None)
+                st.session_state["tre_tpl_pick"] = "(새로 추가)"
+                st.rerun()
+
+        with b3:
+            if st.button("🗑️ 삭제", use_container_width=True, key="tre_tpl_del", disabled=(not writable or edit_tpl is None)):
+                if not writable:
+                    st.error("관리자 전용입니다.")
+                elif not edit_tpl:
+                    st.stop()
+                else:
+                    res = api_delete_treasury_template(ADMIN_PIN, str(edit_tpl.get("template_id")))
+                    if res.get("ok"):
+                        toast("국고 템플릿 삭제 완료!", icon="🗑️")
+                        st.rerun()
+                    else:
+                        st.error(res.get("error", "삭제 실패"))
 
 # =========================
 # 10) 🗓️ 일정 (권한별 수정)
