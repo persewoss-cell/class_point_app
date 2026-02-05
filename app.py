@@ -1009,7 +1009,7 @@ def build_treasury_template_maps():
 def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_display: dict):
     memo_key = f"{prefix}_memo"
     inc_key = f"{prefix}_inc"
-    exp_key = f"{prefix}_exp"
+    exp_key = f"{prefix}_out"
     tpl_key = f"{prefix}_tpl"
     tpl_prev_key = f"{prefix}_tpl_prev"
 
@@ -1064,66 +1064,6 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
     memo = str(st.session_state.get(memo_key, "") or "").strip()
     inc = int(st.session_state.get(inc_key, 0) or 0)
     exp = int(st.session_state.get(exp_key, 0) or 0)
-    return memo, inc, exp
-
-# =========================
-# ✅ 국고 전용 입력 UI (원형버튼 포함)
-# =========================
-def render_treasury_trade_ui():
-    memo_key = "treasury_io_memo"
-    inc_key  = "treasury_io_in"
-    exp_key  = "treasury_io_out"
-    mode_key = "treasury_io_mode"
-
-    st.session_state.setdefault(memo_key, "")
-    st.session_state.setdefault(inc_key, 0)
-    st.session_state.setdefault(exp_key, 0)
-    st.session_state.setdefault(mode_key, "세입(+)")
-
-    def _get_net():
-        return int(st.session_state.get(inc_key, 0)) - int(st.session_state.get(exp_key, 0))
-
-    def _set_by_net(net: int):
-        if net >= 0:
-            st.session_state[inc_key] = net
-            st.session_state[exp_key] = 0
-        else:
-            st.session_state[inc_key] = 0
-            st.session_state[exp_key] = -net
-
-    def _apply_amt(amt: int):
-        sign = 1 if st.session_state[mode_key] == "세입(+)" else -1
-        net = _get_net() + (sign * amt)
-        _set_by_net(net)
-
-    st.text_input("내역", key=memo_key)
-
-    st.radio("적용", ["세입(+)", "세출(-)"], horizontal=True, key=mode_key)
-
-    st.caption("⚡ 빠른 금액")
-    st.markdown("<div class='round-btns'>", unsafe_allow_html=True)
-    pick = st.radio(
-        "금액",
-        ["0","10","20","50","100","200","500","1000"],
-        horizontal=True,
-        label_visibility="collapsed",
-        key="treasury_quick_pick",
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if pick:
-        _apply_amt(int(pick))
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.number_input("세입", min_value=0, step=1, key=inc_key)
-    with c2:
-        st.number_input("세출", min_value=0, step=1, key=exp_key)
-
-    memo = str(st.session_state.get(memo_key, "")).strip()
-    inc  = int(st.session_state.get(inc_key, 0))
-    exp  = int(st.session_state.get(exp_key, 0))
-
     return memo, inc, exp
 
 # =========================
