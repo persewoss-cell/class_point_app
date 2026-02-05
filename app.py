@@ -2495,7 +2495,7 @@ if "💼 직업/월급" in tabs:
                 dedup[sid] = (amt, jb, gross)
             targets = [(sid, v[0], v[1], v[2]) for sid, v in dedup.items()]
 
-            already_any = any(_already_paid_this_month(cur_mkey, sid) for sid, _, _ in targets)
+            already_any = any(_already_paid_this_month(cur_mkey, sid) for sid, *_ in targets)
 
             if st.button("💸 수동지급(이번 달 즉시 지급)", use_container_width=True, key="payroll_manual_btn"):
                 # 이미 지급된 적 있으면 확인창 띄우기
