@@ -2345,22 +2345,17 @@ if "💼 직업/월급" in tabs:
         # -------------------------------------------------
         # ✅ 직업/월급 목록: 제목 1개 + 버튼(표 바로 위) + 헤더 정렬(내용과 딱 맞춤)
         # -------------------------------------------------
-        head_l, head_r = st.columns([7.0, 2.0])
-        with head_l:
-            st.markdown("### 📋 직업/월급 목록")
-            st.caption("• 아래에 직업을 추가/수정하면 이 리스트에 반영됩니다. • 체크 후 ⬆️⬇️🗑️ 버튼으로 순서 이동/삭제가 됩니다.")
-        with head_r:
-            b1, b2, b3 = st.columns(3)
-            with b1:
-                if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
-                    _bulk_move("up")
-            with b2:
-                if st.button("⬇️", use_container_width=True, key="job_bulk_dn"):
-                    _bulk_move("down")
-            with b3:
-                if st.button("🗑️", use_container_width=True, key="job_bulk_del"):
-                    _bulk_delete_prepare()
-                    st.rerun()
+        btn1, btn2, btn3 = st.columns(3)
+        with btn1:
+            if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
+                _bulk_move("up")
+        with btn2:
+            if st.button("⬇️", use_container_width=True, key="job_bulk_dn"):
+                _bulk_move("down")
+        with btn3:
+            if st.button("🗑️", use_container_width=True, key="job_bulk_del"):
+                _bulk_delete_prepare()
+                st.rerun()
 
         # -------------------------
         # ✅ 선택(체크박스) 세션 상태 준비
