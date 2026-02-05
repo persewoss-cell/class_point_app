@@ -1985,47 +1985,65 @@ if "💼 직업/월급" in tabs:
 
         st.markdown(
             """
-            <style>
-            /* 직업/월급 표용 미세 스타일 */
-            .job-table .hdr{
-                font-weight: 900;
-                text-align: center;
-                padding: 8px 6px;
-                border-bottom: 2px solid #e5e7eb;
-                background: #fafafa;
-                border-radius: 10px;
-                margin-bottom: 6px;
-            }
-            .job-table .cell{
-                padding: 10px 6px;
-                border-bottom: 1px solid #f1f5f9;
-            }
-            .job-table .center{ text-align:center; }
-            .job-table .right{ text-align:right; }
-            .job-table .jobname{ font-weight: 800; }
-            .job-table .muted{ color:#6b7280; font-size: 0.92rem; }
+st.markdown(
+    """
+    <style>
+    /* 직업/월급 표용 미세 스타일 */
+    .job-table .hdr{
+        font-weight: 900;
+        text-align: center;
+        padding: 8px 6px;
+        border-bottom: 2px solid #e5e7eb;
+        background: #fafafa;
+        border-radius: 10px;
+        margin-bottom: 6px;
+    }
+    .job-table .cell{
+        padding: 10px 6px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .job-table .center{ text-align:center; }
+    .job-table .right{ text-align:right; }
+    .job-table .jobname{ font-weight: 800; }
+    .job-table .muted{ color:#6b7280; font-size: 0.92rem; }
 
-            /* 행 간격 */
-            .job-row{ padding: 6px 0; }
+    /* 행 간격 */
+    .job-row{ padding: 6px 0; }
 
-            /* 버튼이 튀어나오지 않게(특히 순서/+-) */
-            .job-table div[data-testid="stButton"] > button{
-                width: 100% !important;
-                border-radius: 12px !important;
-            }
+    /* ✅ (삭제) 아래 규칙이 원형 버튼을 깨뜨리는 주범이라 제거함 */
+    /* .job-table div[data-testid="stButton"] > button{
+        width: 100% !important;
+        border-radius: 12px !important;
+    } */
 
-            /* selectbox 높이/여백 정리 */
-            .job-table div[data-testid="stSelectbox"] > div{
-                min-height: 2.55rem;
-            }
+    /* selectbox 높이/여백 정리 */
+    .job-table div[data-testid="stSelectbox"] > div{
+        min-height: 2.55rem;
+    }
 
-            /* 번호/금액/실수령을 중앙으로(표 느낌) */
-            .job-table .stMarkdown p { margin-bottom: 0.2rem !important; }
+    /* 번호/금액/실수령을 중앙으로(표 느낌) */
+    .job-table .stMarkdown p { margin-bottom: 0.2rem !important; }
 
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+    /* ✅ 원형버튼(학생수/순서) 내부 텍스트: span/div/p 모두 잡기 */
+    .jobcnt-wrap div[data-testid="stButton"] button > span,
+    .jobcnt-wrap div[data-testid="stButton"] button > div,
+    .jobcnt-wrap div[data-testid="stButton"] button > p,
+    .joborder-wrap div[data-testid="stButton"] button > span,
+    .joborder-wrap div[data-testid="stButton"] button > div,
+    .joborder-wrap div[data-testid="stButton"] button > p{
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        line-height: 1 !important;
+        font-size: clamp(1.0rem, 2.6vw, 1.2rem) !important;
+        font-weight: 800 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
         st.markdown("<div class='job-table'>", unsafe_allow_html=True)
 
