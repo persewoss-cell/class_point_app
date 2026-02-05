@@ -29,11 +29,11 @@ st.markdown(
     """
     <style>
     section.main > div:first-child { padding-top: 2.6rem; }
-    @media (max-768px) {
+    @media (max-width: 768px) {
         section.main > div:first-child { padding-top: 3.2rem; }
     }
     .block-container { padding-bottom: 2.0rem; }
-    @media (max-768px) {
+    @media (max-width: 768px) {
         .block-container { padding-bottom: 6.0rem; }
     }
 
@@ -1011,22 +1011,23 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
     inc_key = f"{prefix}_inc"
     exp_key = f"{prefix}_exp"
     tpl_key = f"{prefix}_tpl"
+    tpl_prev_key = f"{prefix}_tpl_prev"
 
+    # 세션 기본값
     st.session_state.setdefault(memo_key, "")
     st.session_state.setdefault(inc_key, 0)
     st.session_state.setdefault(exp_key, 0)
     st.session_state.setdefault(tpl_key, "(직접 입력)")
-
-    tpl_prev_key = f"{prefix}_tpl_prev"
     st.session_state.setdefault(tpl_prev_key, "(직접 입력)")
 
+    # 템플릿 선택
     tpl_labels = ["(직접 입력)"] + [treasury_template_display(t) for t in templates_list]
     sel = st.selectbox("국고 템플릿", tpl_labels, key=tpl_key)
 
+    # 템플릿 바뀌면 내역/금액 자동채움
     if sel != st.session_state.get(tpl_prev_key):
         st.session_state[tpl_prev_key] = sel
 
-        # 템플릿 선택 시 내역+금액 자동 채움
         if sel != "(직접 입력)":
             t = template_by_display.get(sel)
             if t:
@@ -1041,28 +1042,29 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
 
         st.rerun()
 
+    # 내역 입력
     st.text_input("내역", key=memo_key)
 
-# ✅ 원형 숫자 버튼(빠른 금액) 추가
-render_round_amount_picker(
-    prefix="treasury_io",
-    plus_label="세입(+)",
-    minus_label="세출(-)",
-    amounts=[0, 10, 20, 50, 100, 200, 500, 1000],
-)
+    # ✅ 원형 숫자 버튼(빠른 금액) — 국고 전용 prefix를 그대로 사용
+    render_round_amount_picker(
+        prefix=prefix,                # ✅ 여기 중요: "treasury_trade" 그대로 연동됨
+        plus_label="세입(+)",
+        minus_label="세출(-)",
+        amounts=[0, 10, 20, 50, 100, 200, 500, 1000],
+    )
 
-c1, c2 = st.columns(2)
-with c1:
-    st.number_input("세입", min_value=0, step=1, key="treasury_io_inc")
-with c2:
-    st.number_input("세출", min_value=0, step=1, key="treasury_io_out")
+    # 숫자 입력(세입/세출)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.number_input("세입", min_value=0, step=1, key=inc_key)
+    with c2:
+        st.number_input("세출", min_value=0, step=1, key=exp_key)
 
-# ✅ with 블록 밖(하지만 함수 안)에서 값 만들고 return
-memo = str(st.session_state.get(memo_key, "") or "").strip()
-inc  = int(st.session_state.get(inc_key, 0) or 0)
-exp  = int(st.session_state.get(exp_key, 0) or 0)
-
-return memo, inc, exp
+    # ✅ 함수 안에서 return (return outside function 방지)
+    memo = str(st.session_state.get(memo_key, "") or "").strip()
+    inc = int(st.session_state.get(inc_key, 0) or 0)
+    exp = int(st.session_state.get(exp_key, 0) or 0)
+    return memo, inc, exp
 
 # =========================
 # ✅ 국고 전용 입력 UI (원형버튼 포함)
