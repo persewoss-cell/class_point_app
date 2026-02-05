@@ -2478,98 +2478,90 @@ if "💼 직업/월급" in tabs:
 
             net = _calc_net(salary, cfg)
 
-            # ✅ 카드 프레임
-            with st.container(border=True):
-                # 1줄: 순(체크+번호) / 직업 / 월급 / 실수령
-                c = st.columns([1.2, 2.4, 1.2, 1.3])
+                # ✅ 한 줄 카드 레이아웃(프레임 유지)
+                with st.container(border=True):
+                    c = st.columns([1.1, 2.2, 1.1, 1.2, 1.4, 4.0])
 
-                with c[0]:
-                    # 순 앞 체크박스 + 번호
-                    ck_cols = st.columns([0.9, 1.1])
-                    with ck_cols[0]:
-                        st.session_state.job_sel[rid] = st.checkbox(
-                            "",
-                            value=bool(st.session_state.job_sel.get(rid, False)),
-                            key=f"job_sel_{rid}",
-                            label_visibility="collapsed",
-                        )
-                    with ck_cols[1]:
-                        st.markdown(f"<div class='job-card-title'>{order}</div>", unsafe_allow_html=True)
-
-                with c[1]:
-                    st.markdown(f"<div class='job-card-title'>{job}</div>", unsafe_allow_html=True)
-
-                with c[2]:
-                    st.markdown(f"<div class='job-card-title' style='text-align:center;'>{salary}</div>", unsafe_allow_html=True)
-                    st.markdown("<div class='job-card-muted' style='text-align:center;'>월급</div>", unsafe_allow_html=True)
-
-                with c[3]:
-                    st.markdown(f"<div class='job-card-title' style='text-align:center;'>{net}</div>", unsafe_allow_html=True)
-                    st.markdown("<div class='job-card-muted' style='text-align:center;'>실수령</div>", unsafe_allow_html=True)
-
-                # 2줄: 학생수 +/- / 계정 드롭다운들
-                c2 = st.columns([1.4, 4.6])
-
-                # -------------------------
-                # 학생 수 +/- (기존 로직 유지)
-                # -------------------------
-                with c2[0]:
-                    st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
-
-                    a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
-
-                    with a1:
-                        if st.button("➖", use_container_width=False, key=f"job_cnt_minus_{rid}"):
-                            new_cnt = max(0, cnt - 1)
-                            new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
-                            db.collection("job_salary").document(rid).update(
-                                {
-                                    "student_count": new_cnt,
-                                    "assigned_ids": new_assigned,
-                                }
-                            )
-                            st.rerun()
-
-                    with a2:
-                        st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
-
-                    with a3:
-                        if st.button("➕", use_container_width=False, key=f"job_cnt_plus_{rid}"):
-                            new_cnt = cnt + 1
-                            new_assigned = assigned_ids + [""]
-                            db.collection("job_salary").document(rid).update(
-                                {
-                                    "student_count": new_cnt,
-                                    "assigned_ids": new_assigned,
-                                }
-                            )
-                            st.rerun()
-
-                    st.markdown("</div>", unsafe_allow_html=True)
-
-                # -------------------------
-                # 이름(계정) 드롭다운 (기존 로직 유지)
-                # -------------------------
-                with c2[1]:
-                    if cnt <= 0:
-                        st.info("배정 없음")
-                    else:
-                        new_ids = []
-                        for k in range(cnt):
-                            cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
-                            cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
-
-                            sel = st.selectbox(
-                                f"계정{k+1}",
-                                acc_options,
-                                index=acc_options.index(cur_label) if cur_label in acc_options else 0,
-                                key=f"job_assign_{rid}_{k}",
+                    # 1️⃣ 순 + 체크
+                    with c[0]:
+                        ck_cols = st.columns([0.9, 1.1])
+                        with ck_cols[0]:
+                            st.session_state.job_sel[rid] = st.checkbox(
+                                "",
+                                value=bool(st.session_state.job_sel.get(rid, False)),
+                                key=f"job_sel_{rid}",
                                 label_visibility="collapsed",
                             )
-                            new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
+                        with ck_cols[1]:
+                            st.markdown(f"<div class='job-card-title'>{order}</div>", unsafe_allow_html=True)
 
-                        if new_ids != assigned_ids:
-                            db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
+                    # 2️⃣ 직업
+                    with c[1]:
+                        st.markdown(f"<div class='job-card-title'>{job}</div>", unsafe_allow_html=True)
+
+                    # 3️⃣ 월급
+                    with c[2]:
+                        st.markdown(f"<div class='job-card-title' style='text-align:center;'>{salary}</div>", unsafe_allow_html=True)
+
+                    # 4️⃣ 실수령
+                    with c[3]:
+                        st.markdown(f"<div class='job-card-title' style='text-align:center;'>{net}</div>", unsafe_allow_html=True)
+
+                    # 5️⃣ 학생수 +/-
+                    with c[4]:
+                        st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
+                        a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
+
+                        with a1:
+                            if st.button("➖", use_container_width=False, key=f"job_cnt_minus_{rid}"):
+                                new_cnt = max(0, cnt - 1)
+                                new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
+                                db.collection("job_salary").document(rid).update(
+                                    {
+                                        "student_count": new_cnt,
+                                        "assigned_ids": new_assigned,
+                                    }
+                                )
+                                st.rerun()
+
+                        with a2:
+                            st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
+
+                        with a3:
+                            if st.button("➕", use_container_width=False, key=f"job_cnt_plus_{rid}"):
+                                new_cnt = cnt + 1
+                                new_assigned = assigned_ids + [""]
+                                db.collection("job_salary").document(rid).update(
+                                    {
+                                        "student_count": new_cnt,
+                                        "assigned_ids": new_assigned,
+                                    }
+                                )
+                                st.rerun()
+
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+                    # 6️⃣ 이름(계정) 드롭다운들
+                    with c[5]:
+                        if cnt <= 0:
+                            st.info("배정 없음")
+                        else:
+                            new_ids = []
+                            for k in range(cnt):
+                                cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
+                                cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
+
+                                sel = st.selectbox(
+                                    f"계정{k+1}",
+                                    acc_options,
+                                    index=acc_options.index(cur_label) if cur_label in acc_options else 0,
+                                    key=f"job_assign_{rid}_{k}",
+                                    label_visibility="collapsed",
+                                )
+                                new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
+
+                            if new_ids != assigned_ids:
+                                db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
 
         st.divider()
 
