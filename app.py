@@ -303,8 +303,8 @@ st.markdown(
 /* ✅ 원형 버튼 안 SVG 아이콘 크기 강제 축소 (핵심) */
 .jobcnt-wrap div[data-testid="stButton"] button svg,
 .joborder-wrap div[data-testid="stButton"] button svg{
-    width: 14px !important;
-    height: 14px !important;
+    width: 7px !important;
+    height: 7px !important;
 }
 
 /* 모바일은 더 작게 */
