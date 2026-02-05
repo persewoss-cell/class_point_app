@@ -145,6 +145,33 @@ st.markdown(
             font-size: 1.05rem !important;
         }
     }
+    /* =========================
+       💼 직업/월급 탭: 학생수(+/-), 순서(⬆️⬇️) 버튼 고정(원형 안 삐져나옴)
+       ========================= */
+    .jobcnt-wrap div[data-testid="stButton"] > button,
+    .joborder-wrap div[data-testid="stButton"] > button{
+        width: clamp(2.1rem, 3.6vw, 2.6rem) !important;
+        height: clamp(2.1rem, 3.6vw, 2.6rem) !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        border-radius: 9999px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        line-height: 1 !important;
+        overflow: hidden !important;
+    }
+    .jobcnt-num{
+        width: clamp(2.1rem, 3.6vw, 2.6rem);
+        height: clamp(2.1rem, 3.6vw, 2.6rem);
+        display:flex; align-items:center; justify-content:center;
+        font-weight: 800;
+    }
+    .job-empty{
+        padding: 0.35rem 0.5rem;
+        color: #777;
+    }
     </style>
     """,
     unsafe_allow_html=True,
