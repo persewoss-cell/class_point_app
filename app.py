@@ -2491,7 +2491,7 @@ if "💼 직업/월급" in tabs:
 
             # 중복 학생(여러 직업에 배정되는 경우) 방지: 마지막 것만 남김
             dedup = {}
-            for sid, amt, jb in targets:
+            for sid, amt, jb, gross in targets:
                 dedup[sid] = (amt, jb, g)
             targets = [(sid, v[0], v[1], v[2]) for sid, v in dedup.items()]
 
