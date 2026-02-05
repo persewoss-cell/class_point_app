@@ -3168,13 +3168,23 @@ if "🏛️ 국세청(국고)" in tabs:
         with f1:
             lab_in = st.text_input("라벨(내역)", value=(edit_tpl.get("label") if edit_tpl else ""), key="tre_tpl_label").strip()
         with f2:
-            kind_in = st.selectbox(
+            # ✅ 화면에는 한글(세입/세출)로, 저장은 income/expense 그대로
+            kind_map = {"세입": "income", "세출": "expense"}
+            kind_rev = {v: k for k, v in kind_map.items()}
+
+            cur_kind = (edit_tpl.get("kind") if edit_tpl else "income")
+            cur_kind_kr = kind_rev.get(str(cur_kind), "세입")
+
+            kind_kr = st.selectbox(
                 "종류",
-                ["income", "expense"],
-                index=(0 if (not edit_tpl or edit_tpl.get("kind") == "income") else 1),
-                key="tre_tpl_kind",
-                help="income=세입, expense=세출",
+                ["세입", "세출"],
+                index=(0 if cur_kind_kr == "세입" else 1),
+                key="tre_tpl_kind_kr",
+                help="세입=income, 세출=expense (저장은 자동으로 처리됩니다)",
             )
+
+            # ✅ 아래 저장 버튼에서 kind_in을 그대로 쓰도록, 변수명 kind_in 유지
+            kind_in = kind_map.get(kind_kr, "income")
         with f3:
             amt_in = st.number_input("금액", min_value=0, step=1, value=int(edit_tpl.get("amount", 0)) if edit_tpl else 0, key="tre_tpl_amount")
         with f4:
