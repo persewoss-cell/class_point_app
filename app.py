@@ -2343,140 +2343,122 @@ if "💼 직업/월급" in tabs:
         #   - 로직(저장/순서/학생수/드롭다운)은 그대로, UI만 정리
         # -------------------------------------------------
         st.markdown("### 📋 직업/월급 목록")
-        st.caption("• 아래에 직업을 추가/수정하면 이 표에 들어갑니다. • 학생 수를 늘리면 ‘이름(계정)’ 드롭다운이 자동으로 늘어납니다.")
+        st.caption("• 아래에 직업을 추가/수정하면 이 리스트에 반영됩니다. • 체크 후 상단 버튼으로 순서 이동/삭제가 됩니다.")
 
+        # -------------------------
+        # ✅ 선택(체크박스) 세션 상태 준비
+        # -------------------------
+        if "job_sel" not in st.session_state:
+            st.session_state.job_sel = {}
+
+        current_ids = [rr["_id"] for rr in rows]
+        # 새로 생긴 job은 기본 False로
+        for rid0 in current_ids:
+            st.session_state.job_sel.setdefault(rid0, False)
+        # 이미 삭제된 job은 세션에서 제거
+        for rid0 in list(st.session_state.job_sel.keys()):
+            if rid0 not in current_ids:
+                st.session_state.job_sel.pop(rid0, None)
+
+        def _selected_job_ids():
+            return [rid0 for rid0 in current_ids if bool(st.session_state.job_sel.get(rid0, False))]
+
+        # -------------------------
+        # ✅ 일괄 순서 이동(체크된 행을 한 칸 위/아래로)
+        # -------------------------
+        def _bulk_move(direction: str):
+            sel = set(_selected_job_ids())
+            if not sel:
+                st.warning("체크된 직업이 없습니다.")
+                return
+
+            # rows는 order로 이미 정렬되어 있음
+            # ✅ 위로: 위에서 아래로 훑으며, 바로 위가 미선택이면 서로 swap
+            if direction == "up":
+                for i0 in range(1, len(rows)):
+                    cur = rows[i0]
+                    prev = rows[i0 - 1]
+                    if (cur["_id"] in sel) and (prev["_id"] not in sel):
+                        _swap_order(cur["_id"], int(cur["order"]), prev["_id"], int(prev["order"]))
+                        rows[i0 - 1], rows[i0] = rows[i0], rows[i0 - 1]
+
+            # ✅ 아래로: 아래에서 위로 훑으며, 바로 아래가 미선택이면 서로 swap
+            elif direction == "down":
+                for i0 in range(len(rows) - 2, -1, -1):
+                    cur = rows[i0]
+                    nxt = rows[i0 + 1]
+                    if (cur["_id"] in sel) and (nxt["_id"] not in sel):
+                        _swap_order(cur["_id"], int(cur["order"]), nxt["_id"], int(nxt["order"]))
+                        rows[i0], rows[i0 + 1] = rows[i0 + 1], rows[i0]
+
+            st.rerun()
+
+        # -------------------------
+        # ✅ 일괄 삭제(체크된 행 삭제)
+        # -------------------------
+        def _bulk_delete_prepare():
+            sel_ids = _selected_job_ids()
+            if not sel_ids:
+                st.warning("체크된 직업이 없습니다.")
+                return
+            st.session_state["_job_bulk_delete_ids"] = sel_ids
+
+        # -------------------------
+        # ✅ 상단 오른쪽: ⬆️⬇️🗑️ 버튼 배치
+        # -------------------------
+        top_left, top_right = st.columns([3.2, 1.6])
+        with top_right:
+            b1, b2, b3 = st.columns(3)
+            with b1:
+                if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
+                    _bulk_move("up")
+            with b2:
+                if st.button("⬇️", use_container_width=True, key="job_bulk_dn"):
+                    _bulk_move("down")
+            with b3:
+                if st.button("🗑️", use_container_width=True, key="job_bulk_del"):
+                    _bulk_delete_prepare()
+                    st.rerun()
+
+        # ✅ 삭제 확인(일괄)
+        if "_job_bulk_delete_ids" in st.session_state:
+            st.warning("체크된 직업을 삭제하시겠습니까?")
+            y, n = st.columns(2)
+            with y:
+                if st.button("예", key="job_bulk_del_yes", use_container_width=True):
+                    del_ids = list(st.session_state.get("_job_bulk_delete_ids", []))
+                    for rid0 in del_ids:
+                        db.collection("job_salary").document(rid0).delete()
+                        st.session_state.job_sel.pop(rid0, None)
+                    st.session_state.pop("_job_bulk_delete_ids", None)
+                    toast("삭제 완료", icon="🗑️")
+                    st.rerun()
+            with n:
+                if st.button("아니오", key="job_bulk_del_no", use_container_width=True):
+                    st.session_state.pop("_job_bulk_delete_ids", None)
+                    st.rerun()
+
+        # -------------------------------------------------
+        # ✅ 카드(프레임) 느낌으로 리스트 렌더링 + 체크박스(순 앞)
+        #   - 기존 로직(학생수 +/- , 계정 드롭다운, 실수령 계산) 그대로 유지
+        # -------------------------------------------------
         st.markdown(
             """
             <style>
-            /* 직업/월급 표용 미세 스타일 */
-            .job-table .hdr{
+            .job-card-title{
                 font-weight: 900;
-                text-align: center;
-                padding: 8px 6px;
-                border-bottom: 2px solid #e5e7eb;
-                background: #fafafa;
-                border-radius: 10px;
-                margin-bottom: 6px;
+                margin: 0.2rem 0 0.5rem 0;
             }
-            .job-table .cell{
-                padding: 10px 6px;
-                border-bottom: 1px solid #f1f5f9;
+            .job-card-muted{
+                color:#6b7280;
+                font-size: 0.92rem;
+                margin-top: 0.15rem;
             }
-            .job-table .center{ text-align:center; }
-            .job-table .right{ text-align:right; }
-            .job-table .jobname{ font-weight: 800; }
-            .job-table .muted{ color:#6b7280; font-size: 0.92rem; }
-
-            /* 행 간격 */
-            .job-row{ padding: 6px 0; }
-
-            /* ✅ (삭제) 아래 규칙이 원형 버튼을 깨뜨리는 주범이라 제거함 */
-            /* .job-table div[data-testid="stButton"] > button{
-                width: 100% !important;
-                border-radius: 12px !important;
-            } */
-
-            /* selectbox 높이/여백 정리 */
-            .job-table div[data-testid="stSelectbox"] > div{
-                min-height: 2.55rem;
-            }
-
-            /* 번호/금액/실수령을 중앙으로(표 느낌) */
-            .job-table .stMarkdown p { margin-bottom: 0.2rem !important; }
-
-        /* ✅ 원형버튼(학생수/순서) 크기 + 내부 아이콘/텍스트 전부 축소 - 최종 */
-        .jobcnt-wrap div[data-testid="stButton"] button,
-        .joborder-wrap div[data-testid="stButton"] button{
-            width: 2.15rem !important;
-            height: 2.15rem !important;
-            min-width: 2.15rem !important;
-            min-height: 2.15rem !important;
-            max-width: 2.15rem !important;
-            max-height: 2.15rem !important;
-            padding: 0 !important;
-            border-radius: 9999px !important;
-            line-height: 1 !important;
-            display:flex !important;
-            align-items:center !important;
-            justify-content:center !important;
-            color: #111 !important;
-            overflow: hidden !important;
-            font-size: 0.47rem !important;
-            font-weight: 900 !important;
-        }
-
-        /* 버튼 내부 모든 요소 축소 */
-        .jobcnt-wrap div[data-testid="stButton"] button *,
-        .joborder-wrap div[data-testid="stButton"] button *{
-            font-size: 0.47rem !important;
-            font-weight: 900 !important;
-            line-height: 1 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-
-        /* SVG 아이콘인 경우 */
-        .jobcnt-wrap div[data-testid="stButton"] button svg,
-        .joborder-wrap div[data-testid="stButton"] button svg{
-            width: 7px !important;
-            height: 7px !important;
-        }
-
-        /* 이모지가 img로 렌더링되는 경우 */
-        .jobcnt-wrap div[data-testid="stButton"] button img,
-        .joborder-wrap div[data-testid="stButton"] button img{
-            width: 7px !important;
-            height: 7px !important;
-        }
-
-        @media (max-width: 768px){
-            .jobcnt-wrap div[data-testid="stButton"] button,
-            .joborder-wrap div[data-testid="stButton"] button{
-                width: 2.05rem !important;
-                height: 2.05rem !important;
-                min-width: 2.05rem !important;
-                min-height: 2.05rem !important;
-                max-width: 2.05rem !important;
-                max-height: 2.05rem !important;
-                font-size: 0.37rem !important;
-            }
-
-            .jobcnt-wrap div[data-testid="stButton"] button *,
-            .joborder-wrap div[data-testid="stButton"] button *{
-                font-size: 0.37rem !important;
-            }
-
-            .jobcnt-wrap div[data-testid="stButton"] button svg,
-            .joborder-wrap div[data-testid="stButton"] button svg,
-            .jobcnt-wrap div[data-testid="stButton"] button img,
-            .joborder-wrap div[data-testid="stButton"] button img{
-                width: 5px !important;
-                height: 5px !important;
-            }
-        }
-
             </style>
             """,
             unsafe_allow_html=True,
         )
 
-
-        st.markdown("<div class='job-table'>", unsafe_allow_html=True)
-
-        # 헤더(가운데 정렬)
-        head = st.columns([0.7, 2.2, 1.2, 1.3, 1.2, 3.6, 1.2])
-        head[0].markdown("<div class='hdr'>순</div>", unsafe_allow_html=True)
-        head[1].markdown("<div class='hdr'>직업</div>", unsafe_allow_html=True)
-        head[2].markdown("<div class='hdr'>월급</div>", unsafe_allow_html=True)
-        head[3].markdown("<div class='hdr'>실수령액</div>", unsafe_allow_html=True)
-        head[4].markdown("<div class='hdr'>학생 수</div>", unsafe_allow_html=True)
-        head[5].markdown("<div class='hdr'>이름(계정)</div>", unsafe_allow_html=True)
-        head[6].markdown("<div class='hdr'>순서</div>", unsafe_allow_html=True)
-
-        # -------------------------------------------------
-        # ✅ 행 렌더 + 학생수(+/-) + 계정 드롭다운(학생수만큼)
-        #   - 기존 로직 유지(저장/순서 바꾸기 동일)
-        # -------------------------------------------------
         for i, r in enumerate(rows):
             rid = r["_id"]
             order = int(r["order"])
@@ -2496,105 +2478,98 @@ if "💼 직업/월급" in tabs:
 
             net = _calc_net(salary, cfg)
 
-            st.markdown("<div class='job-row'>", unsafe_allow_html=True)
-            c = st.columns([0.7, 2.2, 1.2, 1.3, 1.2, 3.6, 1.2])
+            # ✅ 카드 프레임
+            with st.container(border=True):
+                # 1줄: 순(체크+번호) / 직업 / 월급 / 실수령
+                c = st.columns([1.2, 2.4, 1.2, 1.3])
 
-            # 순 / 직업 / 월급 / 실수령액
-            c[0].markdown(f"<div class='cell center'><b>{order}</b></div>", unsafe_allow_html=True)
-            c[1].markdown(f"<div class='cell jobname'>{job}</div>", unsafe_allow_html=True)
-            c[2].markdown(f"<div class='cell center'>{salary}</div>", unsafe_allow_html=True)
-            c[3].markdown(f"<div class='cell center'><b>{net}</b></div>", unsafe_allow_html=True)
-
-            # -------------------------
-            # 학생 수 +/-
-            # -------------------------
-            # -------------------------
-            # 학생 수 +/-  (✅ 원형 버튼 + 겹침/튐 방지)
-            # -------------------------
-            with c[4]:
-                st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
-
-                # ✅ 모바일에서 너무 꽉 끼지 않게 가운데 숫자 폭을 조금 줄임
-                a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
-
-                with a1:
-                    # ✅ 통일: 마이너스 버튼을 ➖ 로
-                    if st.button("➖", use_container_width=False, key=f"job_cnt_minus_{rid}"):
-                        new_cnt = max(0, cnt - 1)
-                        new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
-                        db.collection("job_salary").document(rid).update(
-                            {
-                                "student_count": new_cnt,
-                                "assigned_ids": new_assigned,
-                            }
-                        )
-                        st.rerun()
-
-                with a2:
-                    st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
-
-                with a3:
-                    # ✅ 통일: 플러스 버튼을 ➕ 로
-                    if st.button("➕", use_container_width=False, key=f"job_cnt_plus_{rid}"):
-                        new_cnt = cnt + 1
-                        new_assigned = assigned_ids + [""]
-                        db.collection("job_salary").document(rid).update(
-                            {
-                                "student_count": new_cnt,
-                                "assigned_ids": new_assigned,
-                            }
-                        )
-                        st.rerun()
-
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            # -------------------------
-            # 이름(계정) 드롭다운 (학생수 0이면 숨김)
-            # -------------------------
-            with c[5]:
-                if cnt <= 0:
-                    st.markdown("<div class='job-empty'>-</div>", unsafe_allow_html=True)
-                else:
-                    new_ids = []
-                    for k in range(cnt):
-                        cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
-                        cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
-
-                        sel = st.selectbox(
-                            f"계정{k+1}",
-                            acc_options,
-                            index=acc_options.index(cur_label) if cur_label in acc_options else 0,
-                            key=f"job_assign_{rid}_{k}",
+                with c[0]:
+                    # 순 앞 체크박스 + 번호
+                    ck_cols = st.columns([0.9, 1.1])
+                    with ck_cols[0]:
+                        st.session_state.job_sel[rid] = st.checkbox(
+                            "",
+                            value=bool(st.session_state.job_sel.get(rid, False)),
+                            key=f"job_sel_{rid}",
                             label_visibility="collapsed",
                         )
-                        new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
+                    with ck_cols[1]:
+                        st.markdown(f"<div class='job-card-title'>{order}</div>", unsafe_allow_html=True)
 
-                    if new_ids != assigned_ids:
-                        db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
+                with c[1]:
+                    st.markdown(f"<div class='job-card-title'>{job}</div>", unsafe_allow_html=True)
 
-            # -------------------------
-            # 순서 위/아래  (✅ 원형 버튼 + 칸 밖 튐 방지)
-            # -------------------------
-            with c[6]:
-                st.markdown("<div class='joborder-wrap'>", unsafe_allow_html=True)
+                with c[2]:
+                    st.markdown(f"<div class='job-card-title' style='text-align:center;'>{salary}</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='job-card-muted' style='text-align:center;'>월급</div>", unsafe_allow_html=True)
 
-                up_disabled = (i == 0)
-                dn_disabled = (i == len(rows) - 1)
-                b1, b2 = st.columns([1, 1])
+                with c[3]:
+                    st.markdown(f"<div class='job-card-title' style='text-align:center;'>{net}</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='job-card-muted' style='text-align:center;'>실수령</div>", unsafe_allow_html=True)
 
-                with b1:
-                    if st.button("⬆️", use_container_width=False, disabled=up_disabled, key=f"job_up_{rid}"):
-                        prev = rows[i - 1]
-                        _swap_order(rid, order, prev["_id"], int(prev["order"]))
-                        st.rerun()
+                # 2줄: 학생수 +/- / 계정 드롭다운들
+                c2 = st.columns([1.4, 4.6])
 
-                with b2:
-                    if st.button("⬇️", use_container_width=False, disabled=dn_disabled, key=f"job_dn_{rid}"):
-                        nxt = rows[i + 1]
-                        _swap_order(rid, order, nxt["_id"], int(nxt["order"]))
-                        st.rerun()
+                # -------------------------
+                # 학생 수 +/- (기존 로직 유지)
+                # -------------------------
+                with c2[0]:
+                    st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
 
-                st.markdown("</div>", unsafe_allow_html=True)
+                    a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
+
+                    with a1:
+                        if st.button("➖", use_container_width=False, key=f"job_cnt_minus_{rid}"):
+                            new_cnt = max(0, cnt - 1)
+                            new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
+                            db.collection("job_salary").document(rid).update(
+                                {
+                                    "student_count": new_cnt,
+                                    "assigned_ids": new_assigned,
+                                }
+                            )
+                            st.rerun()
+
+                    with a2:
+                        st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
+
+                    with a3:
+                        if st.button("➕", use_container_width=False, key=f"job_cnt_plus_{rid}"):
+                            new_cnt = cnt + 1
+                            new_assigned = assigned_ids + [""]
+                            db.collection("job_salary").document(rid).update(
+                                {
+                                    "student_count": new_cnt,
+                                    "assigned_ids": new_assigned,
+                                }
+                            )
+                            st.rerun()
+
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                # -------------------------
+                # 이름(계정) 드롭다운 (기존 로직 유지)
+                # -------------------------
+                with c2[1]:
+                    if cnt <= 0:
+                        st.info("배정 없음")
+                    else:
+                        new_ids = []
+                        for k in range(cnt):
+                            cur_id = assigned_ids[k] if k < len(assigned_ids) else ""
+                            cur_label = id_to_label.get(cur_id, "(선택 없음)") if cur_id else "(선택 없음)"
+
+                            sel = st.selectbox(
+                                f"계정{k+1}",
+                                acc_options,
+                                index=acc_options.index(cur_label) if cur_label in acc_options else 0,
+                                key=f"job_assign_{rid}_{k}",
+                                label_visibility="collapsed",
+                            )
+                            new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
+
+                        if new_ids != assigned_ids:
+                            db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
 
         st.divider()
 
