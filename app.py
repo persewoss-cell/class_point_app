@@ -146,10 +146,12 @@ st.markdown(
         }
     }
     /* =========================
-       💼 직업/월급 탭: 학생수(+/-), 순서(⬆️⬇️) 버튼 고정(원형 안 삐져나옴)
+       💼 직업/월급 탭: 학생수(+/-), 순서(⬆️⬇️) 버튼 고정
        ========================= */
-    .jobcnt-wrap div[data-testid="stButton"] > button,
-    .joborder-wrap div[data-testid="stButton"] > button{
+
+    /* 버튼 자체 크기/정렬 */
+    .jobcnt-wrap div[data-testid="stButton"] button,
+    .joborder-wrap div[data-testid="stButton"] button{
         width: clamp(2.1rem, 3.6vw, 2.6rem) !important;
         height: clamp(2.1rem, 3.6vw, 2.6rem) !important;
         min-width: 0 !important;
@@ -162,12 +164,27 @@ st.markdown(
         line-height: 1 !important;
         overflow: hidden !important;
     }
+
+    /* 버튼 안쪽(텍스트/span)까지 강제 중앙 + 크기 고정 */
+    .jobcnt-wrap div[data-testid="stButton"] button *,
+    .joborder-wrap div[data-testid="stButton"] button *{
+        line-height: 1 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: clamp(1.0rem, 2.6vw, 1.2rem) !important;
+    }
+
+    /* 가운데 숫자 */
     .jobcnt-num{
         width: clamp(2.1rem, 3.6vw, 2.6rem);
         height: clamp(2.1rem, 3.6vw, 2.6rem);
-        display:flex; align-items:center; justify-content:center;
+        display:flex;
+        align-items:center;
+        justify-content:center;
         font-weight: 800;
     }
+
     .job-empty{
         padding: 0.35rem 0.5rem;
         color: #777;
