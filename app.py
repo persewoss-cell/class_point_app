@@ -2146,41 +2146,76 @@ if "💼 직업/월급" in tabs:
             /* 번호/금액/실수령을 중앙으로(표 느낌) */
             .job-table .stMarkdown p { margin-bottom: 0.2rem !important; }
 
-            /* ✅ 원형버튼(학생수/순서) 내부 텍스트: span/div/p 모두 잡기 */
+        /* ✅ 원형버튼(학생수/순서) 크기 + 내부 아이콘/텍스트 전부 축소 - 최종 */
+        .jobcnt-wrap div[data-testid="stButton"] button,
+        .joborder-wrap div[data-testid="stButton"] button{
+            width: 2.15rem !important;
+            height: 2.15rem !important;
+            min-width: 2.15rem !important;
+            min-height: 2.15rem !important;
+            max-width: 2.15rem !important;
+            max-height: 2.15rem !important;
+            padding: 0 !important;
+            border-radius: 9999px !important;
+            line-height: 1 !important;
+            display:flex !important;
+            align-items:center !important;
+            justify-content:center !important;
+            color: #111 !important;
+            overflow: hidden !important;
+            font-size: 0.78rem !important;
+            font-weight: 900 !important;
+        }
+
+        /* 버튼 내부 모든 요소 축소 */
+        .jobcnt-wrap div[data-testid="stButton"] button *,
+        .joborder-wrap div[data-testid="stButton"] button *{
+            font-size: 0.78rem !important;
+            font-weight: 900 !important;
+            line-height: 1 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* SVG 아이콘인 경우 */
+        .jobcnt-wrap div[data-testid="stButton"] button svg,
+        .joborder-wrap div[data-testid="stButton"] button svg{
+            width: 12px !important;
+            height: 12px !important;
+        }
+
+        /* 이모지가 img로 렌더링되는 경우 */
+        .jobcnt-wrap div[data-testid="stButton"] button img,
+        .joborder-wrap div[data-testid="stButton"] button img{
+            width: 12px !important;
+            height: 12px !important;
+        }
+
+        @media (max-width: 768px){
             .jobcnt-wrap div[data-testid="stButton"] button,
             .joborder-wrap div[data-testid="stButton"] button{
-                width: 2.15rem !important;
-                height: 2.15rem !important;
-                min-width: 2.15rem !important;
-                min-height: 2.15rem !important;
-                max-width: 2.15rem !important;
-                max-height: 2.15rem !important;
-                padding: 0 !important;
-                border-radius: 9999px !important;
-                line-height: 1 !important;
-                display:flex !important;
-                align-items:center !important;
-                justify-content:center !important;
-                color: #111 !important;          /* ✅ 버튼 글자색 강제(핵심) */
-                overflow: visible !important;     /* ✅ + 잘림 방지 */
+                width: 2.05rem !important;
+                height: 2.05rem !important;
+                min-width: 2.05rem !important;
+                min-height: 2.05rem !important;
+                max-width: 2.05rem !important;
+                max-height: 2.05rem !important;
+                font-size: 0.72rem !important;
             }
 
-            .jobcnt-wrap div[data-testid="stButton"] button > span,
-            .jobcnt-wrap div[data-testid="stButton"] button > div,
-            .jobcnt-wrap div[data-testid="stButton"] button > p,
-            .joborder-wrap div[data-testid="stButton"] button > span,
-            .joborder-wrap div[data-testid="stButton"] button > div,
-            .joborder-wrap div[data-testid="stButton"] button > p{
-                color: #111 !important;          /* ✅ 내부 요소도 강제 */
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                line-height: 1 !important;
-                font-size: 1.15rem !important;
-                font-weight: 900 !important;
-                margin: 0 !important;
-                padding: 0 !important;
+            .jobcnt-wrap div[data-testid="stButton"] button *,
+            .joborder-wrap div[data-testid="stButton"] button *{
+                font-size: 0.72rem !important;
             }
+
+            .jobcnt-wrap div[data-testid="stButton"] button svg,
+            .joborder-wrap div[data-testid="stButton"] button svg,
+            .jobcnt-wrap div[data-testid="stButton"] button img,
+            .joborder-wrap div[data-testid="stButton"] button img{
+                width: 10px !important;
+                height: 10px !important;
+            }
+        }
 
             </style>
             """,
