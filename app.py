@@ -2429,6 +2429,7 @@ if "💼 직업/월급" in tabs:
 
         st.markdown("<div class='jobhdr-line'></div>", unsafe_allow_html=True)
 
+        for i, r in enumerate(rows):
             rid = r["_id"]
             order = int(r["order"])
             job = r["job"]
