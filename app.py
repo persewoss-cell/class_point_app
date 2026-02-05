@@ -2479,7 +2479,7 @@ if "💼 직업/월급" in tabs:
             net = _calc_net(salary, cfg)
 
                 # ✅ 한 줄 카드 레이아웃(프레임 유지)
-                with st.container(border=True):
+                    with st.container(border=True):
                     c = st.columns([1.1, 2.2, 1.1, 1.2, 1.4, 4.0])
 
                     # 1️⃣ 순 + 체크
