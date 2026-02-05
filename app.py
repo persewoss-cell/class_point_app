@@ -1930,22 +1930,71 @@ if "💼 직업/월급" in tabs:
         rows = _list_job_rows()
 
         # -------------------------------------------------
-        # ✅ 표 헤더
+        # ✅ 표 헤더 + 행 렌더(보기 좋게: 중앙정렬/버튼 안삐져나가게)
+        #   - 로직(저장/순서/학생수/드롭다운)은 그대로, UI만 정리
         # -------------------------------------------------
         st.markdown("### 📋 직업/월급 목록")
         st.caption("• 아래에 직업을 추가/수정하면 이 표에 들어갑니다. • 학생 수를 늘리면 ‘이름(계정)’ 드롭다운이 자동으로 늘어납니다.")
 
-        head = st.columns([0.6, 2.0, 1.2, 1.4, 1.0, 3.4, 1.0])
-        head[0].markdown("**순**")
-        head[1].markdown("**직업**")
-        head[2].markdown("**월급**")
-        head[3].markdown("**실수령액**")
-        head[4].markdown("**학생 수**")
-        head[5].markdown("**이름(계정)**")
-        head[6].markdown("**순서**")
+        st.markdown(
+            """
+            <style>
+            /* 직업/월급 표용 미세 스타일 */
+            .job-table .hdr{
+                font-weight: 900;
+                text-align: center;
+                padding: 8px 6px;
+                border-bottom: 2px solid #e5e7eb;
+                background: #fafafa;
+                border-radius: 10px;
+                margin-bottom: 6px;
+            }
+            .job-table .cell{
+                padding: 10px 6px;
+                border-bottom: 1px solid #f1f5f9;
+            }
+            .job-table .center{ text-align:center; }
+            .job-table .right{ text-align:right; }
+            .job-table .jobname{ font-weight: 800; }
+            .job-table .muted{ color:#6b7280; font-size: 0.92rem; }
+
+            /* 행 간격 */
+            .job-row{ padding: 6px 0; }
+
+            /* 버튼이 튀어나오지 않게(특히 순서/+-) */
+            .job-table div[data-testid="stButton"] > button{
+                width: 100% !important;
+                border-radius: 12px !important;
+            }
+
+            /* selectbox 높이/여백 정리 */
+            .job-table div[data-testid="stSelectbox"] > div{
+                min-height: 2.55rem;
+            }
+
+            /* 번호/금액/실수령을 중앙으로(표 느낌) */
+            .job-table .stMarkdown p { margin-bottom: 0.2rem !important; }
+
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<div class='job-table'>", unsafe_allow_html=True)
+
+        # 헤더(가운데 정렬)
+        head = st.columns([0.7, 2.2, 1.2, 1.3, 1.2, 3.6, 1.2])
+        head[0].markdown("<div class='hdr'>순</div>", unsafe_allow_html=True)
+        head[1].markdown("<div class='hdr'>직업</div>", unsafe_allow_html=True)
+        head[2].markdown("<div class='hdr'>월급</div>", unsafe_allow_html=True)
+        head[3].markdown("<div class='hdr'>실수령액</div>", unsafe_allow_html=True)
+        head[4].markdown("<div class='hdr'>학생 수</div>", unsafe_allow_html=True)
+        head[5].markdown("<div class='hdr'>이름(계정)</div>", unsafe_allow_html=True)
+        head[6].markdown("<div class='hdr'>순서</div>", unsafe_allow_html=True)
 
         # -------------------------------------------------
         # ✅ 행 렌더 + 학생수(+/-) + 계정 드롭다운(학생수만큼)
+        #   - 기존 로직 유지(저장/순서 바꾸기 동일)
         # -------------------------------------------------
         for i, r in enumerate(rows):
             rid = r["_id"]
@@ -1963,16 +2012,18 @@ if "💼 직업/월급" in tabs:
 
             net = _calc_net(salary, cfg)
 
-            c = st.columns([0.6, 2.0, 1.2, 1.4, 1.0, 3.4, 1.0])
+            st.markdown("<div class='job-row'>", unsafe_allow_html=True)
+            c = st.columns([0.7, 2.2, 1.2, 1.3, 1.2, 3.6, 1.2])
 
-            c[0].write(str(order))
-            c[1].write(job)
-            c[2].write(str(salary))
-            c[3].write(str(net))
+            # 순 / 직업 / 월급 / 실수령액 (정렬 예쁘게)
+            c[0].markdown(f"<div class='cell center'><b>{order}</b></div>", unsafe_allow_html=True)
+            c[1].markdown(f"<div class='cell jobname'>{job}</div>", unsafe_allow_html=True)
+            c[2].markdown(f"<div class='cell center'>{salary}</div>", unsafe_allow_html=True)
+            c[3].markdown(f"<div class='cell center'><b>{net}</b></div>", unsafe_allow_html=True)
 
-            # 학생 수 +/- (1 미만 불가)
+            # 학생 수 +/- (1 미만 불가) — 버튼 튀어나옴 방지용 3칸
             with c[4]:
-                a1, a2, a3 = st.columns([1, 1.2, 1])
+                a1, a2, a3 = st.columns([1, 1.1, 1])
                 with a1:
                     if st.button("➖", use_container_width=True, key=f"job_cnt_minus_{rid}"):
                         new_cnt = max(1, cnt - 1)
@@ -1984,7 +2035,7 @@ if "💼 직업/월급" in tabs:
                         )
                         st.rerun()
                 with a2:
-                    st.write(str(cnt))
+                    st.markdown(f"<div class='cell center'><b>{cnt}</b></div>", unsafe_allow_html=True)
                 with a3:
                     if st.button("➕", use_container_width=True, key=f"job_cnt_plus_{rid}"):
                         new_cnt = cnt + 1
@@ -2011,11 +2062,11 @@ if "💼 직업/월급" in tabs:
                     )
                     new_ids.append(label_to_id.get(sel, "") if sel != "(선택 없음)" else "")
 
-                # 변경되면 저장
+                # 변경되면 저장(기존 유지)
                 if new_ids != assigned_ids:
                     db.collection("job_salary").document(rid).update({"assigned_ids": new_ids})
 
-            # 순서 위/아래 (하우스포인트 방식: 위/아래로 바꾸기)
+            # 순서 위/아래 (기존 로직 그대로)
             with c[6]:
                 up_disabled = (i == 0)
                 dn_disabled = (i == len(rows) - 1)
@@ -2030,6 +2081,10 @@ if "💼 직업/월급" in tabs:
                         nxt = rows[i + 1]
                         _swap_order(rid, order, nxt["_id"], int(nxt["order"]))
                         st.rerun()
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
 
