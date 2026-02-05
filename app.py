@@ -2033,7 +2033,7 @@ if "💼 직업/월급" in tabs:
                         db.collection("job_salary").document(rid).update(
                             {
                                 "student_count": new_cnt,
-                                "assigned_ids": assigned_ids[:new_cnt],
+                                "assigned_ids": assigned_ids + [""],
                             }
                         )
                         st.rerun()
