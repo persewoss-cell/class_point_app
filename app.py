@@ -1668,6 +1668,10 @@ if "👥 계정 정보/활성화" in tabs:
         if not df_all.empty:
             df_all = df_all.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
 
+        # ✅ account_df 세션 초기화 (없으면 생성)
+        if "account_df" not in st.session_state:
+            st.session_state.account_df = df_all.copy()
+        
         # -------------------------------------------------
         # ✅ 상단 버튼(2줄): [전체선택/전체해제/계정삭제] + [입출금/투자 일괄]
         # -------------------------------------------------
