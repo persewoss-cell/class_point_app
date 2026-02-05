@@ -122,16 +122,18 @@ st.markdown(
         align-items: center !important;
         justify-content: center !important;
         line-height: 1 !important;
+        overflow: visible !important;   /* ✅ 플러스/아이콘 잘림 방지 */
     }
 
-    /* 버튼 안쪽(텍스트/span)까지 강제 중앙 + 크기 고정 */
-    .jobcnt-wrap div[data-testid="stButton"] button *,
-    .joborder-wrap div[data-testid="stButton"] button *{
-        line-height: 1 !important;
-        display: inline-flex !important;
+    /* ✅ 버튼 텍스트(span)만 중앙 정렬 + 크기 */
+    .jobcnt-wrap div[data-testid="stButton"] button span,
+    .joborder-wrap div[data-testid="stButton"] button span{
+        display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        line-height: 1 !important;
         font-size: clamp(1.0rem, 2.6vw, 1.2rem) !important;
+        font-weight: 800 !important;
     }
 
     /* 가운데 숫자 */
