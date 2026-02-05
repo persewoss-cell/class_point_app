@@ -2001,14 +2001,17 @@ if "💼 직업/월급" in tabs:
             order = int(r["order"])
             job = r["job"]
             salary = int(r["salary"])
-            cnt = max(1, int(r.get("student_count", 1) or 1))
+            cnt = max(0, int(r.get("student_count", 1) or 1))
             assigned_ids = list(r.get("assigned_ids", []) or [])
 
-            # assigned 길이를 student_count에 맞추기
-            if len(assigned_ids) < cnt:
-                assigned_ids = assigned_ids + [""] * (cnt - len(assigned_ids))
-            if len(assigned_ids) > cnt:
-                assigned_ids = assigned_ids[:cnt]
+            # assigned 길이를 student_count에 맞추기 (cnt=0이면 빈 리스트)
+            if cnt == 0:
+                assigned_ids = []
+            else:
+                if len(assigned_ids) < cnt:
+                    assigned_ids = assigned_ids + [""] * (cnt - len(assigned_ids))
+                if len(assigned_ids) > cnt:
+                    assigned_ids = assigned_ids[:cnt]
 
             net = _calc_net(salary, cfg)
 
@@ -2026,7 +2029,7 @@ if "💼 직업/월급" in tabs:
                 a1, a2, a3 = st.columns([1, 1.1, 1])
                 with a1:
                     if st.button("➖", use_container_width=True, key=f"job_cnt_minus_{rid}"):
-                        new_cnt = max(1, cnt - 1)
+                        new_cnt = max(0, cnt - 1)
                         db.collection("job_salary").document(rid).update(
                             {
                                 "student_count": new_cnt,
