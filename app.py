@@ -2052,7 +2052,7 @@ if "💼 직업/월급" in tabs:
             c[3].markdown(f"<div class='cell center'><b>{net}</b></div>", unsafe_allow_html=True)
 
             # 학생 수 +/- (1 미만 불가) — 버튼 튀어나옴 방지용 3칸
-with c[4]:
+    with c[4]:
     st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
 
     a1, a2, a3 = st.columns([1, 1.2, 1])
