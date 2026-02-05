@@ -1057,11 +1057,12 @@ with c1:
 with c2:
     st.number_input("세출", min_value=0, step=1, key="treasury_io_out")
 
-    memo = str(st.session_state.get(memo_key, "") or "").strip()
-    inc = int(st.session_state.get(inc_key, 0) or 0)
-    exp = int(st.session_state.get(exp_key, 0) or 0)
+# ✅ with 블록 밖(하지만 함수 안)에서 값 만들고 return
+memo = str(st.session_state.get(memo_key, "") or "").strip()
+inc  = int(st.session_state.get(inc_key, 0) or 0)
+exp  = int(st.session_state.get(exp_key, 0) or 0)
 
-    return memo, inc, exp
+return memo, inc, exp
 
 # =========================
 # Templates (공용) - 너 코드 유지
