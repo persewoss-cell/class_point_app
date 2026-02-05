@@ -2052,30 +2052,41 @@ if "💼 직업/월급" in tabs:
             c[3].markdown(f"<div class='cell center'><b>{net}</b></div>", unsafe_allow_html=True)
 
             # 학생 수 +/- (1 미만 불가) — 버튼 튀어나옴 방지용 3칸
-            with c[4]:
-                a1, a2, a3 = st.columns([1, 1.1, 1])
-                with a1:
-                    if st.button("➖", use_container_width=True, key=f"job_cnt_minus_{rid}"):
-                        new_cnt = max(0, cnt - 1)
-                        db.collection("job_salary").document(rid).update(
-                            {
-                                "student_count": new_cnt,
-                                "assigned_ids": assigned_ids + [""],
-                            }
-                        )
-                        st.rerun()
-                with a2:
-                    st.markdown(f"<div class='cell center'><b>{cnt}</b></div>", unsafe_allow_html=True)
-                with a3:
-                    if st.button("➕", use_container_width=True, key=f"job_cnt_plus_{rid}"):
-                        new_cnt = cnt + 1
-                        db.collection("job_salary").document(rid).update(
-                            {
-                                "student_count": new_cnt,
-                                "assigned_ids": assigned_ids + [""],
-                            }
-                        )
-                        st.rerun()
+with c[4]:
+    st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
+
+    a1, a2, a3 = st.columns([1, 1.2, 1])
+
+    with a1:
+        if st.button("➖", use_container_width=True, key=f"job_cnt_minus_{rid}"):
+            new_cnt = max(0, cnt - 1)  # ✅ 최소 0
+            # cnt=0이면 assigned_ids는 비움
+            new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
+            db.collection("job_salary").document(rid).update(
+                {
+                    "student_count": new_cnt,
+                    "assigned_ids": new_assigned,
+                }
+            )
+            st.rerun()
+
+    with a2:
+        st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
+
+    with a3:
+        if st.button("➕", use_container_width=True, key=f"job_cnt_plus_{rid}"):
+            new_cnt = cnt + 1
+            # cnt=0에서 1로 늘릴 때도 정상 동작
+            new_assigned = assigned_ids + [""] if new_cnt > len(assigned_ids) else assigned_ids
+            db.collection("job_salary").document(rid).update(
+                {
+                    "student_count": new_cnt,
+                    "assigned_ids": (new_assigned[:new_cnt] if new_cnt > 0 else []),
+                }
+            )
+            st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
             # 이름(계정) 드롭다운들 (학생수만큼)
             with c[5]:
