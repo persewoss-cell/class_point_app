@@ -1043,11 +1043,19 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
 
     st.text_input("내역", key=memo_key)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.number_input("세입", min_value=0, step=1, key=inc_key)
-    with c2:
-        st.number_input("세출", min_value=0, step=1, key=exp_key)
+# ✅ 원형 숫자 버튼(빠른 금액) 추가
+render_round_amount_picker(
+    prefix="treasury_io",
+    plus_label="세입(+)",
+    minus_label="세출(-)",
+    amounts=[0, 10, 20, 50, 100, 200, 500, 1000],
+)
+
+c1, c2 = st.columns(2)
+with c1:
+    st.number_input("세입", min_value=0, step=1, key="treasury_io_inc")
+with c2:
+    st.number_input("세출", min_value=0, step=1, key="treasury_io_out")
 
     memo = str(st.session_state.get(memo_key, "") or "").strip()
     inc = int(st.session_state.get(inc_key, 0) or 0)
@@ -1240,6 +1248,102 @@ def render_admin_trade_ui(prefix: str, templates_list: list, template_by_display
 
     memo, dep, wd = st.session_state.get(out_key, ("", 0, 0))
     return memo, dep, wd
+
+# =========================
+# ✅ 공용: 원형 숫자 버튼(빠른 금액) - 세입/세출 버전
+#   - 세입/세출 두 칸을 "계산기처럼" 조작
+#   - 0 누르면 둘 다 0
+# =========================
+def render_round_amount_picker(prefix: str, plus_label: str, minus_label: str, amounts=None):
+    if amounts is None:
+        amounts = [0, 10, 20, 50, 100, 200, 500, 1000]
+
+    inc_key = f"{prefix}_inc"
+    out_key = f"{prefix}_out"
+    mode_key = f"{prefix}_mode"
+    pick_key = f"{prefix}_pick"
+    pick_prev_key = f"{prefix}_pick_prev"
+    mode_prev_key = f"{prefix}_mode_prev"
+    skip_key = f"{prefix}_skip_once"
+
+    st.session_state.setdefault(inc_key, 0)
+    st.session_state.setdefault(out_key, 0)
+    st.session_state.setdefault(mode_key, plus_label)
+    st.session_state.setdefault(pick_key, "0")
+    st.session_state.setdefault(pick_prev_key, "0")
+    st.session_state.setdefault(mode_prev_key, str(st.session_state.get(mode_key, plus_label)))
+    st.session_state.setdefault(skip_key, False)
+
+    def _get_net() -> int:
+        inc = int(st.session_state.get(inc_key, 0) or 0)
+        out = int(st.session_state.get(out_key, 0) or 0)
+        return inc - out
+
+    def _set_by_net(net: int):
+        net = int(net or 0)
+        if net >= 0:
+            st.session_state[inc_key] = net
+            st.session_state[out_key] = 0
+        else:
+            st.session_state[inc_key] = 0
+            st.session_state[out_key] = -net
+
+    def _apply_amt(amt: int):
+        amt = int(amt or 0)
+        if amt == 0:
+            st.session_state[inc_key] = 0
+            st.session_state[out_key] = 0
+            return
+
+        sign = 1 if str(st.session_state.get(mode_key)) == plus_label else -1
+        net = _get_net() + (sign * amt)
+        _set_by_net(net)
+
+    def _on_mode_change():
+        st.session_state[pick_key] = "0"
+        st.session_state[pick_prev_key] = "0"
+        st.session_state[skip_key] = True
+        st.session_state[mode_prev_key] = str(st.session_state.get(mode_key, plus_label))
+
+    st.caption("⚡ 빠른 금액(원형 버튼)")
+    st.radio(
+        "적용",
+        [plus_label, minus_label],
+        horizontal=True,
+        key=mode_key,
+        on_change=_on_mode_change,
+    )
+
+    st.markdown("<div class='round-btns'>", unsafe_allow_html=True)
+    st.radio(
+        "빠른금액",
+        [str(a) for a in amounts],
+        horizontal=True,
+        label_visibility="collapsed",
+        key=pick_key,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    cur_mode = str(st.session_state.get(mode_key, plus_label))
+    cur_pick = str(st.session_state.get(pick_key, "0"))
+
+    prev_mode = str(st.session_state.get(mode_prev_key, cur_mode))
+    prev_pick = str(st.session_state.get(pick_prev_key, cur_pick))
+
+    if st.session_state.get(skip_key, False):
+        st.session_state[mode_prev_key] = cur_mode
+        st.session_state[pick_prev_key] = cur_pick
+        st.session_state[skip_key] = False
+        return
+
+    if cur_mode != prev_mode:
+        st.session_state[mode_prev_key] = cur_mode
+        st.session_state[pick_prev_key] = cur_pick
+        return
+
+    if cur_pick != prev_pick:
+        st.session_state[pick_prev_key] = cur_pick
+        _apply_amt(int(cur_pick))
 
 # =========================
 # 학급 확장: Roles/Permissions
