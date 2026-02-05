@@ -300,6 +300,29 @@ st.markdown(
             font-size: 1.05rem !important;
         }
     }
+/* ✅ 원형 버튼 안 아이콘(➕➖⬆️⬇️) 크기만 축소 */
+.jobcnt-wrap div[data-testid="stButton"] button span,
+.jobcnt-wrap div[data-testid="stButton"] button div,
+.jobcnt-wrap div[data-testid="stButton"] button p,
+.joborder-wrap div[data-testid="stButton"] button span,
+.joborder-wrap div[data-testid="stButton"] button div,
+.joborder-wrap div[data-testid="stButton"] button p{
+    font-size: 0.9rem !important;   /* ← 아이콘만 작게 */
+    line-height: 1 !important;
+}
+
+/* 모바일에서는 더 작게 */
+@media (max-width: 768px){
+    .jobcnt-wrap div[data-testid="stButton"] button span,
+    .jobcnt-wrap div[data-testid="stButton"] button div,
+    .jobcnt-wrap div[data-testid="stButton"] button p,
+    .joborder-wrap div[data-testid="stButton"] button span,
+    .joborder-wrap div[data-testid="stButton"] button div,
+    .joborder-wrap div[data-testid="stButton"] button p{
+        font-size: 0.78rem !important;
+    }
+}
+
 
     </style>
     """,
