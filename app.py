@@ -145,7 +145,7 @@ st.markdown(
             font-size: 1.05rem !important;
         }
     }
-      /* =========================
+    /* =========================
        💼 직업/월급 탭: 학생수(+/-), 순서(⬆️⬇️) 버튼 고정
        ========================= */
 
@@ -162,6 +162,7 @@ st.markdown(
         align-items: center !important;
         justify-content: center !important;
         line-height: 1 !important;
+        overflow: hidden !important;
     }
 
     /* 버튼 안쪽(텍스트/span)까지 강제 중앙 + 크기 고정 */
@@ -188,7 +189,10 @@ st.markdown(
         padding: 0.35rem 0.5rem;
         color: #777;
     }
-
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.markdown(f'<div class="app-title">🏦 {APP_TITLE}</div>', unsafe_allow_html=True)
 
