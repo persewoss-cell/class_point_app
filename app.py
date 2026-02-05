@@ -2339,29 +2339,13 @@ if "💼 직업/월급" in tabs:
         rows = _list_job_rows()
 
         # -------------------------------------------------
-        # ✅ 표 헤더 + 행 렌더(보기 좋게: 중앙정렬/버튼 안삐져나가게)
-        #   - 로직(저장/순서/학생수/드롭다운)은 그대로, UI만 정리
-        # -------------------------------------------------
-        # -------------------------------------------------
-        # ✅ 직업/월급 목록: 제목 1개 + 버튼(표 바로 위) + 헤더 정렬(내용과 딱 맞춤)
+        # ✅ 직업/월급 목록
         # -------------------------------------------------
         st.markdown("### 📋 직업/월급 목록")
         st.caption("• 아래에 직업을 추가/수정하면 이 리스트에 반영됩니다. • 체크 후 ⬆️⬇️🗑️ 버튼으로 순서 이동/삭제가 됩니다.")
 
-        btn1, btn2, btn3 = st.columns(3)
-        with btn1:
-            if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
-                _bulk_move("up")
-        with btn2:
-            if st.button("⬇️", use_container_width=True, key="job_bulk_dn"):
-                _bulk_move("down")
-        with btn3:
-            if st.button("🗑️", use_container_width=True, key="job_bulk_del"):
-                _bulk_delete_prepare()
-                st.rerun()
-
         # -------------------------
-        # ✅ 선택(체크박스) 세션 상태 준비
+        # ✅ 선택(체크박스) 세션 상태 준비 (버튼보다 먼저!)
         # -------------------------
         if "job_sel" not in st.session_state:
             st.session_state.job_sel = {}
@@ -2377,7 +2361,102 @@ if "💼 직업/월급" in tabs:
             return [rid0 for rid0 in current_ids if bool(st.session_state.job_sel.get(rid0, False))]
 
         # -------------------------
-        # ✅ 일괄 삭제 확인(그대로 유지)
+        # ✅ 일괄 순서 이동
+        # -------------------------
+        def _bulk_move(direction: str):
+            sel_ids = _selected_job_ids()
+            if not sel_ids:
+                st.warning("먼저 체크(선택)하세요.")
+                return
+
+            # 최신 rows 다시 읽기(순서 꼬임 방지)
+            _rows = _list_job_rows()
+            if not _rows:
+                return
+
+            # id -> index 빠른 조회
+            id_to_idx = {r["_id"]: i for i, r in enumerate(_rows)}
+            selected = set([sid for sid in sel_ids if sid in id_to_idx])
+
+            if not selected:
+                st.warning("선택된 항목을 찾지 못했어요.")
+                return
+
+            # 위로: 앞에서부터 스캔하며 '선택'이 '비선택' 앞에 있으면 swap
+            # 아래로: 뒤에서부터 스캔
+            if direction == "up":
+                scan = range(len(_rows))
+                step = -1
+            else:
+                scan = range(len(_rows) - 1, -1, -1)
+                step = 1
+
+            batch = db.batch()
+            swapped = 0
+
+            for i in scan:
+                cur = _rows[i]
+                cur_id = cur["_id"]
+                if cur_id not in selected:
+                    continue
+
+                j = i + step
+                if j < 0 or j >= len(_rows):
+                    continue
+
+                prev = _rows[j]
+                prev_id = prev["_id"]
+
+                # 선택끼리는 묶어서 이동(선택과 비선택 사이만 swap)
+                if prev_id in selected:
+                    continue
+
+                # order swap
+                a_id, a_order = cur_id, int(cur.get("order", 999999) or 999999)
+                b_id, b_order = prev_id, int(prev.get("order", 999999) or 999999)
+
+                batch.update(db.collection("job_salary").document(a_id), {"order": b_order})
+                batch.update(db.collection("job_salary").document(b_id), {"order": a_order})
+
+                # 로컬 리스트에서도 swap 반영(연쇄 이동 안정)
+                _rows[i], _rows[j] = _rows[j], _rows[i]
+                swapped += 1
+
+            if swapped > 0:
+                batch.commit()
+                toast("순서 이동 완료!", icon="✅")
+            else:
+                st.info("더 이동할 수 없습니다.")
+
+        # -------------------------
+        # ✅ 일괄 삭제 준비(확인창 띄우기)
+        # -------------------------
+        def _bulk_delete_prepare():
+            sel_ids = _selected_job_ids()
+            if not sel_ids:
+                st.warning("삭제할 항목을 체크하세요.")
+                return
+            st.session_state["_job_bulk_delete_ids"] = sel_ids
+
+        # -------------------------
+        # ✅ 상단 버튼(⬆️⬇️🗑️)
+        # -------------------------
+        btn1, btn2, btn3 = st.columns(3)
+        with btn1:
+            if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
+                _bulk_move("up")
+                st.rerun()
+        with btn2:
+            if st.button("⬇️", use_container_width=True, key="job_bulk_dn"):
+                _bulk_move("down")
+                st.rerun()
+        with btn3:
+            if st.button("🗑️", use_container_width=True, key="job_bulk_del"):
+                _bulk_delete_prepare()
+                st.rerun()
+
+        # -------------------------
+        # ✅ 일괄 삭제 확인
         # -------------------------
         if "_job_bulk_delete_ids" in st.session_state:
             st.warning("체크된 직업을 삭제하시겠습니까?")
