@@ -2187,8 +2187,8 @@ if "💼 직업/월급" in tabs:
         /* 이모지가 img로 렌더링되는 경우 */
         .jobcnt-wrap div[data-testid="stButton"] button img,
         .joborder-wrap div[data-testid="stButton"] button img{
-            width: 12px !important;
-            height: 12px !important;
+            width: 7px !important;
+            height: 7px !important;
         }
 
         @media (max-width: 768px){
