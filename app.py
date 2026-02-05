@@ -2163,14 +2163,14 @@ if "💼 직업/월급" in tabs:
             justify-content:center !important;
             color: #111 !important;
             overflow: hidden !important;
-            font-size: 0.78rem !important;
+            font-size: 0.47rem !important;
             font-weight: 900 !important;
         }
 
         /* 버튼 내부 모든 요소 축소 */
         .jobcnt-wrap div[data-testid="stButton"] button *,
         .joborder-wrap div[data-testid="stButton"] button *{
-            font-size: 0.78rem !important;
+            font-size: 0.47rem !important;
             font-weight: 900 !important;
             line-height: 1 !important;
             margin: 0 !important;
@@ -2200,20 +2200,20 @@ if "💼 직업/월급" in tabs:
                 min-height: 2.05rem !important;
                 max-width: 2.05rem !important;
                 max-height: 2.05rem !important;
-                font-size: 0.72rem !important;
+                font-size: 0.37rem !important;
             }
 
             .jobcnt-wrap div[data-testid="stButton"] button *,
             .joborder-wrap div[data-testid="stButton"] button *{
-                font-size: 0.72rem !important;
+                font-size: 0.37rem !important;
             }
 
             .jobcnt-wrap div[data-testid="stButton"] button svg,
             .joborder-wrap div[data-testid="stButton"] button svg,
             .jobcnt-wrap div[data-testid="stButton"] button img,
             .joborder-wrap div[data-testid="stButton"] button img{
-                width: 10px !important;
-                height: 10px !important;
+                width: 5px !important;
+                height: 5px !important;
             }
         }
 
