@@ -2060,7 +2060,7 @@ if "💼 직업/월급" in tabs:
                 a1, a2, a3 = st.columns([1, 1.2, 1])
 
                 with a1:
-                    if st.button("➖", use_container_width=True, key=f"job_cnt_minus_{rid}"):
+                    if st.button("−", use_container_width=True, key=f"job_cnt_minus_{rid}"):
                         new_cnt = max(0, cnt - 1)
                         new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
                         db.collection("job_salary").document(rid).update(
@@ -2075,7 +2075,7 @@ if "💼 직업/월급" in tabs:
                     st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
 
                 with a3:
-                    if st.button("➕", use_container_width=True, key=f"job_cnt_plus_{rid}"):
+                    if st.button("+", use_container_width=True, key=f"job_cnt_plus_{rid}"):
                         new_cnt = cnt + 1
                         # cnt가 늘어나면 assigned_ids도 1칸 늘려줌
                         new_assigned = assigned_ids + [""]
