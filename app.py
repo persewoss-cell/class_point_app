@@ -316,6 +316,15 @@ st.markdown(
     }
 }
 
+/* ✅ expander 사이 회색 가로줄 제거 */
+div[data-testid="stExpander"]{
+    border: none !important;
+    box-shadow: none !important;
+}
+div[data-testid="stExpander"] > div{
+    border: none !important;
+}
+
     </style>
     """,
     unsafe_allow_html=True,
