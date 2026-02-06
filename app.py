@@ -38,14 +38,16 @@ st.markdown(
     }
 
     /* radio → 버튼처럼 */
+/* ✅ 통계청 라디오 버튼(O,X,△) 사각형 크기 및 라운드 수정 */
     div[role="radiogroup"] > label {
         background: #f3f4f6;
-        padding: 6px 10px;
-        border-radius: 12px;
-        margin-right: 6px;
-        margin-bottom: 6px;
+        padding: 4px 8px !important;    /* 안쪽 여백 줄임 (기존 6px 10px) */
+        border-radius: 6px !important;  /* 모서리를 더 각지게 (기존 12px) */
+        margin-right: 4px;
+        margin-bottom: 4px;
         border: 1px solid #ddd;
-        font-size: 0.85rem;
+        font-size: 0.8rem !important;   /* 글자 크기 살짝 축소 */
+        min-height: auto !important;    /* 높이 제한 해제 */
     }
     div[role="radiogroup"] > label:has(input:checked) {
         background: #2563eb;
