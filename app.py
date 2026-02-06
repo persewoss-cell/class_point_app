@@ -264,7 +264,7 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
 /* 텍스트 줄높이 강제 맞춤 */
 .stat-tight p {
     margin: 0 !important;
-    line-height: 1.25 !important;
+    line-height: 0.25 !important;
     display: flex !important;
     align-items: center !important;
 }
