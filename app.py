@@ -41,7 +41,7 @@ st.markdown(
 /* ✅ 라디오 버튼 내부 요소(원형 버튼 + 문자) 수평/수직 중앙 정렬 및 높이 축소 */
     div[role="radiogroup"] > label {
         background: #f3f4f6;
-        padding: 0px 8px !important;    /* 위아래 여백 제거 */
+        padding: 0px 3px !important;    /* 위아래 여백 제거 */
         border-radius: 4px !important;  /* 라운드 사각형 크기 축소 */
         margin-right: 4px;
         margin-bottom: 4px;
