@@ -89,7 +89,7 @@ st.markdown(
         white-space: normal;
         word-break: keep-all;
     }
-    @media (max-768px) {
+    @media (max-width: 768px) {
         .app-title { font-size: clamp(2.05rem, 7.9vw, 3.3rem); }
     }
 
