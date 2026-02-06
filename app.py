@@ -3632,53 +3632,51 @@ if "📊 통계청" in tabs:
                 label = str(s.get("label", "") or "")
                 col_titles.append(f"{date_disp}\n{label}")
 
-            # (PATCH) 통계표 전용: 한 칸에 O/X/△ 3개 원형 선택 UI (가볍고 즉시 표시)
+            # (PATCH) 통계표 전용: 한 칸에 O/X/△ 3개 원형 선택 UI (즉시 표시)
+            # - div 래퍼 방식은 Streamlit 위젯을 실제로 감싸지 못해서 적용이 불안정함
+            # - 대신 input id에 'stat_cellpick_' 들어간 라디오만 CSS 적용
             st.markdown(
                 """
-                <style>
-                /* 표 제목 가운데 정렬 + 날짜/제목 줄바꿈 */
-                .stat_table_wrap strong{
-                    text-align: center;
-                    white-space: pre-line;   /* \n 줄바꿈 적용 */
-                    display: block;
-                    font-size: 0.85rem;
-                    line-height: 1.2;
-                }
-                /* 통계표 영역에서만 라디오를 원형 버튼처럼 보이게 */
-                .stat_table_wrap div[role="radiogroup"]{
-                    gap: 6px;
-                    display: flex;
-                    justify-content: center;
-                }
-                .stat_table_wrap div[role="radiogroup"] > label{
-                    border: 1px solid #d1d5db;
-                    background: #ffffff;
-                    border-radius: 999px;
-                    width: 17px;
-                    height: 17px;
-                    padding: 0 !important;
-                    margin: 0 !important;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 0.7rem;
-                    line-height: 1;
-                }
-                .stat_table_wrap div[role="radiogroup"] > label:has(input:checked){
-                    border-color: #2563eb;
-                    background: #eff6ff;
-                    font-weight: 700;
-                }
-                /* 라디오 기본 여백 제거(셀 안에서 작게) */
-                .stat_table_wrap [data-testid="stRadio"]{
-                    margin: 0 !important;
-                    padding: 0 !important;
-                }
-                </style>
-                <div class="stat_table_wrap">
-                """,
+<style>
+/* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 원형 버튼처럼 ===== */
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) {
+    gap: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label {
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    border-radius: 999px;
+    width: 20px;      /* ← 더 작게 */
+    height: 20px;     /* ← 더 작게 */
+    padding: 0 !important;
+    margin: 0 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem; /* ← 더 작게 */
+    line-height: 1;
+}
+
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input:checked) {
+    border-color: #2563eb;
+    background: #eff6ff;
+    font-weight: 700;
+}
+
+/* 라디오 위젯 주변 여백 최소화 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+</style>
+""",
                 unsafe_allow_html=True,
             )
+
             hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
             with hdr_cols[0]:
                 st.markdown("**번호**")
