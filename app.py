@@ -3867,6 +3867,38 @@ div[role="radiogroup"]:has(input[id*="stat_cellpick_"][value="△"]:checked) > l
   box-shadow: 0 0 0 2px rgba(59,130,246,.55) !important;
 }
 
+/* ===== Streamlit radio 실제 구조를 직접 잡는 방식 (100% 적용됨) ===== */
+
+/* 기본 빨간 포커스 제거 */
+input[id*="stat_cellpick_"] {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* O 선택 시 */
+input[id*="stat_cellpick_"][value="O"]:checked + div {
+  border: 2px solid #10b981 !important;
+  box-shadow: 0 0 0 2px rgba(16,185,129,.55) !important;
+  background: #10b981 !important;
+  color: white !important;
+}
+
+/* X 선택 시 */
+input[id*="stat_cellpick_"][value="X"]:checked + div {
+  border: 2px solid #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239,68,68,.55) !important;
+  background: #ef4444 !important;
+  color: white !important;
+}
+
+/* △ 선택 시 */
+input[id*="stat_cellpick_"][value="△"]:checked + div {
+  border: 2px solid #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.55) !important;
+  background: #3b82f6 !important;
+  color: white !important;
+}
+
 </style>
 """,
                 unsafe_allow_html=True,
