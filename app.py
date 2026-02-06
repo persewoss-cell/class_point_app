@@ -708,7 +708,7 @@ def api_admin_save_stat_table(admin_pin: str, submission_ids: list[str], edited:
         cur_map = dict((edited or {}).get(sub_id, {}) or {})
         merged = {}
         for sid in active_sids:
-            v = str(cur_map.get(sid, "×") or ×")
+            v = str(cur_map.get(sid, "×") or "×")
             merged[sid] = v if v in ("×", "○", "△") else "×"
 
         batch.set(ref, {"statuses": merged}, merge=True)
