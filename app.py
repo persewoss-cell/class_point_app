@@ -3697,7 +3697,7 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
     padding: 0 !important;
     
     width: 35px !important;        /* ← 네모 박스 가로 */
-    min-height: 12px !important;   /* ← 네모 박스 세로 */
+    min-height: 1px !important;   /* ← 네모 박스 세로 */
 }
 </style>
 """,
