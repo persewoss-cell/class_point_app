@@ -3675,7 +3675,7 @@ div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label {
     background: #ffffff;
     border-radius: 999px;
     width: 17px;      /* ← 더 작게 */
-    height: 170px;     /* ← 더 작게 */
+    height: 17px;     /* ← 더 작게 */
     padding: 0 !important;
     margin: 0 !important;
     display: inline-flex;
