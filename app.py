@@ -3585,13 +3585,13 @@ if "📊 통계청" in tabs:
         submission_ids = [r.get("submission_id") for r in sub_rows_all if r.get("submission_id")]
 
         # -------------------------
-        # (PATCH) 가로 "좌우 이동" : 한 화면에 5~6개만 표시
+        # (PATCH) 가로 "좌우 이동" : 한 화면에 7개 표시
         # -------------------------
-        VISIBLE_COLS = 6
+        VISIBLE_COLS = 7
         if "stat_col_offset" not in st.session_state:
             st.session_state["stat_col_offset"] = 0
 
-        top_r = st.columns([1.2, 1.2, 2.0])
+        top_r = st.columns([1.2, 1.2, 2.6])
         with top_r[0]:
             if st.button("◀", use_container_width=True, key="stat_col_left"):
                 st.session_state["stat_col_offset"] = max(0, int(st.session_state["stat_col_offset"]) - VISIBLE_COLS)
@@ -3601,11 +3601,17 @@ if "📊 통계청" in tabs:
                 st.session_state["stat_col_offset"] = min(max_off, int(st.session_state["stat_col_offset"]) + VISIBLE_COLS)
 
         with top_r[2]:
-            bsave, bdel = st.columns(2)
+            bsave, breset, bdel = st.columns([1, 1, 1])
             with bsave:
                 save_clicked = st.button("✅ 저장", use_container_width=True, key="stat_table_save")
+            with breset:
+                reset_clicked = st.button("🧹 초기화", use_container_width=True, key="stat_table_reset")
             with bdel:
                 del_clicked = st.button("🗑️ 삭제", use_container_width=True, key="stat_table_del")
+
+        # (PATCH) 초기화(전체 내역 삭제) 확인 플래그
+        if reset_clicked:
+            st.session_state["stat_reset_confirm"] = True
 
         if not sub_rows_all:
             st.info("제출물 내역이 없습니다. 위에서 ‘제출물 내역 추가’를 먼저 해주세요.")
