@@ -53,7 +53,31 @@ st.markdown(
         border-color: #2563eb;
     }
 
-    [data-testid="stDataFrame"] { overflow-x: auto; }
+/* ✅ DataFrame/DataEditor: 바깥 네모 박스(테두리/여백)만 줄이기 */
+[data-testid="stDataFrame"]{
+    overflow-x: auto;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+/* 바깥 wrapper(회색 박스/패딩) 제거 */
+[data-testid="stDataFrame"] > div{
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+/* 그리드 wrapper 여백 최소화(셀 자체는 건드리지 않음) */
+[data-testid="stDataFrame"] div[role="grid"],
+[data-testid="stDataFrame"] div[role="grid"] > div{
+    margin: 0 !important;
+    padding: 0 !important;
+}
 
     /* 앱 제목 */
     .app-title {
