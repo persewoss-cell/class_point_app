@@ -3662,43 +3662,67 @@ if "📊 통계청" in tabs:
             st.markdown(
                 """
 <style>
-/* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 원형 버튼처럼 ===== */
+/* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 원형 버튼처럼 + 높이/여백 압축 ===== */
+
+/* 1) radiogroup 자체 여백/정렬 */
 div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) {
-    gap: 4px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
+/* 2) 각 원형 버튼(label) — ✅ 높이 170px → 18px 로 수정 */
 div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label {
-    border: 1px solid #d1d5db;
-    background: #ffffff;
-    border-radius: 999px;
-    width: 17px;      /* ← 더 작게 */
-    height: 170px;     /* ← 더 작게 */
-    padding: 0 !important;
-    margin: 0 !important;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.75rem; /* ← 더 작게 */
-    line-height: 1;
+  border: 1px solid #d1d5db !important;
+  background: #ffffff !important;
+  border-radius: 999px !important;
+
+  width: 18px !important;
+  height: 18px !important;     /* ✅ 핵심: 170px 절대 금지 */
+  min-height: 18px !important;
+
+  padding: 0 !important;
+  margin: 0 !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  line-height: 1 !important;
+  font-size: 0.75rem !important;
 }
 
+/* 3) 선택된 버튼 */
 div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input:checked) {
-    border-color: #2563eb;
-    background: #eff6ff;
-    font-weight: 700;
+  border-color: #2563eb !important;
+  background: #eff6ff !important;
+  font-weight: 700 !important;
 }
 
-/* 라디오 위젯 주변 여백 최소화 */
+/* 4) 라디오 위젯 “바깥 박스(라운드 사각)”를 줄이는 핵심:
+      - 여기서 위아래 padding/margin을 강제로 0
+      - min-height 음수 대신, line-height + padding 제거로 압축 */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
-    margin: 0 !important;
-    padding: 0 !important;
-    
-    width: 35px !important;        /* ← 네모 박스 가로 */
-    min-height: -10px !important;   /* ← 네모 박스 세로 */
+  margin: 0 !important;
+  padding: 0 !important;
 }
+
+/* 5) stRadio가 들어있는 element/container 쪽에 생기는 기본 여백 제거 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* 6) label 안의 불필요한 텍스트/여백 요소가 높이 만드는 경우까지 눌러버리기 */
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label * {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+}
+
 </style>
 """,
                 unsafe_allow_html=True,
