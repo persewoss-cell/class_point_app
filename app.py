@@ -3842,6 +3842,31 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
+/* ===== stat_cellpick 선택 시 빨간 포커스 링 제거 + 색상 지정 ===== */
+
+input[id*="stat_cellpick_"] {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* O 선택 시 초록 링 */
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"][value="O"]:checked) > label {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 2px rgba(16,185,129,.55) !important;
+}
+
+/* X 선택 시 빨강 링 */
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"][value="X"]:checked) > label {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239,68,68,.55) !important;
+}
+
+/* △ 선택 시 파랑 링 */
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"][value="△"]:checked) > label {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.55) !important;
+}
+
 </style>
 """,
                 unsafe_allow_html=True,
