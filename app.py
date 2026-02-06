@@ -3704,7 +3704,7 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
                 unsafe_allow_html=True,
             )
 
-            hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
+            hdr_cols = st.columns([0.37, 0.7] + [1.2] * len(col_titles))
             with hdr_cols[0]:
                 st.markdown("**번호**")
             with hdr_cols[1]:
@@ -3727,7 +3727,7 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
                 no = stx.get("no", 999999)
                 nm = stx.get("name", "")
 
-                row_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
+                row_cols = st.columns([0.37, 0.7] + [1.2] * len(col_titles))
                 with row_cols[0]:
                     st.markdown(f"{int(no)}")
                 with row_cols[1]:
