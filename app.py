@@ -114,15 +114,19 @@ st.markdown(
     }
     .tpl-sub { color:#666; font-size: 0.85rem; margin-top: 2px; line-height: 1.05; }
 
-    /* ✅ 버튼(특히 화살표) 작게 + 가운데 */
+/* ✅ 통계청 표 내부 버튼 크기 축소 */
     div[data-testid="stButton"] > button {
-        padding: 0.05rem 0.28rem !important;
-        min-height: 1.45rem !important;
+        padding: 0px 4px !important;    /* 내부 여백 최소화 */
+        min-height: 1.2rem !important;  /* 높이 축소 (기존보다 낮게) */
+        width: 1.6rem !important;       /* 좌우 너비 고정 */
+        height: 1.6rem !important;      /* 높이 고정 (정사각형 느낌) */
         line-height: 1 !important;
-        font-size: 0.95rem !important;
+        font-size: 0.85rem !important;  /* 글자 크기 살짝 축소 */
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        border-radius: 6px !important;  /* 라운드 사각형 크기 조정 */
+        margin: 0 auto !important;      /* 표 가운데 정렬 */
     }
     button[kind="primary"] {
         padding: 0.35rem 0.6rem !important;
