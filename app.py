@@ -3461,6 +3461,18 @@ if "📊 통계청" in tabs:
 
         stat_tpls = api_list_stat_templates_cached().get("templates", [])
         stat_tpl_labels = ["(직접 입력)"] + [str(t.get("label", "") or "") for t in stat_tpls]
+        # (PATCH) 저장 후 템플릿/내역 입력값을 안전하게 초기화(위젯 생성 전에만 세팅 가능)
+
+        if st.session_state.get("stat_add_reset_req", False):
+            st.session_state["stat_add_tpl"] = "(직접 입력)"
+            st.session_state["stat_add_tpl_prev"] = "(직접 입력)"
+            st.session_state.pop("stat_add_label", None)
+
+            # 표 로컬 편집 상태도 새로 로드되게
+            st.session_state["stat_loaded_sig"] = ""
+            st.session_state["stat_edit"] = {}
+
+            st.session_state["stat_add_reset_req"] = False
 
         # 템플릿 선택
         stat_pick = st.selectbox("제출물 템플릿", stat_tpl_labels, key="stat_add_tpl")
@@ -3486,15 +3498,10 @@ if "📊 통계청" in tabs:
                     res = api_admin_add_stat_submission(ADMIN_PIN, add_label, active_accounts=stu_rows)
                     if res.get("ok"):
                         toast("제출물 내역 추가 완료!", icon="✅")
-                        st.session_state.pop("stat_add_label", None)
 
-                        # 템플릿/입력 UI 초기화
-                        st.session_state["stat_add_tpl"] = "(직접 입력)"
-                        st.session_state["stat_add_tpl_prev"] = "(직접 입력)"
-
-                        # 표 로컬 편집 상태도 새로 로드되게
-                        st.session_state["stat_loaded_sig"] = ""
-                        st.session_state["stat_edit"] = {}
+                        # (PATCH) 위젯 key(stat_add_tpl)는 여기서 직접 바꾸면 오류남
+                        # → 리셋 요청만 걸고 rerun (위젯 생성 전에 초기화됨)
+                        st.session_state["stat_add_reset_req"] = True
                         st.rerun()
                     else:
                         st.error(res.get("error", "추가 실패"))
