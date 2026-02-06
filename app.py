@@ -3701,8 +3701,8 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
 }
 /* 🔥 O X 를 감싸는 둥근 사각형 버튼 자체 크기 줄이기 */
 div[role="radiogroup"] > label:has(input[id*="stat_cellpick_"]){
-    padding: 1px 4px !important;   /* 네모 가로/세로 줄이기 */
-    height: 18px !important;       /* 네모 높이 줄이기 */
+    padding: 1px 2px !important;   /* 네모 가로/세로 줄이기 */
+    height: 11px !important;       /* 네모 높이 줄이기 */
     border-radius: 8px !important; /* 둥근 모서리 유지 */
     font-size: 0.7rem !important;  /* O/X 글자 크기 */
 }
