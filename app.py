@@ -86,10 +86,41 @@ st.markdown(
     div[role="radiogroup"] [data-testid="stWidgetLabel"] {
         margin-bottom: 0 !important;
     }
+/* --- 기존 63라인 부근의 스타일을 아래 내용으로 교체 또는 추가 --- */
+
+    /* 1. 공통: 체크되었을 때 글자색과 기본 배경 설정 (기존 파란색 배경 제거) */
     div[role="radiogroup"] > label:has(input:checked) {
-        background: #2563eb;
-        color: #ffffff;
-        border-color: #2563eb;
+        color: #ffffff !important;
+        background: #4b5563 !important; /* 기본값 (회색) */
+        border-color: #4b5563 !important;
+    }
+
+    /* 2. 통계청 전용: O, X, △ 값에 따른 개별 색상 부여 */
+    /* [O] 선택 시 초록색 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="O"]:checked) {
+        background: #10b981 !important;
+        border-color: #059669 !important;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4) !important;
+    }
+
+    /* [X] 선택 시 빨간색 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="X"]:checked) {
+        background: #ef4444 !important;
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4) !important;
+    }
+
+    /* [△] 선택 시 파란색 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="△"]:checked) {
+        background: #3b82f6 !important;
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
+    }
+
+    /* 3. Streamlit 기본 빨간색 포커스 링 강제 제거 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
+        box-shadow: none !important;
+        outline: none !important;
     }
 
 /* ✅ DataFrame/DataEditor: 바깥 네모 박스(테두리/여백)만 줄이기 */
