@@ -3636,6 +3636,14 @@ if "📊 통계청" in tabs:
             st.markdown(
                 """
                 <style>
+                /* 표 제목 가운데 정렬 + 날짜/제목 줄바꿈 */
+                .stat_table_wrap strong{
+                    text-align: center;
+                    white-space: pre-line;   /* \n 줄바꿈 적용 */
+                    display: block;
+                    font-size: 0.85rem;
+                    line-height: 1.2;
+                }
                 /* 통계표 영역에서만 라디오를 원형 버튼처럼 보이게 */
                 .stat_table_wrap div[role="radiogroup"]{
                     gap: 6px;
@@ -3646,14 +3654,14 @@ if "📊 통계청" in tabs:
                     border: 1px solid #d1d5db;
                     background: #ffffff;
                     border-radius: 999px;
-                    width: 28px;
-                    height: 28px;
+                    width: 17px;
+                    height: 17px;
                     padding: 0 !important;
                     margin: 0 !important;
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                    font-size: 0.9rem;
+                    font-size: 0.7rem;
                     line-height: 1;
                 }
                 .stat_table_wrap div[role="radiogroup"] > label:has(input:checked){
