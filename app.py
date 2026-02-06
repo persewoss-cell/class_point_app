@@ -38,19 +38,32 @@ st.markdown(
     }
 
     /* radio → 버튼처럼 */
-/* ✅ 라디오 버튼(O,X,△) 높이와 라운드 확실히 줄이기 */
+/* ✅ 라디오 버튼 내부 요소(원형 버튼 + 문자) 수평/수직 중앙 정렬 및 높이 축소 */
     div[role="radiogroup"] > label {
         background: #f3f4f6;
-        padding: 0px 4px !important;    /* 위아래 여백을 2px로 더 축소 */
-        border-radius: 4px !important;  /* 라운드를 4px로 더 각지게 */
+        padding: 0px 8px !important;    /* 위아래 여백 제거 */
+        border-radius: 4px !important;  /* 라운드 사각형 크기 축소 */
         margin-right: 4px;
         margin-bottom: 4px;
         border: 1px solid #ddd;
-        font-size: 0.85rem !important;  /* 글자 크기 조정 */
-        min-height: 0.1rem !important;  /* 높이를 강제로 낮게 고정 */
-        line-height: 1.0 !important;    /* 줄간격을 줄여 위아래 공간 제거 */
-        display: inline-flex !important; /* 내부 정렬 방식 변경 */
-        align-items: center !important;
+        font-size: 0.85rem !important;
+        
+        /* 💡 높이 고정 및 세로 중앙 정렬 핵심 설정 */
+        min-height: 1.3rem !important; 
+        display: flex !important;
+        align-items: center !important;  /* 위아래 중앙 정렬 */
+        justify-content: center !important;
+        overflow: hidden !important;
+    }
+
+    /* 💡 원형 버튼 자체에 붙은 기본 위쪽 여백(Margin) 제거 */
+    div[role="radiogroup"] > label div[data-testid="stMarkdownContainer"] p {
+        margin: 0 !important;
+        line-height: 1 !important;
+    }
+
+    div[role="radiogroup"] [data-testid="stWidgetLabel"] {
+        margin-bottom: 0 !important;
     }
     div[role="radiogroup"] > label:has(input:checked) {
         background: #2563eb;
