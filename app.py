@@ -562,8 +562,8 @@ def api_list_templates_cached():
 # ✅ 통계청(제출물) helpers
 # - 컬렉션:
 #   1) stat_templates : {label, order, created_at}
-#   2) stat_submissions: {label, date_iso, date_display, created_at, statuses{student_id:"X|O|△"}}
-# =========================
+#   2) stat_submissions: {label, date_iso, date_display, created_at, statuses{student_id:"×|○|△"}}
+# ========================
 def _weekday_kr_1ch(d: date) -> str:
     # 월화수목금토일 (파이썬: 월0 ~ 일6)
     w = d.weekday()
@@ -708,8 +708,8 @@ def api_admin_save_stat_table(admin_pin: str, submission_ids: list[str], edited:
         cur_map = dict((edited or {}).get(sub_id, {}) or {})
         merged = {}
         for sid in active_sids:
-            v = str(cur_map.get(sid, "X") or "X")
-            merged[sid] = v if v in ("X", "O", "△") else "X"
+            v = str(cur_map.get(sid, "×") or ×")
+            merged[sid] = v if v in ("×", "○", "△") else "×"
 
         batch.set(ref, {"statuses": merged}, merge=True)
 
@@ -730,12 +730,12 @@ def api_admin_delete_stat_submission(admin_pin: str, submission_id: str):
 
 
 def _cycle_mark(v: str) -> str:
-    v = str(v or "X")
-    if v == "X":
-        return "O"
-    if v == "O":
+    v = str(v or "×")
+    if v == "×":
+        return "○"
+    if v == "○":
         return "△"
-    return "X"
+    return "×"
 
 # =========================
 # Account CRUD (너 코드 유지 + role_id 추가 함수만 추가)
@@ -1789,7 +1789,7 @@ defaults = {
     # =========================
     # ✅ 통계청(제출물) UI state
     # =========================
-    "stat_edit": {},              # {submission_id: {student_id: "X|O|△"}}
+    "stat_edit": {},              # {submission_id: {student_id: "×|○|△"}}
     "stat_loaded_sig": "",        # 로드 시그니처(불필요한 초기화 방지)
     "stat_delete_confirm": False, # 삭제 확인
     "stat_tpl_pick_prev": None,   # 템플릿 select 변경 감지
@@ -3637,8 +3637,8 @@ if "📊 통계청" in tabs:
                     st.session_state["stat_edit"][sid] = {}
                     for stx in stu_rows:
                         stid = str(stx.get("student_id"))
-                        v = str(cur_map.get(stid, "X") or "X")
-                        st.session_state["stat_edit"][sid][stid] = v if v in ("X", "O", "△") else "X"
+                        v = str(cur_map.get(stid, "×") or "×")
+                        st.session_state["stat_edit"][sid][stid] = v if v in ("×", "○", "△") else "×"
 
             # -------------------------
             # (PATCH) 삭제: 체크박스로 여러 개 선택해서 삭제
@@ -3812,12 +3812,12 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
 
                         # 처음 생성 때만 기본값 세팅(사용자 클릭값은 덮어쓰지 않음)
                         if cell_key not in st.session_state:
-                            st.session_state[cell_key] = cur_v if cur_v in ("O", "X", "△") else "X"
+                            st.session_state[cell_key] = cur_v if cur_v in ("○", "×", "△") else "×"
 
                         picked = st.radio(
                             label="",
-                            options=("O", "X", "△"),
-                            index=("O", "X", "△").index(st.session_state[cell_key]),
+                            options=("○", "×", "△"),
+                            index=("○", "×", "△").index(st.session_state[cell_key]),
                             horizontal=True,
                             key=cell_key,
                             label_visibility="collapsed",
