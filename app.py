@@ -37,57 +37,86 @@ st.markdown(
         .block-container { padding-bottom: 6.0rem; }
     }
 
-/* radio → 버튼처럼 */
-    /* ✅ 라디오 버튼 내부 요소 중앙 정렬 및 높이 축소 */
+    /* radio → 버튼처럼 */
+/* ✅ 라디오 버튼 내부 요소(원형 버튼 + 문자) 수평/수직 중앙 정렬 및 높이 축소 */
     div[role="radiogroup"] > label {
         background: #f3f4f6;
-        padding: 0px 3px !important;
-        border-radius: 4px !important;
+        padding: 0px 3px !important;    /* 위아래 여백 제거 */
+        border-radius: 4px !important;  /* 라운드 사각형 크기 축소 */
         margin-right: 4px;
         margin-bottom: 4px;
         border: 1px solid #ddd;
         font-size: 0.85rem !important;
+        
+        /* 💡 높이 고정 및 세로 중앙 정렬 핵심 설정 */
         min-height: 1.3rem !important; 
         display: flex !important;
-        align-items: center !important;
+        align-items: center !important;  /* 위아래 중앙 정렬 */
         justify-content: center !important;
         overflow: hidden !important;
     }
 
-    /* ✅ 원형 버튼 크기 고정 */
+/* ✅ 태블릿에서 원형 버튼이 타원으로 찌그러지는 현상 방지 */
     div[role="radiogroup"] > label div[data-testid="stWidgetLabel"] svg {
-        width: 14px !important;
-        height: 14px !important;
+        width: 14px !important;   /* 원형 버튼 너비 고정 */
+        height: 14px !important;  /* 원형 버튼 높이 고정 */
         min-width: 14px !important;
         min-height: 14px !important;
     }
 
-    /* ✅ [핵심] 선택 시 사각형 박스 색상 변경 (기호별 차별화) */
-
-    /* 1. 공통: 선택 시 기본적으로 흰색 글자로 변경 */
-    div[role="radiogroup"] > label:has(input:checked) p {
-        color: white !important;
+    /* 원형 버튼을 감싸는 컨테이너 여백 조정 */
+    div[role="radiogroup"] > label [data-testid="stNumericInput-StepDown"] {
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    /* 라벨 내부 마진 초기화로 쏠림 방지 */
+    div[role="radiogroup"] label > div:first-child {
+        display: flex !important;
+        align-items: center !important;
+        margin-top: 0 !important;
     }
 
-    /* 2. [O] 선택 시: 초록색 배경 */
+    /* 💡 원형 버튼 자체에 붙은 기본 위쪽 여백(Margin) 제거 */
+    div[role="radiogroup"] > label div[data-testid="stMarkdownContainer"] p {
+        margin: 0 !important;
+        line-height: 1 !important;
+    }
+
+    div[role="radiogroup"] [data-testid="stWidgetLabel"] {
+        margin-bottom: 0 !important;
+    }
+/* --- 기존 63라인 부근의 스타일을 아래 내용으로 교체 또는 추가 --- */
+
+    /* 1. 선택 시 나타나는 중앙의 빨간색 점(svg) 아예 안 보이게 제거 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:checked) svg {
+        display: none !important;
+    }
+
+    /* 2. 통계청 전용: O, X, △ 값에 따라 배경색을 선명하게 꽉 채우기 */
+    
+    /* [O] 선택 시: 선명한 초록색 */
     div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="O"]:checked) {
         background-color: #10b981 !important;
         border-color: #059669 !important;
+        color: white !important;
     }
 
-    /* 3. [X] 선택 시: 빨간색 배경 */
+    /* [X] 선택 시: 선명한 빨간색 */
     div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="X"]:checked) {
         background-color: #ef4444 !important;
         border-color: #dc2626 !important;
+        color: white !important;
     }
 
-    /* 4. [△] 선택 시: 파란색 배경 */
+    /* [△] 선택 시: 선명한 파란색 */
     div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="△"]:checked) {
         background-color: #3b82f6 !important;
         border-color: #2563eb !important;
+        color: white !important;
     }
 
-    /* ✅ 클릭 시 주변에 생기는 빨간색 포커스 테두리 제거 */
+    /* 3. 클릭 시 주변에 생기는 빨간색 잔상(포커스 링) 제거 */
     div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
         box-shadow: none !important;
         outline: none !important;
