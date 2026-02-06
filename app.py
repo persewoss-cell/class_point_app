@@ -217,10 +217,6 @@ st.markdown(
         color: white !important;
     }
 
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
     /* ✅ 버튼(특히 화살표) 작게 + 가운데 */
     div[data-testid="stButton"] > button {
