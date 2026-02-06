@@ -257,7 +257,7 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
 
 /* ✅ st.radio 행 간격 줄이기 (핵심) */
 div[data-testid="stRadio"] {
-    margin-bottom: -17px !important;
+    margin-bottom: -27px !important;
     padding-bottom: 0 !important;
 }
 
