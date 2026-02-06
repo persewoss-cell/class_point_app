@@ -89,7 +89,7 @@ st.markdown(
         white-space: normal;
         word-break: keep-all;
     }
-    @media (max-width: 768px) {
+    @media (max-768px) {
         .app-title { font-size: clamp(2.05rem, 7.9vw, 3.3rem); }
     }
 
@@ -3129,33 +3129,32 @@ if "💼 직업/월급" in tabs:
                 st.markdown(f"<div style='text-align:center;font-weight:900'>{net}</div>", unsafe_allow_html=True)
 
             # ✅ 학생수 +/- (기존 로직 그대로)
-with rowc[5]:
-    # ✅ Streamlit에선 <div>를 열고 닫는 방식이 DOM에 안정적으로 남지 않음
-    # ✅ 그래서 "마커"만 하나 찍어서 CSS의 .jobcnt-wrap + div 선택자가 확실히 먹도록 처리
-    st.markdown("<span class='jobcnt-wrap'></span>", unsafe_allow_html=True)
+            with rowc[5]:
+                st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
+                a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
 
-    a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
+                with a1:
+                    if st.button("➖", key=f"job_cnt_minus_{rid}"):
+                        new_cnt = max(0, cnt - 1)
+                        new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
+                        db.collection("job_salary").document(rid).update(
+                            {"student_count": new_cnt, "assigned_ids": new_assigned}
+                        )
+                        st.rerun()
 
-    with a1:
-        if st.button("➖", key=f"job_cnt_minus_{rid}"):
-            new_cnt = max(0, cnt - 1)
-            new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
-            db.collection("job_salary").document(rid).update(
-                {"student_count": new_cnt, "assigned_ids": new_assigned}
-            )
-            st.rerun()
+                with a2:
+                    st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
 
-    with a2:
-        st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
+                with a3:
+                    if st.button("➕", key=f"job_cnt_plus_{rid}"):
+                        new_cnt = cnt + 1
+                        new_assigned = assigned_ids + [""]
+                        db.collection("job_salary").document(rid).update(
+                            {"student_count": new_cnt, "assigned_ids": new_assigned}
+                        )
+                        st.rerun()
 
-    with a3:
-        if st.button("➕", key=f"job_cnt_plus_{rid}"):
-            new_cnt = cnt + 1
-            new_assigned = assigned_ids + [""]
-            db.collection("job_salary").document(rid).update(
-                {"student_count": new_cnt, "assigned_ids": new_assigned}
-            )
-            st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
 
             # ✅ 배정 계정 드롭다운(기존 로직 그대로)
             with rowc[6]:
@@ -3660,72 +3659,52 @@ if "📊 통계청" in tabs:
             # (PATCH) 통계표 전용: 한 칸에 O/X/△ 3개 원형 선택 UI (즉시 표시)
             # - div 래퍼 방식은 Streamlit 위젯을 실제로 감싸지 못해서 적용이 불안정함
             # - 대신 input id에 'stat_cellpick_' 들어간 라디오만 CSS 적용
-
             st.markdown(
                 """
 <style>
-/* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 대상으로 ===== */
+/* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 원형 버튼처럼 ===== */
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) {
+    gap: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label {
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    border-radius: 999px;
+    width: 17px;      /* ← 더 작게 */
+    height: 170px;     /* ← 더 작게 */
+    padding: 0 !important;
+    margin: 0 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem; /* ← 더 작게 */
+    line-height: 1;
+}
+
+div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input:checked) {
+    border-color: #2563eb;
+    background: #eff6ff;
+    font-weight: 700;
+}
+
+/* 라디오 위젯 주변 여백 최소화 */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
     margin: 0 !important;
     padding: 0 !important;
-    width: auto !important;
-    min-width: 0 !important;
-}
-
-/* radiogroup 정렬 */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup"]{
-    display: flex !important;
-    flex-wrap: nowrap !important;
-    gap: 4px !important;
-    justify-content: center !important;
-    align-items: center !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* ✅ (핵심) BaseWeb radio 버튼 자체(둥근 사각형) 줄이기 */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-baseweb="radio"]{
-    margin: 0 !important;
-}
-
-/* 버튼 껍데기(사각형) */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-baseweb="radio"] > div{
-    padding: 0 !important;
-    margin: 0 !important;
-    min-width: 0 !important;
-}
-
-/* 실제 클릭되는 “칩/버튼” 박스(버전에 따라 span/div로 잡힘) */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-baseweb="radio"] span,
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-baseweb="radio"] div{
-    line-height: 1 !important;
-}
-
-/* 🔥 라벨 방식으로 그려지는 경우도 같이 커버(버전/테마 차이) */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label{
-    padding: 2px 6px !important;
-    height: 22px !important;
-    min-height: 0 !important;
-    line-height: 1 !important;
-    border-radius: 10px !important;
-    margin: 0 !important;
-    font-size: 0.75rem !important;
-    box-shadow: none !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-}
-
-/* 선택된 상태(라벨 방식일 때) */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:checked){
-    font-weight: 700 !important;
+    
+    width: 35px !important;        /* ← 네모 박스 가로 */
+    min-height: 12px !important;   /* ← 네모 박스 세로 */
 }
 </style>
 """,
                 unsafe_allow_html=True,
             )
 
-            hdr_cols = st.columns([0.9, 1.6] + [0.75] * len(col_titles))
+            hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
             with hdr_cols[0]:
                 st.markdown("**번호**")
             with hdr_cols[1]:
