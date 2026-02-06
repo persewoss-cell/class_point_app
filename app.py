@@ -3842,30 +3842,29 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
-/* 1. 기본 빨간색 포커스 효과 제거 */
-        div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
+/* 1. 기존의 강제 빨간색 포커스링을 무력화 */
+        div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-testid="stWidgetLabel"] + div div {
             box-shadow: none !important;
-            outline: none !important;
         }
 
-        /* 2. 선택된 버튼의 가장자리(링) 색상을 개별 지정 */
-        
-        /* O 선택 시: 초록색 링 */
-        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="O"]:checked) {
-            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4) !important;
+        /* 2. 각 값(O, X, △)이 체크되었을 때, 해당 div의 테두리와 링 색상 변경 */
+
+        /* O (초록) */
+        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) label:has(input[value="O"]:checked) div[data-testid="stMarkdownContainer"] + div {
             border-color: #10b981 !important;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.5) !important;
         }
 
-        /* X 선택 시: 빨간색 링 */
-        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="X"]:checked) {
-            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4) !important;
+        /* X (빨강) - 이미 빨강이지만 일관성을 위해 명시 */
+        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) label:has(input[value="X"]:checked) div[data-testid="stMarkdownContainer"] + div {
             border-color: #ef4444 !important;
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5) !important;
         }
 
-        /* △ 선택 시: 파란색 링 */
-        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="△"]:checked) {
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
+        /* △ (파랑) */
+        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) label:has(input[value="△"]:checked) div[data-testid="stMarkdownContainer"] + div {
             border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
         }
 
 </style>
