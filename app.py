@@ -668,7 +668,7 @@ def api_admin_add_stat_submission(admin_pin: str, label: str, active_accounts: l
     for a in active_accounts or []:
         sid = str(a.get("student_id", "") or "")
         if sid:
-            statuses[sid] = "X"
+            statuses[sid] = "×"
 
     db.collection("stat_submissions").document().set(
         {
@@ -3804,7 +3804,7 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
 
                 for j, sub in enumerate(sub_rows):
                     sub_id = str(sub.get("submission_id"))
-                    cur_v = str(st.session_state["stat_edit"].get(sub_id, {}).get(stid, "X") or "X")
+                    cur_v = str(st.session_state["stat_edit"].get(sub_id, {}).get(stid, "×") or "×")
 
                     with row_cols[j + 2]:
                         ver = int(st.session_state.get("stat_cell_ver", 0) or 0)
