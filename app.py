@@ -257,7 +257,7 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
 
 /* ✅ st.radio 행 간격 줄이기 (핵심) */
 div[data-testid="stRadio"] {
-    margin-bottom: 0px !important;
+    margin-bottom: -5px !important;
     padding-bottom: 0 !important;
 }
 
@@ -269,25 +269,6 @@ div[role="radiogroup"] {
 /* label 간 세로 여백 제거 */
 div[role="radiogroup"] > label {
     margin-bottom: 0 !important;
-}
-
-/* ✅ radio를 감싸는 wrapper 여백 제거 (진짜 원인) */
-div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stRadio"]) {
-    margin-bottom: 0px !important;
-    padding-bottom: 0px !important;
-}
-
-/* 각 라디오 줄 높이 압축 */
-div[data-testid="stRadio"] {
-    margin: 0 !important;
-    padding: 0 !important;
-    min-height: 20px !important;
-}
-
-/* radiogroup 자체 여백 제거 */
-div[role="radiogroup"] {
-    margin: 0 !important;
-    padding: 0 !important;
 }
 
 /* ===============================
