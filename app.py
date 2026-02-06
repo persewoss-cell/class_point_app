@@ -114,21 +114,27 @@ st.markdown(
     }
     .tpl-sub { color:#666; font-size: 0.85rem; margin-top: 2px; line-height: 1.05; }
 
-    /* ✅ 버튼(특히 화살표) 작게 + 가운데 */
+/* ✅ 통계청 OX 버튼 및 일반 버튼 크기/모양 수정 */
     div[data-testid="stButton"] > button {
-        padding: 0.05rem 0.28rem !important;
-        min-height: 1.45rem !important;
+        padding: 0rem 0.2rem !important;    /* 좌우 여백 축소 */
+        min-height: 1.3rem !important;      /* 높이 축소 (기존 1.45보다 낮게) */
+        width: 1.3rem !important;           /* 너비 축소 (정사각형 형태) */
         line-height: 1 !important;
-        font-size: 0.95rem !important;
+        font-size: 0.85rem !important;      /* 글자 크기 살짝 축소 */
+        border-radius: 4px !important;      /* 라운드 크기 축소 (더 각진 사각형으로) */
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
     }
+    
+    /* [저장] 같은 강조 버튼은 클릭하기 편하게 최소 크기 유지 */
     button[kind="primary"] {
-        padding: 0.35rem 0.6rem !important;
-        min-height: 2.0rem !important;
+        padding: 0.2rem 0.5rem !important;
+        min-height: 1.8rem !important;
+        width: auto !important;             /* 저장 버튼 등은 글자에 맞춰 너비 자동 */
+        border-radius: 4px !important;
     }
-
+    
     /* =========================
        💼 직업/월급 탭: 학생수(+/-), 순서(⬆️⬇️) 버튼(원형) 안정화 - 최종
        ✅ Streamlit은 markdown div로 '위젯을 감싸지' 않음
