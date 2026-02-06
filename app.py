@@ -41,7 +41,7 @@ st.markdown(
 /* ✅ 통계청 라디오 버튼(O,X,△) 사각형 크기 및 라운드 수정 */
     div[role="radiogroup"] > label {
         background: #f3f4f6;
-        padding: 4px 8px !important;    /* 안쪽 여백 줄임 (기존 6px 10px) */
+        padding: 2px 4px !important;    /* 안쪽 여백 줄임 (기존 6px 10px) */
         border-radius: 6px !important;  /* 모서리를 더 각지게 (기존 12px) */
         margin-right: 4px;
         margin-bottom: 4px;
