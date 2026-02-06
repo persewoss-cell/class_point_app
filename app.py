@@ -3563,6 +3563,9 @@ if "📊 통계청" in tabs:
                 st.session_state["stat_loaded_sig"] = sig
                 st.session_state["stat_edit"] = {}
 
+                # (PATCH) 표 구성이 바뀌면 셀 위젯 key 버전을 올려서 라디오 상태 꼬임 방지
+                st.session_state["stat_cell_ver"] = int(st.session_state.get("stat_cell_ver", 0) or 0) + 1
+
                 # 제출물별 기본 상태맵(학생 전원 X) + 기존 DB값 반영
                 for subx in sub_rows_all:
                     sid = str(subx.get("submission_id"))
@@ -3629,8 +3632,45 @@ if "📊 통계청" in tabs:
                 label = str(s.get("label", "") or "")
                 col_titles.append(f"{date_disp}\n{label}")
 
-            # ---- 표 렌더: 클릭하면 X→O→△→X (로컬만 변경) ----
-            # (PATCH) 셀 클릭 시 st.rerun() 제거: 클릭 체감 버퍼링 줄이기
+            # (PATCH) 통계표 전용: 한 칸에 O/X/△ 3개 원형 선택 UI (가볍고 즉시 표시)
+            st.markdown(
+                """
+                <style>
+                /* 통계표 영역에서만 라디오를 원형 버튼처럼 보이게 */
+                .stat_table_wrap div[role="radiogroup"]{
+                    gap: 6px;
+                    display: flex;
+                    justify-content: center;
+                }
+                .stat_table_wrap div[role="radiogroup"] > label{
+                    border: 1px solid #d1d5db;
+                    background: #ffffff;
+                    border-radius: 999px;
+                    width: 28px;
+                    height: 28px;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.9rem;
+                    line-height: 1;
+                }
+                .stat_table_wrap div[role="radiogroup"] > label:has(input:checked){
+                    border-color: #2563eb;
+                    background: #eff6ff;
+                    font-weight: 700;
+                }
+                /* 라디오 기본 여백 제거(셀 안에서 작게) */
+                .stat_table_wrap [data-testid="stRadio"]{
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+                </style>
+                <div class="stat_table_wrap">
+                """,
+                unsafe_allow_html=True,
+            )
             hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
             with hdr_cols[0]:
                 st.markdown("**번호**")
@@ -3658,10 +3698,29 @@ if "📊 통계청" in tabs:
                     cur_v = str(st.session_state["stat_edit"].get(sub_id, {}).get(stid, "X") or "X")
 
                     with row_cols[j + 2]:
-                        if st.button(cur_v, key=f"stat_cell_{sub_id}_{stid}", use_container_width=True):
-                            st.session_state["stat_edit"].setdefault(sub_id, {})
-                            st.session_state["stat_edit"][sub_id][stid] = _cycle_mark(cur_v)
+                        ver = int(st.session_state.get("stat_cell_ver", 0) or 0)
+                        cell_key = f"stat_cellpick_{ver}_{sub_id}_{stid}"
 
+                        # 처음 생성 때만 기본값 세팅(사용자 클릭값은 덮어쓰지 않음)
+                        if cell_key not in st.session_state:
+                            st.session_state[cell_key] = cur_v if cur_v in ("O", "X", "△") else "X"
+
+                        picked = st.radio(
+                            label="",
+                            options=("O", "X", "△"),
+                            index=("O", "X", "△").index(st.session_state[cell_key]),
+                            horizontal=True,
+                            key=cell_key,
+                            label_visibility="collapsed",
+                        )
+
+                        # 선택은 즉시 로컬에 반영(저장은 상단 '✅ 저장'에서만 DB 반영)
+                        st.session_state["stat_edit"].setdefault(sub_id, {})
+                        st.session_state["stat_edit"][sub_id][stid] = picked
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            
             # ---- 저장 버튼 처리(표 오른쪽 상단) ----
             if save_clicked:
                 res_sv = api_admin_save_stat_table(
