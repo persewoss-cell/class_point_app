@@ -183,40 +183,62 @@ st.markdown(
     }
     .tpl-sub { color:#666; font-size: 0.85rem; margin-top: 2px; line-height: 1.05; }
 
-/* ... 기존 코드 내용 생략 (tpl-sub 등) ... */
+/* ✅ stat_cellpick_ 전용: 선택 색상(순서 기반) */
 
-    /* 1. 기본 체크 시 변하는 회색/파란색 배경 초기화 */
-    div[role="radiogroup"] > label:has(input:checked) {
-        background: transparent !important;
-        border-color: #ddd !important;
-        color: inherit !important;
-    }
+/* (중요) 기본 선택 배경 리셋은 "stat_cellpick_"에만 적용 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  div[role="radiogroup"] > label:has(input:checked) {
+    background: #f3f4f6 !important;
+    border-color: #ddd !important;
+}
 
-    /* 2. 기호별 선택 시 사각 박스 배경색 변경 (원형 체크는 유지) */
-    
-    /* [O] 선택 시: 초록색 배경 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="O"]:checked) {
-        background-color: #10b981 !important;
-        border-color: #059669 !important;
-    }
+/* 옵션 순서가 [빈칸, O, X, △] 라고 가정:
+   1번째=빈칸, 2번째=O, 3번째=X, 4번째=△ */
 
-    /* [X] 선택 시: 빨간색 배경 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="X"]:checked) {
-        background-color: #ef4444 !important;
-        border-color: #dc2626 !important;
-    }
+/* 2번째(O) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  div[role="radiogroup"] > label:nth-of-type(2):has(input:checked) {
+    background-color: #10b981 !important;
+    border-color: #059669 !important;
+}
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  div[role="radiogroup"] > label:nth-of-type(2):has(input:checked) p {
+    color: #fff !important;
+}
 
-    /* [△] 선택 시: 파란색 배경 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="△"]:checked) {
-        background-color: #3b82f6 !important;
-        border-color: #2563eb !important;
-    }
+/* 3번째(X) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  div[role="radiogroup"] > label:nth-of-type(3):has(input:checked) {
+    background-color: #ef4444 !important;
+    border-color: #dc2626 !important;
+}
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  div[role="radiogroup"] > label:nth-of-type(3):has(input:checked) p {
+    color: #fff !important;
+}
 
-    /* 3. 선택되었을 때 글자(O,X,△)를 흰색으로 선명하게 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:checked) p {
-        color: white !important;
-    }
+/* 4번째(△) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  div[role="radiogroup"] > label:nth-of-type(4):has(input:checked) {
+    background-color: #3b82f6 !important;
+    border-color: #2563eb !important;
+}
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  div[role="radiogroup"] > label:nth-of-type(4):has(input:checked) p {
+    color: #fff !important;
+}
 
+/* ✅ 선택 시 가운데 빨간 점(svg) 숨기기(원하면 유지) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  label:has(input:checked) svg {
+    display: none !important;
+}
+
+/* ✅ 포커스 링 제거 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
+    box-shadow: none !important;
+    outline: none !important;
+}
 
     /* ✅ 버튼(특히 화살표) 작게 + 가운데 */
     div[data-testid="stButton"] > button {
