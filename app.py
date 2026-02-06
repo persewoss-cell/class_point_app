@@ -3722,7 +3722,13 @@ div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label * {
   padding: 0 !important;
   line-height: 1 !important;
 }
-
+/* stRadio를 감싸는 상위 컨테이너 여백까지 제거 (통계셀만) */
+div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
 </style>
 """,
                 unsafe_allow_html=True,
