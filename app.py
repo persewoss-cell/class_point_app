@@ -3735,7 +3735,7 @@ div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label {
 }
 
 /* 3) 선택된 버튼 */
-div[role="radiogroup"] > label:has(input[value="O"]:checked) {
+    div[role="radiogroup"] > label:has(input[value="O"]:checked) {
         background: #10b981 !important; color: white !important; border-color: #10b981 !important;
     }
     div[role="radiogroup"] > label:has(input[value="X"]:checked) {
@@ -3744,6 +3744,7 @@ div[role="radiogroup"] > label:has(input[value="O"]:checked) {
     div[role="radiogroup"] > label:has(input[value="△"]:checked) {
         background: #3b82f6 !important; color: white !important; border-color: #3b82f6 !important;
     }
+    
 /* 4) 라디오 위젯 “바깥 박스(라운드 사각)”를 줄이는 핵심:
       - 여기서 위아래 padding/margin을 강제로 0
       - min-height 음수 대신, line-height + padding 제거로 압축 */
