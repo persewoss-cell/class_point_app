@@ -3671,6 +3671,9 @@ div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input:checke
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
     margin: 0 !important;
     padding: 0 !important;
+    
+    width: 70px !important;        /* ← 네모 박스 가로 */
+    min-height: 24px !important;   /* ← 네모 박스 세로 */
 }
 </style>
 """,
