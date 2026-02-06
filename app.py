@@ -3487,11 +3487,12 @@ if "📊 통계청" in tabs:
                     if res.get("ok"):
                         toast("제출물 내역 추가 완료!", icon="✅")
                         st.session_state.pop("stat_add_label", None)
-                    # (PATCH) 위젯 key와 충돌 방지: 최초 1회만 기본값 세팅
-                    if "stat_add_tpl" not in st.session_state:
+
+                        # 템플릿/입력 UI 초기화
                         st.session_state["stat_add_tpl"] = "(직접 입력)"
                         st.session_state["stat_add_tpl_prev"] = "(직접 입력)"
-                        # 표 로컬 편집 상태도 새로 로드되게 시그니처 초기화
+
+                        # 표 로컬 편집 상태도 새로 로드되게
                         st.session_state["stat_loaded_sig"] = ""
                         st.session_state["stat_edit"] = {}
                         st.rerun()
@@ -3508,26 +3509,45 @@ if "📊 통계청" in tabs:
         st.markdown("### 📋 통계청 통계표")
 
         # 최신 제출물 N개(왼쪽부터 최신)
-        sub_res = api_list_stat_submissions_cached(limit_cols=10)
-        sub_rows = sub_res.get("rows", []) if sub_res.get("ok") else []
-        submission_ids = [r.get("submission_id") for r in sub_rows if r.get("submission_id")]
+        sub_res = api_list_stat_submissions_cached(limit_cols=50)
+        sub_rows_all = sub_res.get("rows", []) if sub_res.get("ok") else []
 
-        top_r = st.columns([1.0, 1.0, 2.0])
+        submission_ids = [r.get("submission_id") for r in sub_rows_all if r.get("submission_id")]
+
+        # -------------------------
+        # (PATCH) 가로 "좌우 이동" : 한 화면에 5~6개만 표시
+        # -------------------------
+        VISIBLE_COLS = 6
+        if "stat_col_offset" not in st.session_state:
+            st.session_state["stat_col_offset"] = 0
+
+        top_r = st.columns([1.2, 1.2, 2.0])
+        with top_r[0]:
+            if st.button("◀", use_container_width=True, key="stat_col_left"):
+                st.session_state["stat_col_offset"] = max(0, int(st.session_state["stat_col_offset"]) - VISIBLE_COLS)
+        with top_r[1]:
+            if st.button("▶", use_container_width=True, key="stat_col_right"):
+                max_off = max(0, len(sub_rows_all) - VISIBLE_COLS)
+                st.session_state["stat_col_offset"] = min(max_off, int(st.session_state["stat_col_offset"]) + VISIBLE_COLS)
+
         with top_r[2]:
-            # 오른쪽 상단 버튼들
             bsave, bdel = st.columns(2)
             with bsave:
                 save_clicked = st.button("✅ 저장", use_container_width=True, key="stat_table_save")
             with bdel:
                 del_clicked = st.button("🗑️ 삭제", use_container_width=True, key="stat_table_del")
 
-        if not sub_rows:
+        if not sub_rows_all:
             st.info("제출물 내역이 없습니다. 위에서 ‘제출물 내역 추가’를 먼저 해주세요.")
         else:
+            # 현재 화면에 보일 제출물만 슬라이스
+            off = int(st.session_state.get("stat_col_offset", 0) or 0)
+            sub_rows = sub_rows_all[off : off + VISIBLE_COLS]
+
             # 로드 시그니처: (제출물 목록 + 학생 목록) 바뀔 때만 로컬 편집 초기화
             sig = "||".join(
                 [
-                    ",".join([str(s.get("submission_id")) for s in sub_rows]),
+                    ",".join([str(s.get("submission_id")) for s in sub_rows_all]),
                     ",".join([str(s.get("student_id")) for s in stu_rows]),
                 ]
             )
@@ -3537,9 +3557,9 @@ if "📊 통계청" in tabs:
                 st.session_state["stat_edit"] = {}
 
                 # 제출물별 기본 상태맵(학생 전원 X) + 기존 DB값 반영
-                for sub in sub_rows:
-                    sid = str(sub.get("submission_id"))
-                    cur_map = dict(sub.get("statuses", {}) or {})
+                for subx in sub_rows_all:
+                    sid = str(subx.get("submission_id"))
+                    cur_map = dict(subx.get("statuses", {}) or {})
 
                     st.session_state["stat_edit"][sid] = {}
                     for stx in stu_rows:
@@ -3547,43 +3567,55 @@ if "📊 통계청" in tabs:
                         v = str(cur_map.get(stid, "X") or "X")
                         st.session_state["stat_edit"][sid][stid] = v if v in ("X", "O", "△") else "X"
 
-            # 삭제 버튼 눌렀을 때: 어떤 제출물(컬럼) 삭제할지 선택
+            # -------------------------
+            # (PATCH) 삭제: 체크박스로 여러 개 선택해서 삭제
+            # -------------------------
             if del_clicked:
                 st.session_state["stat_delete_confirm"] = True
 
             if st.session_state.get("stat_delete_confirm", False):
-                st.warning("삭제할 제출물(컬럼)을 선택하세요.")
-                del_opts = [f"{s.get('date_display','')} | {s.get('label','')}" for s in sub_rows]
-                del_pick = st.selectbox("삭제 대상", del_opts, key="stat_del_pick")
+                st.warning("삭제할 제출물을 체크하세요. (여러 개 선택 가능)")
+
+                del_targets = []
+                for s in sub_rows_all:
+                    sid = str(s.get("submission_id"))
+                    label = f"{s.get('date_display','')} | {s.get('label','')}"
+                    ck = st.checkbox(label, key=f"stat_del_ck_{sid}")
+                    if ck:
+                        del_targets.append(sid)
+
                 yy, nn = st.columns(2)
                 with yy:
                     if st.button("예", use_container_width=True, key="stat_del_yes"):
-                        # 선택된 라벨 -> submission_id 찾기
-                        target_id = None
-                        for s in sub_rows:
-                            lab = f"{s.get('date_display','')} | {s.get('label','')}"
-                            if lab == del_pick:
-                                target_id = str(s.get("submission_id"))
-                                break
-                        if target_id:
-                            resd = api_admin_delete_stat_submission(ADMIN_PIN, target_id)
-                            if resd.get("ok"):
-                                toast("삭제 완료!", icon="🗑️")
-                                st.session_state["stat_delete_confirm"] = False
-                                st.session_state["stat_loaded_sig"] = ""
-                                st.session_state["stat_edit"] = {}
-                                st.rerun()
-                            else:
-                                st.error(resd.get("error", "삭제 실패"))
+                        if not del_targets:
+                            st.error("삭제할 항목을 하나 이상 체크해 주세요.")
                         else:
-                            st.error("삭제 대상을 찾지 못했습니다.")
+                            ok_cnt = 0
+                            fail_msgs = []
+                            for tid in del_targets:
+                                resd = api_admin_delete_stat_submission(ADMIN_PIN, tid)
+                                if resd.get("ok"):
+                                    ok_cnt += 1
+                                else:
+                                    fail_msgs.append(resd.get("error", "삭제 실패"))
+
+                            if ok_cnt > 0:
+                                toast(f"삭제 완료! ({ok_cnt}개)", icon="🗑️")
+
+                            if fail_msgs:
+                                st.error("일부 삭제 실패: " + " / ".join(fail_msgs[:3]))
+
+                            # 체크박스 상태/로컬 상태 초기화
+                            st.session_state["stat_delete_confirm"] = False
+                            st.session_state["stat_loaded_sig"] = ""
+                            st.session_state["stat_edit"] = {}
+                            st.rerun()
                 with nn:
                     if st.button("아니오", use_container_width=True, key="stat_del_no"):
                         st.session_state["stat_delete_confirm"] = False
                         st.rerun()
 
-            # ---- 표 헤더(최신이 왼쪽) ----
-            # 컬럼 표기: "0월 0일(요일) / 내역"
+            # ---- 표 헤더(현재 화면에 보일 제출물만) ----
             col_titles = []
             for s in sub_rows:
                 date_disp = str(s.get("date_display", "") or "")
@@ -3591,7 +3623,7 @@ if "📊 통계청" in tabs:
                 col_titles.append(f"{date_disp}\n{label}")
 
             # ---- 표 렌더: 클릭하면 X→O→△→X (로컬만 변경) ----
-            # 스타일: 사각 버튼 느낌(기본 st.button)
+            # (PATCH) 셀 클릭 시 st.rerun() 제거: 클릭 체감 버퍼링 줄이기
             hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
             with hdr_cols[0]:
                 st.markdown("**번호**")
@@ -3603,7 +3635,6 @@ if "📊 통계청" in tabs:
 
             st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-            # 각 학생 행
             for stx in stu_rows:
                 stid = str(stx.get("student_id"))
                 no = stx.get("no", 999999)
@@ -3619,12 +3650,10 @@ if "📊 통계청" in tabs:
                     sub_id = str(sub.get("submission_id"))
                     cur_v = str(st.session_state["stat_edit"].get(sub_id, {}).get(stid, "X") or "X")
 
-                    # 버튼 클릭 시 로컬 값만 순환
                     with row_cols[j + 2]:
                         if st.button(cur_v, key=f"stat_cell_{sub_id}_{stid}", use_container_width=True):
                             st.session_state["stat_edit"].setdefault(sub_id, {})
                             st.session_state["stat_edit"][sub_id][stid] = _cycle_mark(cur_v)
-                            st.rerun()
 
             # ---- 저장 버튼 처리(표 오른쪽 상단) ----
             if save_clicked:
