@@ -41,7 +41,7 @@ st.markdown(
 /* ✅ 라디오 버튼(O,X,△) 높이와 라운드 확실히 줄이기 */
     div[role="radiogroup"] > label {
         background: #f3f4f6;
-        padding: 2px 8px !important;    /* 위아래 여백을 2px로 더 축소 */
+        padding: 1px 4px !important;    /* 위아래 여백을 2px로 더 축소 */
         border-radius: 4px !important;  /* 라운드를 4px로 더 각지게 */
         margin-right: 4px;
         margin-bottom: 4px;
