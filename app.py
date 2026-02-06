@@ -3842,62 +3842,31 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
-/* ===== stat_cellpick 선택 시 빨간 포커스 링 제거 + 색상 지정 ===== */
+/* 1. 기본 빨간색 포커스 효과 제거 */
+        div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
+            box-shadow: none !important;
+            outline: none !important;
+        }
 
-input[id*="stat_cellpick_"] {
-  outline: none !important;
-  box-shadow: none !important;
-}
+        /* 2. 선택된 버튼의 가장자리(링) 색상을 개별 지정 */
+        
+        /* O 선택 시: 초록색 링 */
+        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="O"]:checked) {
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4) !important;
+            border-color: #10b981 !important;
+        }
 
-/* O 선택 시 초록 링 */
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"][value="O"]:checked) > label {
-  border-color: #10b981 !important;
-  box-shadow: 0 0 0 2px rgba(16,185,129,.55) !important;
-}
+        /* X 선택 시: 빨간색 링 */
+        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="X"]:checked) {
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4) !important;
+            border-color: #ef4444 !important;
+        }
 
-/* X 선택 시 빨강 링 */
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"][value="X"]:checked) > label {
-  border-color: #ef4444 !important;
-  box-shadow: 0 0 0 2px rgba(239,68,68,.55) !important;
-}
-
-/* △ 선택 시 파랑 링 */
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"][value="△"]:checked) > label {
-  border-color: #3b82f6 !important;
-  box-shadow: 0 0 0 2px rgba(59,130,246,.55) !important;
-}
-
-/* ===== Streamlit radio 실제 구조를 직접 잡는 방식 (100% 적용됨) ===== */
-
-/* 기본 빨간 포커스 제거 */
-input[id*="stat_cellpick_"] {
-  outline: none !important;
-  box-shadow: none !important;
-}
-
-/* O 선택 시 */
-input[id*="stat_cellpick_"][value="O"]:checked + div {
-  border: 2px solid #10b981 !important;
-  box-shadow: 0 0 0 2px rgba(16,185,129,.55) !important;
-  background: #10b981 !important;
-  color: white !important;
-}
-
-/* X 선택 시 */
-input[id*="stat_cellpick_"][value="X"]:checked + div {
-  border: 2px solid #ef4444 !important;
-  box-shadow: 0 0 0 2px rgba(239,68,68,.55) !important;
-  background: #ef4444 !important;
-  color: white !important;
-}
-
-/* △ 선택 시 */
-input[id*="stat_cellpick_"][value="△"]:checked + div {
-  border: 2px solid #3b82f6 !important;
-  box-shadow: 0 0 0 2px rgba(59,130,246,.55) !important;
-  background: #3b82f6 !important;
-  color: white !important;
-}
+        /* △ 선택 시: 파란색 링 */
+        div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="△"]:checked) {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
+            border-color: #3b82f6 !important;
+        }
 
 </style>
 """,
