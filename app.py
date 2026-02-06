@@ -3662,49 +3662,54 @@ if "📊 통계청" in tabs:
             st.markdown(
                 """
 <style>
-/* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 원형 버튼처럼 ===== */
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) {
-    gap: 4px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
+/* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 대상으로 ===== */
 
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label {
-    border: 1px solid #d1d5db;
-    background: #ffffff;
-    border-radius: 999px;
-    width: 17px;      /* ← 더 작게 */
-    height: 17px;     /* ← 더 작게 */
-    padding: 0 !important;
-    margin: 0 !important;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.75rem; /* ← 더 작게 */
-    line-height: 1;
-}
-
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input:checked) {
-    border-color: #2563eb;
-    background: #eff6ff;
-    font-weight: 700;
-}
-
-/* 라디오 위젯 주변 여백 최소화 */
+/* 1) 라디오 위젯(바깥 네모/여백/폭) 자체를 최대한 줄임 */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
     margin: 0 !important;
     padding: 0 !important;
-    
-    width: 35px !important;        /* ← 네모 박스 가로 */
-    min-height: 12px !important;   /* ← 네모 박스 세로 */
+    width: auto !important;
+    min-width: 0 !important;
 }
-/* 🔥 O X 를 감싸는 둥근 사각형 버튼 자체 크기 줄이기 */
-div[role="radiogroup"] > label:has(input[id*="stat_cellpick_"]){
-    padding: 1px 2px !important;   /* 네모 가로/세로 줄이기 */
-    height: 11px !important;       /* 네모 높이 줄이기 */
-    border-radius: 8px !important; /* 둥근 모서리 유지 */
-    font-size: 0.7rem !important;  /* O/X 글자 크기 */
+
+/* 2) radiogroup 정렬/간격 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup"]{
+    display: flex !important;
+    gap: 4px !important;
+    justify-content: center !important;
+    align-items: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* 3) ✅ O/X 둥근 사각형(라벨) 크기 줄이기 (핵심) */
+/*    (직계자식 '>' 쓰지 않고, stRadio 안의 label 전부를 잡음) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label{
+    border: 1px solid #d1d5db !important;
+    background: #ffffff !important;
+
+    /* 둥근 사각형 크기 */
+    padding: 2px 6px !important;
+    height: 22px !important;
+    min-height: 0 !important;
+    line-height: 1 !important;
+
+    border-radius: 10px !important;
+    margin: 0 !important;
+
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    font-size: 0.75rem !important;
+    box-shadow: none !important;
+}
+
+/* 4) 선택된 상태 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:checked){
+    border-color: #2563eb !important;
+    background: #eff6ff !important;
+    font-weight: 700 !important;
 }
 </style>
 """,
