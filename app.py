@@ -255,6 +255,23 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
         min-height: 2.0rem !important;
     }
 
+/* ✅ st.radio 행 간격 줄이기 (핵심) */
+div[data-testid="stRadio"] {
+    margin-bottom: 2px !important;
+    padding-bottom: 0 !important;
+}
+
+/* 라디오그룹 자체 여백 제거 */
+div[role="radiogroup"] {
+    margin-bottom: 0 !important;
+}
+
+/* label 간 세로 여백 제거 */
+div[role="radiogroup"] > label {
+    margin-bottom: 0 !important;
+}
+
+
 /* ===============================
    ✅ 라디오 3개(O, X, △) 선택 색상
    =============================== */
