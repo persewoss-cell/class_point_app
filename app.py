@@ -3660,12 +3660,11 @@ if "📊 통계청" in tabs:
             # (PATCH) 통계표 전용: 한 칸에 O/X/△ 3개 원형 선택 UI (즉시 표시)
             # - div 래퍼 방식은 Streamlit 위젯을 실제로 감싸지 못해서 적용이 불안정함
             # - 대신 input id에 'stat_cellpick_' 들어간 라디오만 CSS 적용
-            st.markdown(
-                """
+
+st.markdown(
+    """
 <style>
 /* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 대상으로 ===== */
-
-/* 1) 라디오 위젯(바깥 네모/여백/폭) 자체를 최대한 줄임 */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
     margin: 0 !important;
     padding: 0 !important;
@@ -3673,9 +3672,10 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
     min-width: 0 !important;
 }
 
-/* 2) radiogroup 정렬/간격 */
+/* radiogroup 정렬 */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup"]{
     display: flex !important;
+    flex-wrap: nowrap !important;
     gap: 4px !important;
     justify-content: center !important;
     align-items: center !important;
@@ -3683,46 +3683,47 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup
     padding: 0 !important;
 }
 
-/* 3) ✅ O/X 둥근 사각형(라벨) 크기 줄이기 (핵심) */
-/*    (직계자식 '>' 쓰지 않고, stRadio 안의 label 전부를 잡음) */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label{
-    border: 1px solid #d1d5db !important;
-    background: #ffffff !important;
+/* ✅ (핵심) BaseWeb radio 버튼 자체(둥근 사각형) 줄이기 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-baseweb="radio"]{
+    margin: 0 !important;
+}
 
-    /* 둥근 사각형 크기 */
+/* 버튼 껍데기(사각형) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-baseweb="radio"] > div{
+    padding: 0 !important;
+    margin: 0 !important;
+    min-width: 0 !important;
+}
+
+/* 실제 클릭되는 “칩/버튼” 박스(버전에 따라 span/div로 잡힘) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-baseweb="radio"] span,
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[data-baseweb="radio"] div{
+    line-height: 1 !important;
+}
+
+/* 🔥 라벨 방식으로 그려지는 경우도 같이 커버(버전/테마 차이) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label{
     padding: 2px 6px !important;
     height: 22px !important;
     min-height: 0 !important;
     line-height: 1 !important;
-
     border-radius: 10px !important;
     margin: 0 !important;
-
+    font-size: 0.75rem !important;
+    box-shadow: none !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
-
-    font-size: 0.75rem !important;
-    box-shadow: none !important;
 }
 
-/* 4) 선택된 상태 */
+/* 선택된 상태(라벨 방식일 때) */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:checked){
-    border-color: #2563eb !important;
-    background: #eff6ff !important;
     font-weight: 700 !important;
-}
-/* 🔥 stat_cellpick_ 라디오 둥근 사각형 '박스' 자체 줄이기 */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div{
-    padding: 2px 6px !important;   /* 가로 줄이기 */
-    height: 22px !important;       /* 세로 줄이기 */
-    border-radius: 10px !important;
-    min-height: 0 !important;
 }
 </style>
 """,
-                unsafe_allow_html=True,
-            )
+    unsafe_allow_html=True,
+)
 
             hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
             with hdr_cols[0]:
