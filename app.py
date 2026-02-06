@@ -47,7 +47,7 @@ st.markdown(
         margin-bottom: 4px;
         border: 1px solid #ddd;
         font-size: 0.85rem !important;  /* 글자 크기 조정 */
-        min-height: 1.0rem !important;  /* 높이를 강제로 낮게 고정 */
+        min-height: 0.1rem !important;  /* 높이를 강제로 낮게 고정 */
         line-height: 1.0 !important;    /* 줄간격을 줄여 위아래 공간 제거 */
         display: inline-flex !important; /* 내부 정렬 방식 변경 */
         align-items: center !important;
