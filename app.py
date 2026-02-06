@@ -668,7 +668,7 @@ def api_admin_add_stat_submission(admin_pin: str, label: str, active_accounts: l
     for a in active_accounts or []:
         sid = str(a.get("student_id", "") or "")
         if sid:
-            statuses[sid] = "×"
+            statuses[sid] = "X"
 
     db.collection("stat_submissions").document().set(
         {
@@ -708,7 +708,7 @@ def api_admin_save_stat_table(admin_pin: str, submission_ids: list[str], edited:
         cur_map = dict((edited or {}).get(sub_id, {}) or {})
         merged = {}
         for sid in active_sids:
-            v = str(cur_map.get(sid, "×") or "×")
+            v = str(cur_map.get(sid, "×") or ×")
             merged[sid] = v if v in ("×", "○", "△") else "×"
 
         batch.set(ref, {"statuses": merged}, merge=True)
@@ -3804,7 +3804,7 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
 
                 for j, sub in enumerate(sub_rows):
                     sub_id = str(sub.get("submission_id"))
-                    cur_v = str(st.session_state["stat_edit"].get(sub_id, {}).get(stid, "×") or "×")
+                    cur_v = str(st.session_state["stat_edit"].get(sub_id, {}).get(stid, "X") or "X")
 
                     with row_cols[j + 2]:
                         ver = int(st.session_state.get("stat_cell_ver", 0) or 0)
