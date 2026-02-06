@@ -3725,7 +3725,7 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:chec
                 unsafe_allow_html=True,
             )
 
-            hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
+            hdr_cols = st.columns([0.9, 1.6] + [0.75] * len(col_titles))
             with hdr_cols[0]:
                 st.markdown("**번호**")
             with hdr_cols[1]:
