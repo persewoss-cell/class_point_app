@@ -3682,9 +3682,16 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
                 st.markdown("**번호**")
             with hdr_cols[1]:
                 st.markdown("**이름**")
-            for j, title in enumerate(col_titles):
+            for j, s in enumerate(sub_rows):
                 with hdr_cols[j + 2]:
-                    st.markdown(f"**{title}**")
+                    date_disp = str(s.get("date_display", "") or "")
+                    label = str(s.get("label", "") or "")
+                    st.markdown(
+                        f"<div style='text-align:center; font-weight:700; line-height:1.15;'>"
+                        f"{date_disp}<br>{label}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
 
             st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
