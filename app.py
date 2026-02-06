@@ -3647,6 +3647,49 @@ if "📊 통계청" in tabs:
                         st.session_state["stat_edit"][sid][stid] = v if v in ("X", "O", "△") else "X"
 
             # -------------------------
+            # (PATCH) 초기화: 전체 제출물 내역 삭제(삭제 전 확인)
+            # -------------------------
+            if st.session_state.get("stat_reset_confirm", False):
+                st.error("⚠️ 초기화하면 모든 제출물 내역(열)이 전부 삭제됩니다. 진행할까요?")
+
+                yy2, nn2 = st.columns(2)
+                with yy2:
+                    if st.button("예(전체 삭제)", use_container_width=True, key="stat_reset_yes"):
+                        ok_cnt = 0
+                        fail_msgs = []
+
+                        # 현재 존재하는 모든 제출물(sub_rows_all) 삭제
+                        for s in sub_rows_all:
+                            sid = str(s.get("submission_id") or "")
+                            if not sid:
+                                continue
+                            resd = api_admin_delete_stat_submission(ADMIN_PIN, sid)
+                            if resd.get("ok"):
+                                ok_cnt += 1
+                            else:
+                                fail_msgs.append(resd.get("error", "삭제 실패"))
+
+                        if ok_cnt > 0:
+                            toast(f"초기화 완료! ({ok_cnt}개 삭제)", icon="🧹")
+
+                        if fail_msgs:
+                            st.error("일부 삭제 실패: " + " / ".join(fail_msgs[:3]))
+
+                        # 로컬 상태 초기화
+                        st.session_state["stat_reset_confirm"] = False
+                        st.session_state["stat_delete_confirm"] = False
+                        st.session_state["stat_loaded_sig"] = ""
+                        st.session_state["stat_edit"] = {}
+                        st.rerun()
+
+                with nn2:
+                    if st.button("아니오", use_container_width=True, key="stat_reset_no"):
+                        st.session_state["stat_reset_confirm"] = False
+                        st.rerun()
+
+
+            
+            # -------------------------
             # (PATCH) 삭제: 체크박스로 여러 개 선택해서 삭제
             # -------------------------
             if del_clicked:
