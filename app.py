@@ -3487,6 +3487,8 @@ if "📊 통계청" in tabs:
                     if res.get("ok"):
                         toast("제출물 내역 추가 완료!", icon="✅")
                         st.session_state.pop("stat_add_label", None)
+                    # (PATCH) 위젯 key와 충돌 방지: 최초 1회만 기본값 세팅
+                    if "stat_add_tpl" not in st.session_state:
                         st.session_state["stat_add_tpl"] = "(직접 입력)"
                         st.session_state["stat_add_tpl_prev"] = "(직접 입력)"
                         # 표 로컬 편집 상태도 새로 로드되게 시그니처 초기화
