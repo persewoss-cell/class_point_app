@@ -3661,8 +3661,8 @@ if "📊 통계청" in tabs:
             # - div 래퍼 방식은 Streamlit 위젯을 실제로 감싸지 못해서 적용이 불안정함
             # - 대신 input id에 'stat_cellpick_' 들어간 라디오만 CSS 적용
 
-st.markdown(
-    """
+            st.markdown(
+                """
 <style>
 /* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 대상으로 ===== */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
@@ -3722,8 +3722,8 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:chec
 }
 </style>
 """,
-    unsafe_allow_html=True,
-)
+                unsafe_allow_html=True,
+            )
 
             hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
             with hdr_cols[0]:
