@@ -255,6 +255,20 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
         min-height: 2.0rem !important;
     }
 
+/* ✅ 왼쪽 텍스트와 라디오 수직 중앙 정렬 */
+.stat-tight div[data-testid="element-container"] {
+    display: flex !important;
+    align-items: center !important;
+}
+
+/* 텍스트 줄높이 강제 맞춤 */
+.stat-tight p {
+    margin: 0 !important;
+    line-height: 1.25 !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
 /* ✅ st.radio 행 간격 줄이기 (핵심) */
 div[data-testid="stRadio"] {
     margin-bottom: -27px !important;
