@@ -37,62 +37,34 @@ st.markdown(
         .block-container { padding-bottom: 6.0rem; }
     }
 
-    /* radio → 버튼처럼 */
-/* ✅ 라디오 버튼 내부 요소(원형 버튼 + 문자) 수평/수직 중앙 정렬 및 높이 축소 */
+/* radio → 버튼처럼 */
+    /* ✅ 라디오 버튼 내부 요소 중앙 정렬 및 높이 축소 */
     div[role="radiogroup"] > label {
         background: #f3f4f6;
-        padding: 0px 3px !important;    /* 위아래 여백 제거 */
-        border-radius: 4px !important;  /* 라운드 사각형 크기 축소 */
+        padding: 0px 3px !important;
+        border-radius: 4px !important;
         margin-right: 4px;
         margin-bottom: 4px;
         border: 1px solid #ddd;
         font-size: 0.85rem !important;
-        
-        /* 💡 높이 고정 및 세로 중앙 정렬 핵심 설정 */
         min-height: 1.3rem !important; 
         display: flex !important;
-        align-items: center !important;  /* 위아래 중앙 정렬 */
+        align-items: center !important;
         justify-content: center !important;
         overflow: hidden !important;
     }
 
-/* ✅ 태블릿에서 원형 버튼이 타원으로 찌그러지는 현상 방지 */
+    /* ✅ 원형 버튼 크기 고정 */
     div[role="radiogroup"] > label div[data-testid="stWidgetLabel"] svg {
-        width: 14px !important;   /* 원형 버튼 너비 고정 */
-        height: 14px !important;  /* 원형 버튼 높이 고정 */
+        width: 14px !important;
+        height: 14px !important;
         min-width: 14px !important;
         min-height: 14px !important;
     }
 
-    /* 원형 버튼을 감싸는 컨테이너 여백 조정 */
-    div[role="radiogroup"] > label [data-testid="stNumericInput-StepDown"] {
-        display: flex !important;
-        align-items: center !important;
-    }
-    
-    /* 라벨 내부 마진 초기화로 쏠림 방지 */
-    div[role="radiogroup"] label > div:first-child {
-        display: flex !important;
-        align-items: center !important;
-        margin-top: 0 !important;
-    }
+    /* ✅ [핵심] 선택 시 사각형 박스 색상 변경 (기호별 차별화) */
 
-    /* 💡 원형 버튼 자체에 붙은 기본 위쪽 여백(Margin) 제거 */
-    div[role="radiogroup"] > label div[data-testid="stMarkdownContainer"] p {
-        margin: 0 !important;
-        line-height: 1 !important;
-    }
-
-    div[role="radiogroup"] [data-testid="stWidgetLabel"] {
-        margin-bottom: 0 !important;
-    }
-
-    /* 1. 선택 시 나타나는 중앙의 빨간색 점(svg) 아예 안 보이게 제거 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:checked) svg {
-        display: none !important;
-    }
-
-/* 1. 공통: 선택 시 기본적으로 흰색 글자로 변경 */
+    /* 1. 공통: 선택 시 기본적으로 흰색 글자로 변경 */
     div[role="radiogroup"] > label:has(input:checked) p {
         color: white !important;
     }
