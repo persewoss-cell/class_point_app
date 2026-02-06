@@ -56,6 +56,27 @@ st.markdown(
         overflow: hidden !important;
     }
 
+/* ✅ 태블릿에서 원형 버튼이 타원으로 찌그러지는 현상 방지 */
+    div[role="radiogroup"] > label div[data-testid="stWidgetLabel"] svg {
+        width: 14px !important;   /* 원형 버튼 너비 고정 */
+        height: 14px !important;  /* 원형 버튼 높이 고정 */
+        min-width: 14px !important;
+        min-height: 14px !important;
+    }
+
+    /* 원형 버튼을 감싸는 컨테이너 여백 조정 */
+    div[role="radiogroup"] > label [data-testid="stNumericInput-StepDown"] {
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    /* 라벨 내부 마진 초기화로 쏠림 방지 */
+    div[role="radiogroup"] label > div:first-child {
+        display: flex !important;
+        align-items: center !important;
+        margin-top: 0 !important;
+    }
+
     /* 💡 원형 버튼 자체에 붙은 기본 위쪽 여백(Margin) 제거 */
     div[role="radiogroup"] > label div[data-testid="stMarkdownContainer"] p {
         margin: 0 !important;
