@@ -3783,31 +3783,6 @@ div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label {
   font-size: 0.75rem !important;
 }
 
-/* (선택됨) 배경 + 글자 + 테두리 + 포커스링(빨간 테두리 원인)까지 강제 덮어쓰기 */
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="O"]:checked) {
-  background: #10b981 !important;
-  color: #ffffff !important;
-  border-color: #10b981 !important;
-  box-shadow: 0 0 0 2px rgba(16,185,129,.55) !important; /* ✅ 선택 링도 초록 */
-  outline: none !important;
-}
-
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="X"]:checked) {
-  background: #ef4444 !important;
-  color: #ffffff !important;
-  border-color: #ef4444 !important;
-  box-shadow: 0 0 0 2px rgba(239,68,68,.55) !important;  /* ✅ 선택 링도 빨강 */
-  outline: none !important;
-}
-
-div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) > label:has(input[value="△"]:checked) {
-  background: #3b82f6 !important;
-  color: #ffffff !important;
-  border-color: #3b82f6 !important;
-  box-shadow: 0 0 0 2px rgba(59,130,246,.55) !important;  /* ✅ 선택 링도 파랑 */
-  outline: none !important;
-}
-
 /* (추가) 혹시 input 자체에 잡히는 포커스 효과까지 제거 */
 div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) input:focus {
   outline: none !important;
