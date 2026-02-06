@@ -3712,6 +3712,13 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:chec
     background: #eff6ff !important;
     font-weight: 700 !important;
 }
+/* 🔥 stat_cellpick_ 라디오 둥근 사각형 '박스' 자체 줄이기 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div{
+    padding: 2px 6px !important;   /* 가로 줄이기 */
+    height: 22px !important;       /* 세로 줄이기 */
+    border-radius: 10px !important;
+    min-height: 0 !important;
+}
 </style>
 """,
                 unsafe_allow_html=True,
