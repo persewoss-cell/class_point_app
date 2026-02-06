@@ -460,7 +460,7 @@ def fs_auth_student(name: str, pin: str):
     return doc
 
 # =========================
-# Cached lists (너 코드 유지)
+# Cached lists
 # =========================
 @st.cache_data(ttl=30, show_spinner=False)
 def api_list_accounts_cached():
@@ -470,16 +470,10 @@ def api_list_accounts_cached():
         s = d.to_dict() or {}
         nm = s.get("name", "")
         if nm:
-            items.append(
-                {
-                    "student_id": d.id,
-                    "name": nm,
-                    "balance": int(s.get("balance", 0) or 0),
-                    "role_id": str(s.get("role_id", "") or ""),
-                }
-            )
+            items.append({"student_id": d.id, "name": nm, "balance": int(s.get("balance", 0) or 0)})
     items.sort(key=lambda x: x["name"])
     return {"ok": True, "accounts": items}
+
 
 @st.cache_data(ttl=300, show_spinner=False)
 def api_list_templates_cached():
@@ -499,6 +493,186 @@ def api_list_templates_cached():
             )
     templates.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
     return {"ok": True, "templates": templates}
+
+
+# =========================
+# ✅ 통계청(제출물) helpers
+# - 컬렉션:
+#   1) stat_templates : {label, order, created_at}
+#   2) stat_submissions: {label, date_iso, date_display, created_at, statuses{student_id:"X|O|△"}}
+# =========================
+def _weekday_kr_1ch(d: date) -> str:
+    # 월화수목금토일 (파이썬: 월0 ~ 일6)
+    w = d.weekday()
+    return ["월", "화", "수", "목", "금", "토", "일"][w]
+
+
+def format_kr_md_date(d: date) -> str:
+    # "3월 7일(화)"
+    return f"{d.month}월 {d.day}일({_weekday_kr_1ch(d)})"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def api_list_stat_templates_cached():
+    docs = db.collection("stat_templates").stream()
+    items = []
+    for d in docs:
+        t = d.to_dict() or {}
+        if t.get("label"):
+            items.append(
+                {
+                    "template_id": d.id,
+                    "label": str(t.get("label", "") or ""),
+                    "order": int(t.get("order", 999999) or 999999),
+                }
+            )
+    items.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
+    return {"ok": True, "templates": items}
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def api_list_stat_submissions_cached(limit_cols: int = 10):
+    q = (
+        db.collection("stat_submissions")
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .limit(int(limit_cols))
+        .stream()
+    )
+    rows = []
+    for d in q:
+        s = d.to_dict() or {}
+        rows.append(
+            {
+                "submission_id": d.id,
+                "label": str(s.get("label", "") or ""),
+                "date_iso": str(s.get("date_iso", "") or ""),
+                "date_display": str(s.get("date_display", "") or ""),
+                "created_at": _to_utc_datetime(s.get("created_at")),
+                "statuses": dict(s.get("statuses", {}) or {}),
+            }
+        )
+    return {"ok": True, "rows": rows}
+
+
+def api_admin_upsert_stat_template(admin_pin: str, template_id: str, label: str, order: int):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    label = (label or "").strip()
+    order = int(order or 1)
+
+    if not label:
+        return {"ok": False, "error": "내역(label)이 필요합니다."}
+    if order <= 0:
+        return {"ok": False, "error": "순서는 1 이상이어야 합니다."}
+
+    payload = {"label": label, "order": order, "created_at": firestore.SERVER_TIMESTAMP}
+    if template_id:
+        db.collection("stat_templates").document(template_id).set(payload, merge=True)
+    else:
+        db.collection("stat_templates").document().set(payload)
+
+    api_list_stat_templates_cached.clear()
+    return {"ok": True}
+
+
+def api_admin_delete_stat_template(admin_pin: str, template_id: str):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+    template_id = (template_id or "").strip()
+    if not template_id:
+        return {"ok": False, "error": "template_id가 필요합니다."}
+    db.collection("stat_templates").document(template_id).delete()
+    api_list_stat_templates_cached.clear()
+    return {"ok": True}
+
+
+def api_admin_add_stat_submission(admin_pin: str, label: str, active_accounts: list[dict]):
+    """
+    ✅ 제출물 내역 추가:
+    - created_at DESC로 최신이 맨 왼쪽(=가장 최근)으로 오게끔 'created_at' 기준으로만 정렬
+    - statuses는 모든 활성 학생을 기본 X로 채움
+    """
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    label = (label or "").strip()
+    if not label:
+        return {"ok": False, "error": "내역이 필요합니다."}
+
+    today = datetime.now(KST).date()
+    statuses = {}
+    for a in active_accounts or []:
+        sid = str(a.get("student_id", "") or "")
+        if sid:
+            statuses[sid] = "X"
+
+    db.collection("stat_submissions").document().set(
+        {
+            "label": label,
+            "date_iso": today.isoformat(),
+            "date_display": format_kr_md_date(today),
+            "statuses": statuses,
+            "created_at": firestore.SERVER_TIMESTAMP,
+        }
+    )
+
+    api_list_stat_submissions_cached.clear()
+    return {"ok": True}
+
+
+def api_admin_save_stat_table(admin_pin: str, submission_ids: list[str], edited: dict, accounts: list[dict]):
+    """
+    ✅ 표 상단 저장버튼:
+    - 클릭 때마다 DB 저장 금지(로컬 상태만 변경)
+    - 저장 버튼 누를 때 제출물(컬럼) 단위로 statuses map을 한 번에 업데이트(컬럼 수만큼 write)
+    """
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+    if not submission_ids:
+        return {"ok": False, "error": "저장할 제출물이 없습니다."}
+
+    # 활성 학생 목록 (계정 추가 시 자동 반영)
+    active_sids = [str(a.get("student_id", "") or "") for a in (accounts or []) if str(a.get("student_id", "") or "")]
+    active_sids_set = set(active_sids)
+
+    batch = db.batch()
+    for sub_id in submission_ids:
+        sub_id = str(sub_id)
+        ref = db.collection("stat_submissions").document(sub_id)
+
+        # 기존 + 편집본 병합: 활성 학생은 모두 키가 존재하도록 보정
+        cur_map = dict((edited or {}).get(sub_id, {}) or {})
+        merged = {}
+        for sid in active_sids:
+            v = str(cur_map.get(sid, "X") or "X")
+            merged[sid] = v if v in ("X", "O", "△") else "X"
+
+        batch.set(ref, {"statuses": merged}, merge=True)
+
+    batch.commit()
+    api_list_stat_submissions_cached.clear()
+    return {"ok": True, "count": len(submission_ids)}
+
+
+def api_admin_delete_stat_submission(admin_pin: str, submission_id: str):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+    submission_id = (submission_id or "").strip()
+    if not submission_id:
+        return {"ok": False, "error": "submission_id가 필요합니다."}
+    db.collection("stat_submissions").document(submission_id).delete()
+    api_list_stat_submissions_cached.clear()
+    return {"ok": True}
+
+
+def _cycle_mark(v: str) -> str:
+    v = str(v or "X")
+    if v == "X":
+        return "O"
+    if v == "O":
+        return "△"
+    return "X"
 
 # =========================
 # Account CRUD (너 코드 유지 + role_id 추가 함수만 추가)
@@ -1537,8 +1711,25 @@ defaults = {
     "login_name": "",
     "login_pin": "",
     "data": {},
+    "last_maturity_check": {},
+    "tpl_prev": {},
     "delete_confirm": False,
+    "bulk_confirm": False,
+    "bulk_w_confirm": False,
     "undo_mode": False,
+    "tpl_sort_mode": False,
+    "tpl_work_ids": [],
+    "tpl_mobile_sort_ui": False,
+    "tpl_sort_panel_open": False,
+    # ✅ (1번) 템플릿 순서정렬 패널 접기/펼치기(기본 접힘)
+
+    # =========================
+    # ✅ 통계청(제출물) UI state
+    # =========================
+    "stat_edit": {},              # {submission_id: {student_id: "X|O|△"}}
+    "stat_loaded_sig": "",        # 로드 시그니처(불필요한 초기화 방지)
+    "stat_delete_confirm": False, # 삭제 확인
+    "stat_tpl_pick_prev": None,   # 템플릿 select 변경 감지
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -3231,6 +3422,282 @@ if "🏛️ 국세청(국고)" in tabs:
                         st.rerun()
                     else:
                         st.error(res.get("error", "삭제 실패"))
+
+# =========================
+# 📊 통계청(제출물) 탭  ✅(관리자용 UI 추가)
+# - 클릭은 로컬만 변경(X→O→△→X)
+# - [저장] 버튼 눌렀을 때만 DB 반영
+# =========================
+if "📊 통계청" in tabs:
+    with tab_map["📊 통계청"]:
+        st.subheader("📊 통계청(제출물 관리)")
+
+        if not is_admin:
+            st.error("관리자 전용 탭입니다.")
+            st.stop()
+
+        # -------------------------
+        # 계정(학생) 목록: 번호/이름 자동 반영
+        # -------------------------
+        # api_list_accounts_cached()는 name/balance/student_id만 주므로,
+        # 번호(no)까지 필요해서 students에서 직접 읽어옴.
+        docs_acc2 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        stu_rows = []
+        for d in docs_acc2:
+            x = d.to_dict() or {}
+            try:
+                no = int(x.get("no", 999999) or 999999)
+            except Exception:
+                no = 999999
+            nm = str(x.get("name", "") or "").strip()
+            if nm:
+                stu_rows.append({"student_id": d.id, "no": no, "name": nm})
+        stu_rows.sort(key=lambda r: (r["no"], r["name"]))
+
+        # -------------------------
+        # (상단) 제출물 내역 추가
+        # -------------------------
+        st.markdown("### ➕ 제출물 내역 추가")
+
+        stat_tpls = api_list_stat_templates_cached().get("templates", [])
+        stat_tpl_labels = ["(직접 입력)"] + [str(t.get("label", "") or "") for t in stat_tpls]
+
+        # 템플릿 선택
+        stat_pick = st.selectbox("제출물 템플릿", stat_tpl_labels, key="stat_add_tpl")
+
+        # 템플릿 고르면 내역 자동 입력
+        if "stat_add_tpl_prev" not in st.session_state:
+            st.session_state["stat_add_tpl_prev"] = stat_pick
+
+        if stat_pick != st.session_state.get("stat_add_tpl_prev"):
+            st.session_state["stat_add_tpl_prev"] = stat_pick
+            if stat_pick != "(직접 입력)":
+                st.session_state["stat_add_label"] = stat_pick
+            st.rerun()
+
+        add_c1, add_c2 = st.columns([3.0, 1.0])
+        with add_c1:
+            add_label = st.text_input("내역", key="stat_add_label").strip()
+        with add_c2:
+            if st.button("저장", use_container_width=True, key="stat_add_save"):
+                if not add_label:
+                    st.error("내역을 입력해 주세요.")
+                else:
+                    res = api_admin_add_stat_submission(ADMIN_PIN, add_label, active_accounts=stu_rows)
+                    if res.get("ok"):
+                        toast("제출물 내역 추가 완료!", icon="✅")
+                        st.session_state.pop("stat_add_label", None)
+                        st.session_state["stat_add_tpl"] = "(직접 입력)"
+                        st.session_state["stat_add_tpl_prev"] = "(직접 입력)"
+                        # 표 로컬 편집 상태도 새로 로드되게 시그니처 초기화
+                        st.session_state["stat_loaded_sig"] = ""
+                        st.session_state["stat_edit"] = {}
+                        st.rerun()
+                    else:
+                        st.error(res.get("error", "추가 실패"))
+
+        st.divider()
+
+        # -------------------------
+        # (중간) 통계청 통계표
+        # - 최신 제출물이 "왼쪽" (created_at DESC)
+        # - 클릭은 로컬 변경, [저장] 시 DB 반영
+        # -------------------------
+        st.markdown("### 📋 통계청 통계표")
+
+        # 최신 제출물 N개(왼쪽부터 최신)
+        sub_res = api_list_stat_submissions_cached(limit_cols=10)
+        sub_rows = sub_res.get("rows", []) if sub_res.get("ok") else []
+        submission_ids = [r.get("submission_id") for r in sub_rows if r.get("submission_id")]
+
+        top_r = st.columns([1.0, 1.0, 2.0])
+        with top_r[2]:
+            # 오른쪽 상단 버튼들
+            bsave, bdel = st.columns(2)
+            with bsave:
+                save_clicked = st.button("✅ 저장", use_container_width=True, key="stat_table_save")
+            with bdel:
+                del_clicked = st.button("🗑️ 삭제", use_container_width=True, key="stat_table_del")
+
+        if not sub_rows:
+            st.info("제출물 내역이 없습니다. 위에서 ‘제출물 내역 추가’를 먼저 해주세요.")
+        else:
+            # 로드 시그니처: (제출물 목록 + 학생 목록) 바뀔 때만 로컬 편집 초기화
+            sig = "||".join(
+                [
+                    ",".join([str(s.get("submission_id")) for s in sub_rows]),
+                    ",".join([str(s.get("student_id")) for s in stu_rows]),
+                ]
+            )
+
+            if st.session_state.get("stat_loaded_sig", "") != sig:
+                st.session_state["stat_loaded_sig"] = sig
+                st.session_state["stat_edit"] = {}
+
+                # 제출물별 기본 상태맵(학생 전원 X) + 기존 DB값 반영
+                for sub in sub_rows:
+                    sid = str(sub.get("submission_id"))
+                    cur_map = dict(sub.get("statuses", {}) or {})
+
+                    st.session_state["stat_edit"][sid] = {}
+                    for stx in stu_rows:
+                        stid = str(stx.get("student_id"))
+                        v = str(cur_map.get(stid, "X") or "X")
+                        st.session_state["stat_edit"][sid][stid] = v if v in ("X", "O", "△") else "X"
+
+            # 삭제 버튼 눌렀을 때: 어떤 제출물(컬럼) 삭제할지 선택
+            if del_clicked:
+                st.session_state["stat_delete_confirm"] = True
+
+            if st.session_state.get("stat_delete_confirm", False):
+                st.warning("삭제할 제출물(컬럼)을 선택하세요.")
+                del_opts = [f"{s.get('date_display','')} | {s.get('label','')}" for s in sub_rows]
+                del_pick = st.selectbox("삭제 대상", del_opts, key="stat_del_pick")
+                yy, nn = st.columns(2)
+                with yy:
+                    if st.button("예", use_container_width=True, key="stat_del_yes"):
+                        # 선택된 라벨 -> submission_id 찾기
+                        target_id = None
+                        for s in sub_rows:
+                            lab = f"{s.get('date_display','')} | {s.get('label','')}"
+                            if lab == del_pick:
+                                target_id = str(s.get("submission_id"))
+                                break
+                        if target_id:
+                            resd = api_admin_delete_stat_submission(ADMIN_PIN, target_id)
+                            if resd.get("ok"):
+                                toast("삭제 완료!", icon="🗑️")
+                                st.session_state["stat_delete_confirm"] = False
+                                st.session_state["stat_loaded_sig"] = ""
+                                st.session_state["stat_edit"] = {}
+                                st.rerun()
+                            else:
+                                st.error(resd.get("error", "삭제 실패"))
+                        else:
+                            st.error("삭제 대상을 찾지 못했습니다.")
+                with nn:
+                    if st.button("아니오", use_container_width=True, key="stat_del_no"):
+                        st.session_state["stat_delete_confirm"] = False
+                        st.rerun()
+
+            # ---- 표 헤더(최신이 왼쪽) ----
+            # 컬럼 표기: "0월 0일(요일) / 내역"
+            col_titles = []
+            for s in sub_rows:
+                date_disp = str(s.get("date_display", "") or "")
+                label = str(s.get("label", "") or "")
+                col_titles.append(f"{date_disp}\n{label}")
+
+            # ---- 표 렌더: 클릭하면 X→O→△→X (로컬만 변경) ----
+            # 스타일: 사각 버튼 느낌(기본 st.button)
+            hdr_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
+            with hdr_cols[0]:
+                st.markdown("**번호**")
+            with hdr_cols[1]:
+                st.markdown("**이름**")
+            for j, title in enumerate(col_titles):
+                with hdr_cols[j + 2]:
+                    st.markdown(f"**{title}**")
+
+            st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+            # 각 학생 행
+            for stx in stu_rows:
+                stid = str(stx.get("student_id"))
+                no = stx.get("no", 999999)
+                nm = stx.get("name", "")
+
+                row_cols = st.columns([0.9, 1.6] + [1.2] * len(col_titles))
+                with row_cols[0]:
+                    st.markdown(f"{int(no)}")
+                with row_cols[1]:
+                    st.markdown(f"{nm}")
+
+                for j, sub in enumerate(sub_rows):
+                    sub_id = str(sub.get("submission_id"))
+                    cur_v = str(st.session_state["stat_edit"].get(sub_id, {}).get(stid, "X") or "X")
+
+                    # 버튼 클릭 시 로컬 값만 순환
+                    with row_cols[j + 2]:
+                        if st.button(cur_v, key=f"stat_cell_{sub_id}_{stid}", use_container_width=True):
+                            st.session_state["stat_edit"].setdefault(sub_id, {})
+                            st.session_state["stat_edit"][sub_id][stid] = _cycle_mark(cur_v)
+                            st.rerun()
+
+            # ---- 저장 버튼 처리(표 오른쪽 상단) ----
+            if save_clicked:
+                res_sv = api_admin_save_stat_table(
+                    admin_pin=ADMIN_PIN,
+                    submission_ids=submission_ids,
+                    edited=st.session_state.get("stat_edit", {}) or {},
+                    accounts=stu_rows,
+                )
+                if res_sv.get("ok"):
+                    toast(f"저장 완료! ({res_sv.get('count', 0)}개 제출물 반영)", icon="✅")
+                    st.session_state["stat_loaded_sig"] = ""
+                    st.rerun()
+                else:
+                    st.error(res_sv.get("error", "저장 실패"))
+
+        st.divider()
+
+        # -------------------------
+        # (하단) 통계표 템플릿 추가/수정/삭제
+        # -------------------------
+        st.markdown("### 🧩 통계표 템플릿 추가/수정/삭제")
+
+        tpl_items = api_list_stat_templates_cached().get("templates", [])
+        tpl_pick_labels = ["(새로 추가)"] + [f"{t.get('order', 999999)} | {t.get('label','')}" for t in tpl_items]
+        tpl_picked = st.selectbox("편집 대상", tpl_pick_labels, key="stat_tpl_pick")
+
+        edit_tpl = None
+        if tpl_picked != "(새로 추가)":
+            for t in tpl_items:
+                lab = f"{t.get('order', 999999)} | {t.get('label','')}"
+                if lab == tpl_picked:
+                    edit_tpl = t
+                    break
+
+        t1, t2 = st.columns([3.0, 1.0])
+        with t1:
+            tpl_label_in = st.text_input("템플릿 내역", value=(edit_tpl.get("label") if edit_tpl else ""), key="stat_tpl_label").strip()
+        with t2:
+            tpl_order_in = st.number_input("순서", min_value=1, step=1, value=int(edit_tpl.get("order", 1)) if edit_tpl else 1, key="stat_tpl_order")
+
+        bb1, bb2, bb3 = st.columns(3)
+        with bb1:
+            if st.button("✅ 저장", use_container_width=True, key="stat_tpl_save_btn"):
+                resu = api_admin_upsert_stat_template(
+                    admin_pin=ADMIN_PIN,
+                    template_id=(edit_tpl.get("template_id") if edit_tpl else ""),
+                    label=tpl_label_in,
+                    order=int(tpl_order_in),
+                )
+                if resu.get("ok"):
+                    toast("템플릿 저장 완료!", icon="✅")
+                    st.session_state["stat_loaded_sig"] = ""
+                    st.rerun()
+                else:
+                    st.error(resu.get("error", "저장 실패"))
+
+        with bb2:
+            if st.button("🧹 입력 초기화", use_container_width=True, key="stat_tpl_clear_btn"):
+                st.session_state.pop("stat_tpl_label", None)
+                st.session_state.pop("stat_tpl_order", None)
+                st.session_state["stat_tpl_pick"] = "(새로 추가)"
+                st.rerun()
+
+        with bb3:
+            if st.button("🗑️ 삭제", use_container_width=True, key="stat_tpl_del_btn", disabled=(edit_tpl is None)):
+                if not edit_tpl:
+                    st.stop()
+                resd2 = api_admin_delete_stat_template(ADMIN_PIN, str(edit_tpl.get("template_id")))
+                if resd2.get("ok"):
+                    toast("템플릿 삭제 완료!", icon="🗑️")
+                    st.session_state["stat_loaded_sig"] = ""
+                    st.rerun()
+                else:
+                    st.error(resd2.get("error", "삭제 실패"))
 
 # =========================
 # 10) 🗓️ 일정 (권한별 수정)
