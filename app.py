@@ -3129,32 +3129,33 @@ if "💼 직업/월급" in tabs:
                 st.markdown(f"<div style='text-align:center;font-weight:900'>{net}</div>", unsafe_allow_html=True)
 
             # ✅ 학생수 +/- (기존 로직 그대로)
-            with rowc[5]:
-                st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
-                a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
+with rowc[5]:
+    # ✅ Streamlit에선 <div>를 열고 닫는 방식이 DOM에 안정적으로 남지 않음
+    # ✅ 그래서 "마커"만 하나 찍어서 CSS의 .jobcnt-wrap + div 선택자가 확실히 먹도록 처리
+    st.markdown("<span class='jobcnt-wrap'></span>", unsafe_allow_html=True)
 
-                with a1:
-                    if st.button("➖", key=f"job_cnt_minus_{rid}"):
-                        new_cnt = max(0, cnt - 1)
-                        new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
-                        db.collection("job_salary").document(rid).update(
-                            {"student_count": new_cnt, "assigned_ids": new_assigned}
-                        )
-                        st.rerun()
+    a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
 
-                with a2:
-                    st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
+    with a1:
+        if st.button("➖", key=f"job_cnt_minus_{rid}"):
+            new_cnt = max(0, cnt - 1)
+            new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
+            db.collection("job_salary").document(rid).update(
+                {"student_count": new_cnt, "assigned_ids": new_assigned}
+            )
+            st.rerun()
 
-                with a3:
-                    if st.button("➕", key=f"job_cnt_plus_{rid}"):
-                        new_cnt = cnt + 1
-                        new_assigned = assigned_ids + [""]
-                        db.collection("job_salary").document(rid).update(
-                            {"student_count": new_cnt, "assigned_ids": new_assigned}
-                        )
-                        st.rerun()
+    with a2:
+        st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
 
-                st.markdown("</div>", unsafe_allow_html=True)
+    with a3:
+        if st.button("➕", key=f"job_cnt_plus_{rid}"):
+            new_cnt = cnt + 1
+            new_assigned = assigned_ids + [""]
+            db.collection("job_salary").document(rid).update(
+                {"student_count": new_cnt, "assigned_ids": new_assigned}
+            )
+            st.rerun()
 
             # ✅ 배정 계정 드롭다운(기존 로직 그대로)
             with rowc[6]:
