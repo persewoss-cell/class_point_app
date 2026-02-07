@@ -4367,9 +4367,13 @@ if "💳 신용등급" in tabs:
 
         sub_rows_desc = sorted(sub_rows_desc, key=_sub_sort_key, reverse=True)
 
+        total = len(sub_rows_desc)
         off = int(st.session_state.get("credit_col_offset", 0) or 0)
-        sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]
 
+        # ✅ 왼쪽 = 최신, 오른쪽 = 과거
+        start = max(0, total - VISIBLE_COLS - off)
+        end = total - off
+        sub_rows_view = sub_rows_desc[start:end]
         
         off = int(st.session_state.get("credit_col_offset", 0) or 0)
         # ✅ 최신이 왼쪽: sub_rows_desc(최신→오래된)에서 그대로 슬라이스
