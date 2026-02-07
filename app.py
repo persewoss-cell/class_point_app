@@ -4361,6 +4361,16 @@ if "💳 신용등급" in tabs:
                 st.session_state["credit_col_offset"] = min(max_off, int(st.session_state["credit_col_offset"]) + VISIBLE_COLS)
                 st.rerun()
 
+        # ✅ 최신 제출물이 항상 왼쪽에 오도록 강제 정렬
+        def _sub_sort_key(x):
+            return str(x.get("created_at_utc", "") or "")
+
+        sub_rows_desc = sorted(sub_rows_desc, key=_sub_sort_key, reverse=True)
+
+        off = int(st.session_state.get("credit_col_offset", 0) or 0)
+        sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]
+
+        
         off = int(st.session_state.get("credit_col_offset", 0) or 0)
         # ✅ 최신이 왼쪽: sub_rows_desc(최신→오래된)에서 그대로 슬라이스
         sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]
