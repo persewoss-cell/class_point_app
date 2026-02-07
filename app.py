@@ -3745,96 +3745,87 @@ if "📊 통계청" in tabs:
 
         submission_ids = [r.get("submission_id") for r in sub_rows_all if r.get("submission_id")]
 
-            # -------------------------
+        # -------------------------
         # (PATCH) 가로 "좌우 이동" + 페이지 숫자(클릭 이동)
+        # ✅ 기준 통일: page_idx(0=최신 페이지)로 관리
         # - 한 화면 7개(VISIBLE_COLS)
-        # - 숫자 버튼은 작게, /전체페이지는 텍스트(클릭 불가)
+        # - 숫자 버튼은 작게, "/전체페이지 N"은 텍스트(클릭 불가)
         # -------------------------
         import math
 
         VISIBLE_COLS = 7
-        if "stat_col_offset" not in st.session_state:
-            st.session_state["stat_col_offset"] = 0
-
         total_cols = len(sub_rows_all)
-        total_pages = max(1, int(math.ceil(total_cols / VISIBLE_COLS)))
-        max_off = max(0, total_cols - VISIBLE_COLS)
 
-        # offset 안전 클램프
-        st.session_state["stat_col_offset"] = min(max_off, max(0, int(st.session_state["stat_col_offset"]) or 0))
-        off = int(st.session_state["stat_col_offset"])
-        cur_page = int(off // VISIBLE_COLS) + 1  # 1-based
+        total_pages = max(1, int(math.ceil(total_cols / VISIBLE_COLS)))
+        if "stat_page_idx" not in st.session_state:
+            st.session_state["stat_page_idx"] = 0  # ✅ 0 = 최신 페이지
+
+        # page_idx 안전 클램프
+        st.session_state["stat_page_idx"] = max(0, min(int(st.session_state["stat_page_idx"]), total_pages - 1))
+        page_idx = int(st.session_state["stat_page_idx"])
+        cur_page = page_idx + 1  # 1-based
 
         def _goto_page(p: int):
+            # p = 1..total_pages, 1이 최신 페이지
             p = max(1, min(int(p), total_pages))
-            st.session_state["stat_col_offset"] = min(max_off, (p - 1) * VISIBLE_COLS)
+            st.session_state["stat_page_idx"] = p - 1
             st.rerun()
 
         def _page_items(cur: int, last: int):
-            # 예: 1 … 4 5 [6] 7 8 … 20
             if last <= 9:
                 return list(range(1, last + 1))
-
             items = [1]
             left = max(2, cur - 1)
             right = min(last - 1, cur + 1)
-
             if left > 2:
                 items.append("…")
             items.extend(range(left, right + 1))
             if right < last - 1:
                 items.append("…")
-
             items.append(last)
-            # 중복 제거(보호)
             out = []
             for x in items:
                 if not out or out[-1] != x:
                     out.append(x)
             return out
 
-        # ✅ 네비 + 저장/초기화/삭제를 한 줄에 (왼쪽에 최대한 붙이기)
-        row = st.columns([7.2, 2.8], gap="small")
+        # ✅ 한 줄: [◀ + 페이지 + /전체페이지 + ▶] | [저장/초기화/삭제]
+        row = st.columns([7.6, 2.4], gap="small")
 
-        # ---- 왼쪽: ◀ + 페이지 숫자 + "/ 전체페이지 N" + ▶ ----
         with row[0]:
             items = _page_items(cur_page, total_pages)
 
-            # cols 폭을 촘촘하게(왼쪽 정렬)
-            # [◀] [p1] [p2] ... [텍스트] [▶]
-            widths = [0.8] + [0.55] * len(items) + [1.6] + [0.8]
+            # 폭을 더 촘촘히: 마지막에 ▶가 "/전체페이지" 바로 옆에 붙게
+            widths = [0.9] + [0.6] * len(items) + [1.1] + [0.9]
             nav_cols = st.columns(widths, gap="small")
 
-            # ◀
+            # ◀ : 최신(1페이지)면 비활성
             with nav_cols[0]:
                 if st.button("◀", key="stat_nav_left", use_container_width=True, disabled=(cur_page <= 1)):
                     _goto_page(cur_page - 1)
 
-            # 페이지 숫자/…
+            # 페이지 버튼
             for i, it in enumerate(items):
                 with nav_cols[i + 1]:
                     if it == "…":
-                        st.markdown("<div style='text-align:center; opacity:0.6;'>…</div>", unsafe_allow_html=True)
+                        st.markdown("<div style='text-align:center; opacity:0.55;'>…</div>", unsafe_allow_html=True)
                     else:
                         p = int(it)
-                        label = f"{p}"
-                        # 현재 페이지는 눌러도 변화 없게(disabled)
-                        if st.button(label, key=f"stat_nav_p_{p}", use_container_width=True, disabled=(p == cur_page)):
+                        if st.button(f"{p}", key=f"stat_nav_p_{p}", use_container_width=True, disabled=(p == cur_page)):
                             _goto_page(p)
 
-            # "/ 전체페이지 N" (텍스트, 클릭 불가)
+            # "/전체페이지 N" : 텍스트만
             with nav_cols[len(items) + 1]:
                 st.markdown(
                     f"<div style='text-align:left; font-weight:700; padding-top:6px;'>/ 전체페이지 {total_pages}</div>",
                     unsafe_allow_html=True,
                 )
 
-            # ▶
+            # ▶ : 마지막 페이지면 비활성
             with nav_cols[len(items) + 2]:
                 if st.button("▶", key="stat_nav_right", use_container_width=True, disabled=(cur_page >= total_pages)):
                     _goto_page(cur_page + 1)
 
-        # ---- 오른쪽: 저장/초기화/삭제 ----
         with row[1]:
             bsave, breset, bdel = st.columns([1, 1, 1], gap="small")
             with bsave:
@@ -3851,9 +3842,11 @@ if "📊 통계청" in tabs:
         if not sub_rows_all:
             st.info("제출물 내역이 없습니다. 위에서 ‘제출물 내역 추가’를 먼저 해주세요.")
         else:
-            # 현재 화면에 보일 제출물만 슬라이스
-            off = int(st.session_state.get("stat_col_offset", 0) or 0)
-            sub_rows = sub_rows_all[off : off + VISIBLE_COLS]
+            # ✅ page_idx(0=최신 페이지) 기준 슬라이스
+            page_idx = int(st.session_state.get("stat_page_idx", 0) or 0)
+            start = page_idx * VISIBLE_COLS
+            end = start + VISIBLE_COLS
+            sub_rows = sub_rows_all[start:end]
 
             # 로드 시그니처: (제출물 목록 + 학생 목록) 바뀔 때만 로컬 편집 초기화
             sig = "||".join(
