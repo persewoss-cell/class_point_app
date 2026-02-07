@@ -4361,22 +4361,18 @@ if "💳 신용등급" in tabs:
                 st.session_state["credit_col_offset"] = min(max_off, int(st.session_state["credit_col_offset"]) + VISIBLE_COLS)
                 st.rerun()
 
-        # ✅ 최신 제출물이 항상 왼쪽에 오도록 강제 정렬
+        # ✅ 최신 제출물이 항상 왼쪽에 오도록 정렬(최신→오래된)
         def _sub_sort_key(x):
             return str(x.get("created_at_utc", "") or "")
 
         sub_rows_desc = sorted(sub_rows_desc, key=_sub_sort_key, reverse=True)
 
-        total = len(sub_rows_desc)
-        off = int(st.session_state.get("credit_col_offset", 0) or 0)
+        # ✅ offset(페이지) 클램프
+        max_off = max(0, len(sub_rows_desc) - VISIBLE_COLS)
+        st.session_state["credit_col_offset"] = min(max_off, max(0, int(st.session_state.get("credit_col_offset", 0) or 0)))
+        off = int(st.session_state["credit_col_offset"])
 
-        # ✅ 왼쪽 = 최신, 오른쪽 = 과거
-        start = max(0, total - VISIBLE_COLS - off)
-        end = total - off
-        sub_rows_view = sub_rows_desc[start:end]
-        
-        off = int(st.session_state.get("credit_col_offset", 0) or 0)
-        # ✅ 최신이 왼쪽: sub_rows_desc(최신→오래된)에서 그대로 슬라이스
+        # ✅ 최신이 왼쪽: 앞에서부터(0부터) 7개씩 보여주기
         sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]
 
         # ---- 헤더(날짜 + 제출물 내역 2줄) ----
