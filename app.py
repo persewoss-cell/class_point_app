@@ -2221,7 +2221,7 @@ ALL_TABS = [
     "🏛️ 국세청(국고)",
     "📊 통계청",
     "💳 신용등급",
-    "🏦 은행(예금)",
+    "🏦 은행(적금)",
     "📈 투자",
     "🛒 구입/벌금",
     "🗓️ 일정",
@@ -2245,7 +2245,7 @@ def tab_visible(tab_name: str):
         return can(my_perms, "stats_write")
     if tab_name == "💳 신용등급":
         return can(my_perms, "credit_write")
-    if tab_name == "🏦 은행(예금)":
+    if tab_name == "🏦 은행(적금)":
         return can(my_perms, "bank_read") or can(my_perms, "bank_write")
 
     if tab_name == "📈 투자":
