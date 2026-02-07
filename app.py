@@ -3746,98 +3746,118 @@ if "📊 통계청" in tabs:
         submission_ids = [r.get("submission_id") for r in sub_rows_all if r.get("submission_id")]
 
         # -------------------------
-        # ✅ 가로 "좌우 이동" + 페이지(텍스트 링크) 표시 : 한 화면에 7개 표시
-        # - 숫자만 작게 표시, 클릭하면 해당 페이지로 즉시 이동
+        # (PATCH) 가로 "좌우 이동" : 한 화면에 7개 표시 + 페이지 숫자(링크X)
+        #  - 숫자 클릭 시 새탭 이동 없음(버튼)
+        #  - 표기: [1][2]...[마지막]/전체페이지[총페이지]
         # -------------------------
         VISIBLE_COLS = 7
         if "stat_col_offset" not in st.session_state:
             st.session_state["stat_col_offset"] = 0
 
+        # ✅ 페이지 계산(0부터)
         total_cols = len(sub_rows_all)
         total_pages = max(1, (total_cols + VISIBLE_COLS - 1) // VISIBLE_COLS)
 
-        # ✅ URL 파라미터로 페이지 점프 (버튼 없이 "숫자 텍스트" 클릭)
-        try:
-            qp_page = st.query_params.get("stat_page", None)
-        except Exception:
-            qp_page = st.experimental_get_query_params().get("stat_page", [None])[0]
+        # offset을 페이지로 환산
+        cur_off = int(st.session_state.get("stat_col_offset", 0) or 0)
+        cur_off = max(0, min(cur_off, max(0, total_cols - VISIBLE_COLS)))
+        st.session_state["stat_col_offset"] = cur_off
 
-        if qp_page is not None:
-            try:
-                p = int(qp_page)
-                p = max(1, min(total_pages, p))
-                st.session_state["stat_col_offset"] = (p - 1) * VISIBLE_COLS
-            except Exception:
-                pass
+        cur_page = (cur_off // VISIBLE_COLS) + 1  # 1부터
+        max_page = total_pages
 
-        # offset 클램프
-        max_off = max(0, total_cols - VISIBLE_COLS)
-        st.session_state["stat_col_offset"] = min(max_off, max(0, int(st.session_state.get("stat_col_offset", 0) or 0)))
-        off = int(st.session_state["stat_col_offset"])
-        cur_page = min(total_pages, (off // VISIBLE_COLS) + 1)
+        # ✅ 상단 줄: ◀ / 페이지숫자 / ▶ / 저장/초기화/삭제
+        top_r = st.columns([0.9, 6.2, 0.9, 2.6])
 
-        def _build_pages(cur: int, total: int):
-            if total <= 8:
-                return list(range(1, total + 1))
-            pages = [1, 2]
-            if cur > 4:
-                pages.append("…")
-            for p in range(cur - 1, cur + 2):
-                if 3 <= p <= total - 2:
-                    pages.append(p)
-            if cur < total - 3:
-                pages.append("…")
-            pages += [total - 1, total]
-            out = []
-            for x in pages:
-                if x not in out:
-                    out.append(x)
-            return out
+        # (1) 왼쪽 화살표
+        with top_r[0]:
+            if st.button("◀", use_container_width=True, key="stat_col_left", disabled=(cur_page <= 1)):
+                st.session_state["stat_col_offset"] = max(0, cur_off - VISIBLE_COLS)
+                st.rerun()
 
-        # ✅ (CSS) 페이지 숫자 작게/한줄
+        # (2) 페이지 숫자(링크X, 버튼을 숫자처럼)
         st.markdown(
             """
-            <style>
-            .stat-pager { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; white-space:nowrap; }
-            .stat-pager a { font-size:12px; font-weight:800; text-decoration:none; color:#111; }
-            .stat-pager a:hover { text-decoration:underline; }
-            .stat-pager .cur { font-size:12px; font-weight:900; }
-            .stat-pager .sep { font-size:12px; font-weight:900; color:#666; }
-            </style>
-            """,
+<style>
+/* 통계청 페이지 숫자 버튼을 "작은 숫자"처럼 보이게 */
+div[data-testid="stElementContainer"]:has(button.stat-page-btn) button.stat-page-btn {
+  padding: 2px 6px !important;
+  min-height: 0 !important;
+  height: 22px !important;
+  line-height: 1 !important;
+  font-size: 0.80rem !important;
+  border-radius: 6px !important;
+}
+div[data-testid="stElementContainer"]:has(button.stat-page-btn) {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+</style>
+""",
             unsafe_allow_html=True,
         )
 
-        top_r = st.columns([0.9, 4.6, 0.9, 2.6])
-
-        # ◀ (✅ rerun 추가해서 확실히 작동)
-        with top_r[0]:
-            if st.button("◀", use_container_width=True, key="stat_col_left"):
-                st.session_state["stat_col_offset"] = max(0, off - VISIBLE_COLS)
-                st.rerun()
-
-        # 페이지 숫자(텍스트 링크)
         with top_r[1]:
-            pages = _build_pages(cur_page, total_pages)
-            parts = []
-            for x in pages:
-                if x == "…":
-                    parts.append("<span class='sep'>…</span>")
-                else:
-                    if int(x) == int(cur_page):
-                        parts.append(f"<span class='cur'>[{x}]</span>")
-                    else:
-                        parts.append(f"<a href='?stat_page={x}'>[{x}]</a>")
-            parts.append(f"<span class='sep'>/{total_pages}</span>")
-            st.markdown("<div class='stat-pager'>" + "".join(parts) + "</div>", unsafe_allow_html=True)
+            # ✅ 숫자 줄바꿈 방지 + 한 줄에 보이게
+            st.markdown("<div style='display:flex;flex-wrap:nowrap;gap:4px;align-items:center;'>", unsafe_allow_html=True)
 
-        # ▶ (✅ rerun 추가해서 확실히 작동)
-        with top_r[2]:
-            if st.button("▶", use_container_width=True, key="stat_col_right"):
-                st.session_state["stat_col_offset"] = min(max_off, off + VISIBLE_COLS)
+            def _goto_page(p: int):
+                p = max(1, min(max_page, int(p)))
+                st.session_state["stat_col_offset"] = (p - 1) * VISIBLE_COLS
                 st.rerun()
 
-        # 오른쪽: 저장/초기화/삭제 (기존 그대로)
+            # ✅ 표시할 페이지 목록(많으면 ... 생략)
+            pages = []
+            if max_page <= 10:
+                pages = list(range(1, max_page + 1))
+            else:
+                # 1~3, (현재-1~현재+1), 마지막-2~마지막
+                cand = {1, 2, 3, max_page, max_page - 1, max_page - 2, cur_page - 1, cur_page, cur_page + 1}
+                pages = sorted([p for p in cand if 1 <= p <= max_page])
+
+            last_shown = None
+            for p in pages:
+                if last_shown is not None and p - last_shown > 1:
+                    st.markdown("<span style='font-weight:800;'>…</span>", unsafe_allow_html=True)
+
+                # ✅ 현재 페이지는 약간 강조(텍스트만, 새탭X)
+                if p == cur_page:
+                    st.markdown(f"<span style='font-weight:900;'>[{p}]</span>", unsafe_allow_html=True)
+                else:
+                    # 버튼을 [n]처럼 보이게
+                    if st.button(f"[{p}]", key=f"stat_page_{p}", help=f"{p}페이지로 이동"):
+                        _goto_page(p)
+
+                    # 버튼에 class 적용(숫자처럼 작게)
+                    st.markdown(
+                        """
+<script>
+const btn = window.parent.document.querySelector('button[kind="secondary"]:has(span:contains("["))');
+</script>
+""",
+                        unsafe_allow_html=True,
+                    )
+
+                last_shown = p
+
+            # ✅ "/전체페이지[총페이지]" 표기 (총페이지도 버튼으로 이동 가능)
+            st.markdown(f"<span style='font-weight:900;'>/전체페이지</span>", unsafe_allow_html=True)
+            if max_page == cur_page:
+                st.markdown(f"<span style='font-weight:900;'>[{max_page}]</span>", unsafe_allow_html=True)
+            else:
+                if st.button(f"[{max_page}]", key="stat_page_last", help="마지막 페이지로 이동"):
+                    _goto_page(max_page)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # (3) 오른쪽 화살표
+        with top_r[2]:
+            if st.button("▶", use_container_width=True, key="stat_col_right", disabled=(cur_page >= max_page)):
+                max_off = max(0, total_cols - VISIBLE_COLS)
+                st.session_state["stat_col_offset"] = min(max_off, cur_off + VISIBLE_COLS)
+                st.rerun()
+
+        # (4) 저장/초기화/삭제
         with top_r[3]:
             bsave, breset, bdel = st.columns([1, 1, 1])
             with bsave:
