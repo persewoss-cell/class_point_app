@@ -2524,42 +2524,6 @@ else:
     user_tab_objs = st.tabs(USER_TABS)
     user_tab_map = {name: user_tab_objs[i] for i, name in enumerate(USER_TABS)}
     
-def tab_visible(tab_name: str):
-    if is_admin:
-        return True
-
-    # 학생은 기본 "내 통장" + 일정(읽기)
-    if tab_name == "🏦 내 통장":
-        return True
-    if tab_name == "🗓️ 일정":
-        return True
-
-    # 권한별 탭 표시
-    if tab_name == "🏛️ 국세청(국고)":
-        return can(my_perms, "treasury_read") or can(my_perms, "treasury_write")
-    if tab_name == "📊 통계청":
-        return can(my_perms, "stats_write")
-    if tab_name == "💳 신용등급":
-        return can(my_perms, "credit_write")
-    if tab_name == "🏦 은행(적금)":
-        return can(my_perms, "bank_read") or can(my_perms, "bank_write")
-
-    if tab_name == "📈 투자":
-        return True
-    if tab_name == "🛒 구입/벌금":
-        return True
-
-    # 학생에게 숨김
-    if tab_name in ("💼 직업/월급", "👥 계정 정보/활성화"):
-        return False
-
-    return False
-
-tabs = [t for t in ALL_TABS if tab_visible(t)]
-tab_objs = st.tabs(tabs)
-tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
-
-
 # =========================
 # 1) 🏦 내 통장 (기존 사용자 화면 거의 그대로)
 # =========================
