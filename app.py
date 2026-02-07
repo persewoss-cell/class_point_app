@@ -4574,6 +4574,635 @@ if "💳 신용등급" in tabs:
         st.caption("• 왼쪽/오른쪽 버튼으로 날짜(제출물) 열을 이동해서 확인할 수 있어요.")
 
 # =========================
+# 🏦 은행(적금) 탭
+# - (관리자) 적금 관리 장부(최신순) + 이자율표
+# - (학생) 적금 가입/내 적금 목록/중도해지 + 신용등급 미리보기 + 이자율표
+# =========================
+if "🏦 은행(적금)" in tabs:
+    with tab_map["🏦 은행(적금)"]:
+        st.subheader("🏦 은행(적금)")
+
+        # -------------------------------------------------
+        # 공통 유틸
+        # -------------------------------------------------
+        def _fmt_kor_date_short_from_dt(dt: datetime) -> str:
+            try:
+                dt2 = dt.astimezone(KST)
+                wd = ["월", "화", "수", "목", "금", "토", "일"][dt2.weekday()]
+                return f"{dt2.month}월 {dt2.day}일({wd})"
+            except Exception:
+                return ""
+
+        def _parse_iso_to_dt(iso_utc: str):
+            try:
+                return datetime.fromisoformat(str(iso_utc).replace("Z", "+00:00"))
+            except Exception:
+                return None
+
+        def _dt_to_iso_z(dt: datetime) -> str:
+            try:
+                return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            except Exception:
+                return ""
+
+        def _score_to_grade(score: int) -> int:
+            s = int(score)
+            if s >= 90: return 1
+            if s >= 80: return 2
+            if s >= 70: return 3
+            if s >= 60: return 4
+            if s >= 50: return 5
+            if s >= 40: return 6
+            if s >= 30: return 7
+            if s >= 20: return 8
+            if s >= 10: return 9
+            return 10
+
+        def _norm_status(v) -> str:
+            v = str(v or "").strip().upper()
+            if v in ("O", "○"):
+                return "O"
+            if v in ("△", "▲", "Δ"):
+                return "△"
+            return "X"
+
+        # -------------------------------------------------
+        # (1) 이자율 표(설정값 Firestore에서 로드)
+        #  - config/bank_rates : {"weeks":[1,2,4,8], "rates": {"1": {"1":2.0, ...}, ...}}
+        #  - 캡쳐 표대로 쓰려면 여기 값만 바꾸면 됨 (기본값 제공)
+        # -------------------------------------------------
+        def _get_bank_rate_cfg():
+            ref = db.collection("config").document("bank_rates")
+            snap = ref.get()
+            if snap.exists:
+                d = snap.to_dict() or {}
+                weeks = list(d.get("weeks", []) or [])
+                rates = dict(d.get("rates", {}) or {})
+                if weeks and rates:
+                    return {"weeks": weeks, "rates": rates}
+
+            # ✅ 기본값(임시): 너 캡쳐와 다르면 나중에 config/bank_rates만 수정하면 전체 자동 반영
+            weeks = [1, 2, 4, 8]
+            # 등급 좋을수록 이자율 ↑ / 기간 길수록 ↑ (예시)
+            base_by_grade = {
+                1: 3.0, 2: 2.6, 3: 2.2, 4: 1.9, 5: 1.6,
+                6: 1.3, 7: 1.0, 8: 0.8, 9: 0.6, 10: 0.4
+            }
+            add_by_weeks = {1: 0.0, 2: 0.4, 4: 0.9, 8: 1.6}
+
+            rates = {}
+            for g in range(1, 11):
+                rates[str(g)] = {}
+                for w in weeks:
+                    rates[str(g)][str(w)] = round(float(base_by_grade[g] + add_by_weeks.get(w, 0.0)), 2)
+
+            # 최초 1회 저장해두면 이후는 DB값 사용
+            ref.set({"weeks": weeks, "rates": rates, "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+            return {"weeks": weeks, "rates": rates}
+
+        bank_rate_cfg = _get_bank_rate_cfg()
+
+        def _get_interest_rate_percent(grade: int, weeks: int) -> float:
+            g = str(int(grade))
+            w = str(int(weeks))
+            rates = bank_rate_cfg.get("rates", {}) or {}
+            if g in rates and w in (rates.get(g) or {}):
+                return float(rates[g][w])
+            # 없으면 0%
+            return 0.0
+
+        # -------------------------------------------------
+        # (2) 신용점수/등급(현재 시점) 계산 (학생 1명용)
+        #  - credit_scoring 설정 + 통계청 제출물(statuses) 누적
+        # -------------------------------------------------
+        def _get_credit_cfg():
+            ref = db.collection("config").document("credit_scoring")
+            snap = ref.get()
+            if not snap.exists:
+                return {"base": 50, "o": 1, "x": -3, "tri": 0}
+            d = snap.to_dict() or {}
+            return {
+                "base": int(d.get("base", 50) or 50),
+                "o": int(d.get("o", 1) or 1),
+                "x": int(d.get("x", -3) or -3),
+                "tri": int(d.get("tri", 0) or 0),
+            }
+
+        def _calc_credit_score_for_student(student_id: str) -> tuple[int, int]:
+            cfg = _get_credit_cfg()
+            base = int(cfg.get("base", 50) or 50)
+            o_pt = int(cfg.get("o", 1) or 1)
+            x_pt = int(cfg.get("x", -3) or -3)
+            tri_pt = int(cfg.get("tri", 0) or 0)
+
+            def _delta(v):
+                vv = _norm_status(v)
+                if vv == "O": return o_pt
+                if vv == "△": return tri_pt
+                return x_pt
+
+            sub_res = api_list_stat_submissions_cached(limit_cols=200)
+            sub_rows_all = sub_res.get("rows", []) if sub_res.get("ok") else []
+
+            # ✅ 오래된→최신 순으로 누적되게 보정(혹시 정렬이 섞여도 최대한 안정)
+            def _k(d):
+                t = _parse_iso_to_dt(d.get("created_at_utc", "") or "")
+                return t.timestamp() if t else 0
+            sub_rows_all = sorted(sub_rows_all, key=_k)  # asc
+
+            score = int(base)
+            sid = str(student_id)
+            for sub in sub_rows_all:
+                statuses = dict(sub.get("statuses", {}) or {})
+                v = statuses.get(sid, "X")
+                score = int(score + _delta(v))
+                if score > 100: score = 100
+                if score < 0: score = 0
+
+            grade = _score_to_grade(score)
+            return score, grade
+
+        # -------------------------------------------------
+        # (3) 적금 저장/조회/처리 (Firestore: savings)
+        # -------------------------------------------------
+        SAV_COL = "savings"
+
+        def _list_students_active():
+            docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+            rows = []
+            for d in docs:
+                x = d.to_dict() or {}
+                try:
+                    no = int(x.get("no", 999999) or 999999)
+                except Exception:
+                    no = 999999
+                nm = str(x.get("name", "") or "").strip()
+                if nm:
+                    rows.append({"student_id": d.id, "no": no, "name": nm})
+            rows.sort(key=lambda r: (r["no"], r["name"]))
+            return rows
+
+        def _compute_interest(principal: int, rate_percent: float) -> int:
+            # 소수 첫째자리에서 반올림 → 정수
+            try:
+                v = float(principal) * (float(rate_percent) / 100.0)
+                return int(round(v, 0))
+            except Exception:
+                return 0
+
+        def _ensure_maturity_processing_once():
+            """
+            관리자 화면에서 열 때:
+            - status=running 이고 maturity_utc <= now 인 것들을 자동 만기 처리
+            - 원금+이자를 학생 통장에 입금(+)
+            """
+            now = datetime.now(timezone.utc)
+            q = db.collection(SAV_COL).where(filter=FieldFilter("status", "==", "running")).stream()
+
+            proc_cnt = 0
+            for d in q:
+                x = d.to_dict() or {}
+                mdt = _parse_iso_to_dt(x.get("maturity_utc", "") or "")
+                if not mdt:
+                    continue
+                if mdt <= now:
+                    student_id = str(x.get("student_id") or "")
+                    if not student_id:
+                        continue
+
+                    payout = int(x.get("maturity_amount", 0) or 0)
+                    memo = f"적금 만기 지급 ({x.get('weeks')}주)"
+                    # ✅ 관리자 권한으로 입금 처리
+                    res = api_admin_add_tx_by_student_id(
+                        admin_pin=ADMIN_PIN,
+                        student_id=student_id,
+                        memo=memo,
+                        deposit=payout,
+                        withdraw=0,
+                    )
+                    if res.get("ok"):
+                        db.collection(SAV_COL).document(d.id).update(
+                            {
+                                "status": "matured",
+                                "payout_amount": payout,
+                                "processed_at": firestore.SERVER_TIMESTAMP,
+                            }
+                        )
+                        proc_cnt += 1
+
+            if proc_cnt > 0:
+                toast(f"만기 자동 처리: {proc_cnt}건", icon="🏦")
+
+        def _cancel_savings(doc_id: str):
+            """
+            중도해지:
+            - 원금만 학생 통장에 입금(+)
+            - status=canceled
+            """
+            snap = db.collection(SAV_COL).document(doc_id).get()
+            if not snap.exists:
+                return {"ok": False, "error": "해당 적금을 찾지 못했어요."}
+            x = snap.to_dict() or {}
+            if str(x.get("status")) != "running":
+                return {"ok": False, "error": "진행중인 적금만 중도해지할 수 있어요."}
+
+            student_id = str(x.get("student_id") or "")
+            principal = int(x.get("principal", 0) or 0)
+
+            res = api_admin_add_tx_by_student_id(
+                admin_pin=ADMIN_PIN,
+                student_id=student_id,
+                memo=f"적금 중도해지 지급 ({x.get('weeks')}주)",
+                deposit=principal,
+                withdraw=0,
+            )
+            if res.get("ok"):
+                db.collection(SAV_COL).document(doc_id).update(
+                    {
+                        "status": "canceled",
+                        "payout_amount": principal,
+                        "processed_at": firestore.SERVER_TIMESTAMP,
+                    }
+                )
+                return {"ok": True}
+            return {"ok": False, "error": res.get("error", "중도해지 실패")}
+
+        def _make_savings(student_id: str, no: int, name: str, weeks: int, principal: int):
+            """
+            적금 가입:
+            - 학생 통장에서 principal 출금(-) 처리
+            - savings 문서 생성 (신용등급/이자율/만기금액 자동)
+            """
+            principal = int(principal or 0)
+            weeks = int(weeks or 0)
+            if principal <= 0:
+                return {"ok": False, "error": "적금 금액이 0보다 커야 해요."}
+            if weeks <= 0:
+                return {"ok": False, "error": "적금 기간(주)을 선택해 주세요."}
+
+            # ✅ 현재 신용등급(적금 당시 등급 저장)
+            score, grade = _calc_credit_score_for_student(student_id)
+            rate = _get_interest_rate_percent(grade, weeks)
+
+            interest = _compute_interest(principal, rate)
+            maturity_amt = int(principal + interest)
+
+            now_kr = datetime.now(KST)
+            now_utc = now_kr.astimezone(timezone.utc)
+            maturity_utc = now_utc + timedelta(days=int(weeks) * 7)
+
+            # 1) 통장에서 출금(적금 넣기)
+            #    - 학생 로그인 상황에서도 서버는 ADMIN_PIN을 알고 있으니 관리자 지급/차감 방식으로 안전 처리
+            res_wd = api_admin_add_tx_by_student_id(
+                admin_pin=ADMIN_PIN,
+                student_id=student_id,
+                memo=f"적금 가입 ({weeks}주)",
+                deposit=0,
+                withdraw=principal,
+            )
+            if not res_wd.get("ok"):
+                return {"ok": False, "error": res_wd.get("error", "통장 출금 실패")}
+
+            # 2) savings 문서 생성
+            payload = {
+                "student_id": str(student_id),
+                "no": int(no),
+                "name": str(name),
+                "weeks": int(weeks),
+                "credit_score": int(score),
+                "credit_grade": int(grade),
+                "rate_percent": float(rate),
+                "principal": int(principal),
+                "interest": int(interest),
+                "maturity_amount": int(maturity_amt),
+                "start_utc": _dt_to_iso_z(now_utc),
+                "maturity_utc": _dt_to_iso_z(maturity_utc),
+                "status": "running",          # running / matured / canceled
+                "payout_amount": None,
+                "created_at": firestore.SERVER_TIMESTAMP,
+            }
+            db.collection(SAV_COL).document().set(payload)
+            return {"ok": True}
+
+        def _load_savings_rows(limit=500):
+            q = db.collection(SAV_COL).order_by("start_utc", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+            rows = []
+            for d in q:
+                x = d.to_dict() or {}
+                x["_id"] = d.id
+                rows.append(x)
+            return rows
+
+        # -------------------------------------------------
+        # (관리자) 자동 만기 처리(열 때마다 한 번)
+        # -------------------------------------------------
+        if is_admin:
+            _ensure_maturity_processing_once()
+
+        # -------------------------------------------------
+        # (A) 관리자: 적금 관리 장부 (엑셀형 표 느낌) + 최신순
+        # -------------------------------------------------
+        if is_admin:
+            st.markdown("### 📒 적금 관리 장부")
+
+            # ✅ 화면에 최대한 한 줄로: 글씨 조금 줄이기(이 탭에서만)
+            st.markdown(
+                """
+<style>
+/* 은행(적금) 탭의 표 글씨를 조금 작게 */
+div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
+</style>
+""",
+                unsafe_allow_html=True,
+            )
+
+            sav_rows = _load_savings_rows(limit=800)
+            if not sav_rows:
+                st.info("적금 내역이 아직 없어요.")
+            else:
+                now_utc = datetime.now(timezone.utc)
+
+                out = []
+                for r in sav_rows:
+                    start_dt = _parse_iso_to_dt(r.get("start_utc", "") or "")
+                    mat_dt = _parse_iso_to_dt(r.get("maturity_utc", "") or "")
+
+                    # 처리 결과(요구사항 규칙)
+                    status = str(r.get("status", "running") or "running")
+                    if status == "canceled":
+                        result = "중도해지"
+                    else:
+                        if mat_dt and mat_dt <= now_utc:
+                            result = "만기"
+                        else:
+                            result = "진행중"
+
+                    # 지급금액 표기
+                    if result == "진행중":
+                        payout_disp = "-"
+                    elif result == "중도해지":
+                        payout_disp = int(r.get("payout_amount") or r.get("principal", 0) or 0)
+                    else:  # 만기
+                        payout_disp = int(r.get("payout_amount") or r.get("maturity_amount", 0) or 0)
+
+                    # 날짜 표시(0월 0일(요일))
+                    start_disp = _fmt_kor_date_short_from_dt(start_dt.astimezone(KST)) if start_dt else ""
+                    mat_disp = _fmt_kor_date_short_from_dt(mat_dt.astimezone(KST)) if mat_dt else ""
+
+                    out.append(
+                        {
+                            "번호": int(r.get("no", 0) or 0),
+                            "이름": str(r.get("name", "") or ""),
+                            "적금기간": f"{int(r.get('weeks', 0) or 0)}주",
+                            "신용등급": f"{int(r.get('credit_grade', 10) or 10)}등급",
+                            "이자율": f"{float(r.get('rate_percent', 0.0) or 0.0)}%",
+                            "적금 금액": int(r.get("principal", 0) or 0),
+                            "이자": int(r.get("interest", 0) or 0),
+                            "만기 금액": int(r.get("maturity_amount", 0) or 0),
+                            "적금 날짜": start_disp,
+                            "만기 날짜": mat_disp,
+                            "처리 결과": result,
+                            "지급 금액": payout_disp,
+                            "_id": r.get("_id"),
+                        }
+                    )
+
+                df = pd.DataFrame(out)
+
+                # ✅ 최신순(적금 날짜) 정렬 유지 (start_utc desc로 이미 가져옴)
+                # 화면에는 _id 숨김
+                show_cols = [
+                    "번호","이름","적금기간","신용등급","이자율","적금 금액","이자","만기 금액",
+                    "적금 날짜","만기 날짜","처리 결과","지급 금액"
+                ]
+                st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
+
+                # ✅ 관리자: 중도해지 처리(선택)
+                st.markdown("#### 🧯 중도해지 처리(관리자)")
+                st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
+
+                # 표시용 라벨
+                running = df[df["처리 결과"] == "진행중"].copy()
+                if running.empty:
+                    st.info("진행중인 적금이 없습니다.")
+                else:
+                    # 가장 최신 50개까지만 드롭다운(너무 길어지는 것 방지)
+                    running = running.head(50)
+
+                    options = ["(선택 없음)"] + [
+                        f"{r['번호']} {r['이름']} | {r['적금기간']} | {r['적금 날짜']} | {r['적금 금액']}P"
+                        for _, r in running.iterrows()
+                    ]
+                    label_to_id = {options[i+1]: running.iloc[i]["_id"] for i in range(len(running))}
+
+                    pick = st.selectbox("중도해지할 적금 선택", options, key="bank_cancel_pick")
+                    if pick != "(선택 없음)":
+                        if st.button("중도해지 처리(원금 지급)", use_container_width=True, key="bank_cancel_do"):
+                            doc_id = str(label_to_id.get(pick))
+                            res = _cancel_savings(doc_id)
+                            if res.get("ok"):
+                                toast("중도해지 처리 완료", icon="✅")
+                                st.rerun()
+                            else:
+                                st.error(res.get("error", "중도해지 실패"))
+
+            st.divider()
+
+        # -------------------------------------------------
+        # (B) 학생: 적금 가입 UI + 내 적금 목록 + 신용등급 미리보기
+        # -------------------------------------------------
+        if not is_admin:
+            # 권한 체크(읽기만/쓰기 가능)
+            can_write = can(my_perms, "bank_write")
+            can_read = can(my_perms, "bank_read") or can_write
+
+            if not can_read:
+                st.error("은행(적금) 탭 권한이 없습니다.")
+                st.stop()
+
+            # 학생 정보
+            refresh_account_data_light(login_name, login_pin, force=True)
+            slot = st.session_state.data.get(login_name, {})
+            if slot.get("error"):
+                st.error(slot["error"])
+                st.stop()
+            balance = int(slot.get("balance", 0) or 0)
+            my_student_id = slot.get("student_id")
+
+            # ✅ 신용등급 미리보기
+            if my_student_id:
+                sc, gr = _calc_credit_score_for_student(my_student_id)
+                st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
+
+            st.markdown(f"#### 현재 잔액: **{balance} 포인트**")
+
+            st.markdown("### 📝 적금 가입")
+            st.caption("• 적금 가입 시 통장에서 해당 금액이 출금됩니다. • 만기면 원금+이자가 자동 지급됩니다. • 중도해지는 원금만 지급됩니다.")
+
+            # 기간 옵션
+            week_opts = list(bank_rate_cfg.get("weeks", []) or [])
+            week_opts = [int(w) for w in week_opts if str(w).isdigit()]
+            week_opts = sorted(list(set(week_opts)))
+            if not week_opts:
+                week_opts = [1, 2, 4, 8]
+
+            c1, c2, c3 = st.columns([1.1, 1.3, 1.6])
+            with c1:
+                weeks_in = st.selectbox("적금기간(주)", week_opts, key="stu_bank_weeks")
+            with c2:
+                principal_in = st.number_input("적금 금액", min_value=0, step=10, value=0, key="stu_bank_principal")
+            with c3:
+                # 이자율/만기 미리보기
+                if my_student_id:
+                    sc, gr = _calc_credit_score_for_student(my_student_id)
+                    rate = _get_interest_rate_percent(gr, int(weeks_in))
+                    it = _compute_interest(int(principal_in or 0), float(rate))
+                    mat = int(int(principal_in or 0) + int(it))
+                    st.metric("미리보기(이자율/만기)", f"{rate:.2f}% / {mat}P")
+
+            if st.button("🏦 적금 가입(저장)", use_container_width=True, key="stu_bank_join", disabled=(not can_write)):
+                if not can_write:
+                    st.error("적금 가입 권한(bank_write)이 없습니다.")
+                elif not my_student_id:
+                    st.error("학생 ID를 찾지 못했어요(로그인 정보를 확인).")
+                else:
+                    if int(principal_in or 0) > balance:
+                        st.error("잔액이 부족해요.")
+                    else:
+                        # 학생 번호(no) 조회
+                        me_no = 999999
+                        try:
+                            snap_me = db.collection("students").document(my_student_id).get()
+                            if snap_me.exists:
+                                me_no = int((snap_me.to_dict() or {}).get("no", 999999) or 999999)
+                        except Exception:
+                            me_no = 999999
+
+                        res = _make_savings(
+                            student_id=my_student_id,
+                            no=int(me_no),
+                            name=str(login_name),
+                            weeks=int(weeks_in),
+                            principal=int(principal_in),
+                        )
+                        if res.get("ok"):
+                            toast("적금 가입 완료!", icon="✅")
+                            st.session_state.pop("stu_bank_principal", None)
+                            st.rerun()
+                        else:
+                            st.error(res.get("error", "적금 가입 실패"))
+
+            st.divider()
+
+            st.markdown("### 📒 내 적금")
+            # 내 적금만 조회
+            my_rows = []
+            if my_student_id:
+                q = db.collection(SAV_COL).where(filter=FieldFilter("student_id", "==", str(my_student_id))).stream()
+                for d in q:
+                    x = d.to_dict() or {}
+                    x["_id"] = d.id
+                    my_rows.append(x)
+
+            # 최신순
+            def _k2(x):
+                dt = _parse_iso_to_dt(x.get("start_utc", "") or "")
+                return -(dt.timestamp() if dt else 0)
+            my_rows = sorted(my_rows, key=_k2)
+
+            if not my_rows:
+                st.info("내 적금 내역이 없어요.")
+            else:
+                now_utc = datetime.now(timezone.utc)
+                view = []
+                for r in my_rows:
+                    start_dt = _parse_iso_to_dt(r.get("start_utc", "") or "")
+                    mat_dt = _parse_iso_to_dt(r.get("maturity_utc", "") or "")
+
+                    status = str(r.get("status", "running") or "running")
+                    if status == "canceled":
+                        result = "중도해지"
+                    else:
+                        if mat_dt and mat_dt <= now_utc:
+                            result = "만기"
+                        else:
+                            result = "진행중"
+
+                    if result == "진행중":
+                        payout_disp = "-"
+                    elif result == "중도해지":
+                        payout_disp = int(r.get("payout_amount") or r.get("principal", 0) or 0)
+                    else:
+                        payout_disp = int(r.get("payout_amount") or r.get("maturity_amount", 0) or 0)
+
+                    view.append(
+                        {
+                            "적금기간": f"{int(r.get('weeks', 0) or 0)}주",
+                            "신용등급": f"{int(r.get('credit_grade', 10) or 10)}등급",
+                            "이자율": f"{float(r.get('rate_percent', 0.0) or 0.0)}%",
+                            "적금 금액": int(r.get("principal", 0) or 0),
+                            "이자": int(r.get("interest", 0) or 0),
+                            "만기 금액": int(r.get("maturity_amount", 0) or 0),
+                            "적금 날짜": _fmt_kor_date_short_from_dt(start_dt.astimezone(KST)) if start_dt else "",
+                            "만기 날짜": _fmt_kor_date_short_from_dt(mat_dt.astimezone(KST)) if mat_dt else "",
+                            "처리 결과": result,
+                            "지급 금액": payout_disp,
+                            "_id": r.get("_id"),
+                            "_status": status,
+                        }
+                    )
+
+                df_my = pd.DataFrame(view)
+                show_cols = ["적금기간","신용등급","이자율","적금 금액","이자","만기 금액","적금 날짜","만기 날짜","처리 결과","지급 금액"]
+                st.dataframe(df_my[show_cols], use_container_width=True, hide_index=True)
+
+                # 중도해지 버튼(진행중만)
+                running_ids = df_my[(df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")].copy()
+                if not running_ids.empty and can_write:
+                    st.markdown("#### 🧯 중도해지(원금만 지급)")
+                    opts = ["(선택 없음)"] + [
+                        f"{r['적금기간']} | {r['적금 날짜']} | {int(r['적금 금액'])}P"
+                        for _, r in running_ids.head(30).iterrows()
+                    ]
+                    lab_to_id = {opts[i+1]: running_ids.iloc[i]["_id"] for i in range(len(running_ids.head(30)))}
+                    pick2 = st.selectbox("중도해지할 적금 선택", opts, key="stu_bank_cancel_pick")
+                    if pick2 != "(선택 없음)":
+                        if st.button("중도해지 실행", use_container_width=True, key="stu_bank_cancel_do"):
+                            rid = str(lab_to_id.get(pick2))
+                            res = _cancel_savings(rid)
+                            if res.get("ok"):
+                                toast("중도해지 완료", icon="✅")
+                                st.rerun()
+                            else:
+                                st.error(res.get("error", "중도해지 실패"))
+
+            st.divider()
+
+        # -------------------------------------------------
+        # (C) 이자율 표(캡쳐 표 위치): 장부 아래 / 학생 화면 맨 아래
+        # -------------------------------------------------
+        st.markdown("### 📌 신용등급 × 적금기간 이자율(%) 표")
+
+        weeks = list(bank_rate_cfg.get("weeks", []) or [])
+        rates = dict(bank_rate_cfg.get("rates", {}) or {})
+
+        # 표 만들기: 행=등급(1~10), 열=기간(주)
+        table_rows = []
+        for g in range(1, 11):
+            row = {"신용등급": f"{g}등급"}
+            gmap = dict(rates.get(str(g), {}) or {})
+            for w in weeks:
+                try:
+                    row[f"{int(w)}주"] = float(gmap.get(str(int(w)), 0.0) or 0.0)
+                except Exception:
+                    row[f"{w}주"] = 0.0
+            table_rows.append(row)
+
+        df_rate = pd.DataFrame(table_rows)
+        st.dataframe(df_rate, use_container_width=True, hide_index=True)
+        st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다. (캡쳐 표와 다르면 그 값만 수정하면 됩니다.)")
+
+# =========================
 # 10) 🗓️ 일정 (권한별 수정)
 # =========================
 def add_schedule(area: str, d: date, title: str, owner_roles: list[str], created_by: str):
