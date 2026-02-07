@@ -4638,50 +4638,74 @@ if "🏦 은행(적금)" in tabs:
         # -------------------------------------------------
         # (1) 이자율 표(설정값 Firestore에서 로드)
         #  - config/bank_rates : {"weeks":[1..10], "rates": {"1":{"1":10, ...}, ...}}
-        #  - ❗너가 준 엑셀 표를 기본값으로 저장/사용
+        #  - ✅ 엑셀 표(1~10주) 기준. DB값이 다르면 자동으로 덮어씀.
         # -------------------------------------------------
-        def _get_bank_rate_cfg():
-            ref = db.collection("config").document("bank_rates")
-            snap = ref.get()
-            if snap.exists:
-                d = snap.to_dict() or {}
-                weeks = list(d.get("weeks", []) or [])
-                rates = dict(d.get("rates", {}) or {})
-                if weeks and rates:
-                    return {"weeks": weeks, "rates": rates}
-
-            # ✅ 기본값 = 너가 올린 "은행 예금 이자율 계산표(%)"
+        def _build_excel_bank_rates():
             weeks = [1,2,3,4,5,6,7,8,9,10]
             rates = {}
             for g in range(1, 11):
                 rates[str(g)] = {}
                 for w in weeks:
-                    rates[str(g)][str(w)] = int((11 - g) * w)
+                    rates[str(g)][str(w)] = int((11 - g) * w)  # ✅ 너 엑셀 표 그대로
+            return weeks, rates
 
-            ref.set({"weeks": weeks, "rates": rates, "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
-            return {"weeks": weeks, "rates": rates}
+        def _is_same_excel_table(d: dict) -> bool:
+            try:
+                weeks_db = [int(x) for x in (d.get("weeks", []) or [])]
+                rates_db = d.get("rates", {}) or {}
+                weeks_x, rates_x = _build_excel_bank_rates()
 
-        bank_rate_cfg = _get_bank_rate_cfg()
+                if weeks_db != weeks_x:
+                    return False
+
+                for g in range(1, 11):
+                    gk = str(g)
+                    if gk not in rates_db:
+                        return False
+                    for w in weeks_x:
+                        wk = str(w)
+                        if str(int(rates_db[gk].get(wk, -999))) != str(int(rates_x[gk][wk])):
+                            return False
+                return True
+            except Exception:
+                return False
+
+        def _get_bank_rate_cfg(force_excel: bool = True):
+            ref = db.collection("config").document("bank_rates")
+            snap = ref.get()
+
+            # ✅ 엑셀 표 만들기
+            weeks_x, rates_x = _build_excel_bank_rates()
+
+            # 1) DB에 있고, 엑셀 표와 동일하면 그대로 사용
+            if snap.exists:
+                d = snap.to_dict() or {}
+                if (not force_excel) or _is_same_excel_table(d):
+                    return {
+                        "weeks": list(d.get("weeks", []) or []),
+                        "rates": dict(d.get("rates", {}) or {})
+                    }
+
+            # 2) DB가 없거나 / 내용이 다르면 → 엑셀 표로 덮어쓰기
+            ref.set(
+                {"weeks": weeks_x, "rates": rates_x, "updated_at": firestore.SERVER_TIMESTAMP},
+                merge=False
+            )
+            return {"weeks": weeks_x, "rates": rates_x}
+
+        # ✅ 여기서 엑셀표 강제 적용
+        bank_rate_cfg = _get_bank_rate_cfg(force_excel=True)
 
         def _get_interest_rate_percent(credit_grade: int, weeks: int) -> float:
-            """
-            Firestore config/bank_rates 기준으로 이자율(%) 반환
-            (너 엑셀 표 그대로: 등급 g, 기간 w → (11-g)*w)
-            """
             try:
                 g = int(credit_grade)
                 w = int(weeks)
             except Exception:
                 return 0.0
 
-            if g < 1:
-                g = 1
-            if g > 10:
-                g = 10
-            if w < 1:
-                w = 1
-            if w > 10:
-                w = 10
+            # 등급 1~10, 주 1~10으로 제한
+            g = 1 if g < 1 else 10 if g > 10 else g
+            w = 1 if w < 1 else 10 if w > 10 else w
 
             rates = bank_rate_cfg.get("rates", {}) or {}
             gmap = rates.get(str(g), {}) or {}
