@@ -4369,13 +4369,22 @@ if "💳 신용등급" in tabs:
         x_pt = int(credit_cfg.get("x", -3) or -3)
         tri_pt = int(credit_cfg.get("tri", 0) or 0)
 
-        def _delta(v: str) -> int:
-            v = str(v or "X")
+        def _norm_status(v) -> str:
+            """상태값을 무조건 'O' / 'X' / '△' 중 하나로 강제"""
+            v = str(v or "").strip().upper()
+            if v in ("O", "○"):
+                return "O"
+            if v in ("△", "▲", "Δ"):
+                return "△"
+            return "X"
+
+        def _delta(v) -> int:
+            v = _norm_status(v)
             if v == "O":
                 return o_pt
             if v == "△":
                 return tri_pt
-            return x_pt  # 기본 X
+            return x_pt
 
         # 학생별 누적 점수 스냅샷: scores_by_sub[sub_id][student_id] = score_after
         scores_by_sub = {}  # submission_id -> {student_id: score}
@@ -4390,7 +4399,8 @@ if "💳 신용등급" in tabs:
 
             for stx in stu_rows:
                 stid = str(stx["student_id"])
-                v = str(statuses.get(stid, "X") or "X")  # 없으면 X
+                v_raw = statuses.get(stid, "X")  # 없으면 X
+                v = _norm_status(v_raw)
                 nxt = int(cur_score.get(stid, base) + _delta(v))
                 if nxt > 100:
                     nxt = 100
