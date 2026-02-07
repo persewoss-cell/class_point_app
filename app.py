@@ -4291,13 +4291,11 @@ if "💳 신용등급" in tabs:
             st.info("통계청 제출물 내역이 없습니다. 먼저 통계청 탭에서 제출물을 추가하세요.")
             st.stop()
 
-        # API가 보통 최신순(내림차순)이라 가정 → 누적 계산은 오래된 것부터
-        # created_at_utc 없으면 현재 순서 reverse로 처리
-        def _get_sort_key(s):
-            return str(s.get("created_at_utc", "") or "")
-
-        sub_rows_asc = sorted(sub_rows_all, key=_get_sort_key)  # 오래된→최신
-        sub_rows_desc = list(reversed(sub_rows_asc))            # 최신→오래된(표시용)
+        # API가 내려주는 "원래 순서"를 표시용 최신순으로 사용 (가장 안정적)
+        # - sub_rows_desc: 최신 → 오래된 (표시용)
+        # - sub_rows_asc : 오래된 → 최신 (누적 계산용)
+        sub_rows_desc = list(sub_rows_all)            # ✅ 그대로(최신→과거라고 가정)
+        sub_rows_asc  = list(reversed(sub_rows_desc)) # ✅ 누적 계산은 과거→최신
 
         base = int(credit_cfg.get("base", 50) or 50)
         o_pt = int(credit_cfg.get("o", 1) or 1)
@@ -4325,9 +4323,8 @@ if "💳 신용등급" in tabs:
 
             for stx in stu_rows:
                 stid = str(stx["student_id"])
-                v = str(statuses.get(stid, "X") or "X")  # 없으면 X로 처리(통계청 기본과 동일)
+                v = str(statuses.get(stid, "X") or "X")  # 없으면 X
                 nxt = int(cur_score.get(stid, base) + _delta(v))
-                # 0~100 클램프
                 if nxt > 100:
                     nxt = 100
                 if nxt < 0:
@@ -4340,8 +4337,6 @@ if "💳 신용등급" in tabs:
         # -------------------------
         # 4) 표 표시(가로 페이징: 한 화면 7개 날짜)
         # - 왼쪽이 최신
-        # - 헤더: 날짜 + 제출물 내역(라벨) 2줄
-        # - 셀: "35점/7등급" 한 줄
         # -------------------------
         st.markdown("### 🧾 신용등급 변동 기록표")
         st.caption("• 점수는 제출물(O/X/△) 결과가 쌓일 때마다 누적됩니다. • 점수는 0~100 범위에서만 변합니다.")
@@ -4350,29 +4345,22 @@ if "💳 신용등급" in tabs:
         if "credit_col_offset" not in st.session_state:
             st.session_state["credit_col_offset"] = 0
 
+        # ✅ offset 클램프 (제출물 수가 바뀌어도 안전)
+        max_off = max(0, len(sub_rows_desc) - VISIBLE_COLS)
+        st.session_state["credit_col_offset"] = min(max_off, max(0, int(st.session_state["credit_col_offset"]) or 0))
+        off = int(st.session_state["credit_col_offset"])
+
         nav = st.columns([1.2, 1.2, 2.6])
         with nav[0]:
             if st.button("◀", use_container_width=True, key="cred_left"):
-                st.session_state["credit_col_offset"] = max(0, int(st.session_state["credit_col_offset"]) - VISIBLE_COLS)
+                st.session_state["credit_col_offset"] = max(0, off - VISIBLE_COLS)
                 st.rerun()
         with nav[1]:
             if st.button("▶", use_container_width=True, key="cred_right"):
-                max_off = max(0, len(sub_rows_desc) - VISIBLE_COLS)
-                st.session_state["credit_col_offset"] = min(max_off, int(st.session_state["credit_col_offset"]) + VISIBLE_COLS)
+                st.session_state["credit_col_offset"] = min(max_off, off + VISIBLE_COLS)
                 st.rerun()
 
-        # ✅ 최신 제출물이 항상 왼쪽에 오도록 정렬(최신→오래된)
-        def _sub_sort_key(x):
-            return str(x.get("created_at_utc", "") or "")
-
-        sub_rows_desc = sorted(sub_rows_desc, key=_sub_sort_key, reverse=True)
-
-        # ✅ offset(페이지) 클램프
-        max_off = max(0, len(sub_rows_desc) - VISIBLE_COLS)
-        st.session_state["credit_col_offset"] = min(max_off, max(0, int(st.session_state.get("credit_col_offset", 0) or 0)))
-        off = int(st.session_state["credit_col_offset"])
-
-        # ✅ 최신이 왼쪽: 앞에서부터(0부터) 7개씩 보여주기
+        # ✅ 최신이 왼쪽: 최신→과거 리스트에서 그대로 슬라이스
         sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]
 
         # ---- 헤더(날짜 + 제출물 내역 2줄) ----
