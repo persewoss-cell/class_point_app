@@ -3752,16 +3752,82 @@ if "📊 통계청" in tabs:
         if "stat_col_offset" not in st.session_state:
             st.session_state["stat_col_offset"] = 0
 
-        top_r = st.columns([1.2, 1.2, 2.6])
+        # -------------------------
+        # (PATCH) 페이지 네비: ◀ [페이지] ▶ + (오른쪽) 저장/초기화/삭제
+        # -------------------------
+        total_cols = len(sub_rows_all)
+        total_pages = max(1, (total_cols + VISIBLE_COLS - 1) // VISIBLE_COLS)
+
+        # offset 클램프
+        max_off = max(0, total_cols - VISIBLE_COLS)
+        st.session_state["stat_col_offset"] = min(max_off, max(0, int(st.session_state.get("stat_col_offset", 0) or 0)))
+        off = int(st.session_state["stat_col_offset"])
+
+        cur_page = min(total_pages, (off // VISIBLE_COLS) + 1)
+
+        # 한 줄에 보일 페이지 버튼(생략 포함)
+        def _build_pages(cur: int, total: int):
+            if total <= 8:
+                return list(range(1, total + 1))
+            pages = [1, 2]
+            if cur > 4:
+                pages.append("…")
+            for p in range(cur - 1, cur + 2):
+                if 3 <= p <= total - 2:
+                    pages.append(p)
+            if cur < total - 3:
+                pages.append("…")
+            pages += [total - 1, total]
+            # 중복 제거(순서 유지)
+            out = []
+            for x in pages:
+                if x not in out:
+                    out.append(x)
+            return out
+
+        top_r = st.columns([1.0, 4.6, 1.0, 2.6])
+
+        # ◀
         with top_r[0]:
             if st.button("◀", use_container_width=True, key="stat_col_left"):
-                st.session_state["stat_col_offset"] = max(0, int(st.session_state["stat_col_offset"]) - VISIBLE_COLS)
-        with top_r[1]:
-            if st.button("▶", use_container_width=True, key="stat_col_right"):
-                max_off = max(0, len(sub_rows_all) - VISIBLE_COLS)
-                st.session_state["stat_col_offset"] = min(max_off, int(st.session_state["stat_col_offset"]) + VISIBLE_COLS)
+                st.session_state["stat_col_offset"] = max(0, off - VISIBLE_COLS)
+                st.rerun()
 
+        # [페이지들] ... [마지막]/[전체]
+        with top_r[1]:
+            pages = _build_pages(cur_page, total_pages)
+
+            # 페이지 버튼들을 한 줄로(가능한 한) 배치
+            # 너무 길면 Streamlit이 줄바꿈할 수 있는데, 8개 이하면 거의 1줄 유지됨
+            cols = st.columns([0.55] * (len(pages) + 1))
+            for i, p in enumerate(pages):
+                with cols[i]:
+                    if p == "…":
+                        st.markdown("<div style='text-align:center; padding-top:6px;'>…</div>", unsafe_allow_html=True)
+                    else:
+                        is_cur = (int(p) == int(cur_page))
+                        label = f"[{p}]"
+                        if st.button(label, use_container_width=True, key=f"stat_page_{p}", disabled=is_cur):
+                            st.session_state["stat_col_offset"] = (int(p) - 1) * VISIBLE_COLS
+                            st.rerun()
+
+            # 마지막/전체 표시
+            with cols[-1]:
+                st.markdown(
+                    f"<div style='text-align:right; font-weight:800; padding-top:6px;'>"
+                    f"[{cur_page}]/{total_pages}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+        # ▶
         with top_r[2]:
+            if st.button("▶", use_container_width=True, key="stat_col_right"):
+                st.session_state["stat_col_offset"] = min(max_off, off + VISIBLE_COLS)
+                st.rerun()
+
+        # 오른쪽 버튼들(기존 그대로)
+        with top_r[3]:
             bsave, breset, bdel = st.columns([1, 1, 1])
             with bsave:
                 save_clicked = st.button("✅ 저장", use_container_width=True, key="stat_table_save")
