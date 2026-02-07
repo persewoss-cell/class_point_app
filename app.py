@@ -4680,29 +4680,30 @@ def get_interest_rate_percent(credit_grade: int, weeks: int) -> int:
 
     return (11 - g) * w
 
-        # -------------------------------------------------
-        # (2) 신용점수/등급(현재 시점) 계산 (학생 1명용)
-        #  - credit_scoring 설정 + 통계청 제출물(statuses) 누적
-        # -------------------------------------------------
-        def _get_credit_cfg():
-            ref = db.collection("config").document("credit_scoring")
-            snap = ref.get()
-            if not snap.exists:
-                return {"base": 50, "o": 1, "x": -3, "tri": 0}
-            d = snap.to_dict() or {}
-            return {
-                "base": int(d.get("base", 50) or 50),
-                "o": int(d.get("o", 1) or 1),
-                "x": int(d.get("x", -3) or -3),
-                "tri": int(d.get("tri", 0) or 0),
-            }
+ # -------------------------------------------------
+# (2) 신용점수/등급(현재 시점) 계산 (학생 1명용)
+#  - credit_scoring 설정 + 통계청 제출물(statuses) 누적
+# -------------------------------------------------
+def _get_credit_cfg():
+    ref = db.collection("config").document("credit_scoring")
+    snap = ref.get()
+    if not snap.exists:
+        return {"base": 50, "o": 1, "x": -3, "tri": 0}
+    d = snap.to_dict() or {}
+    return {
+        "base": int(d.get("base", 50) or 50),
+        "o": int(d.get("o", 1) or 1),
+        "x": int(d.get("x", -3) or -3),
+        "tri": int(d.get("tri", 0) or 0),
+    }
 
-        def _calc_credit_score_for_student(student_id: str) -> tuple[int, int]:
-            cfg = _get_credit_cfg()
-            base = int(cfg.get("base", 50) or 50)
-            o_pt = int(cfg.get("o", 1) or 1)
-            x_pt = int(cfg.get("x", -3) or -3)
-            tri_pt = int(cfg.get("tri", 0) or 0)
+
+def _calc_credit_score_for_student(student_id: str) -> tuple[int, int]:
+    cfg = _get_credit_cfg()
+    base = int(cfg.get("base", 50) or 50)
+    o_pt = int(cfg.get("o", 1) or 1)
+    x_pt = int(cfg.get("x", -3) or -3)
+    tri_pt = int(cfg.get("tri", 0) or 0)
 
             def _delta(v):
                 vv = _norm_status(v)
