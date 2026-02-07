@@ -4402,33 +4402,112 @@ if "💳 신용등급" in tabs:
             scores_by_sub[sub_id] = snap_map
 
         # -------------------------
-        # 4) 표 표시(가로 페이징: 한 화면 7개 날짜)
-        # - 왼쪽이 최신
+        # (PATCH) 가로 페이징 (통계청과 동일 로직)
+        # 기준: credit_page_idx (0 = 최신 페이지)
         # -------------------------
-        st.markdown("### 🧾 신용등급 변동 기록표")
-        st.caption("• 점수는 제출물(O/X/△) 결과가 쌓일 때마다 누적됩니다. • 점수는 0~100 범위에서만 변합니다.")
+        import math
 
         VISIBLE_COLS = 7
-        if "credit_col_offset" not in st.session_state:
-            st.session_state["credit_col_offset"] = 0
+        total_cols = len(sub_rows_desc)
+        total_pages = max(1, int(math.ceil(total_cols / VISIBLE_COLS)))
 
-        # ✅ offset 클램프 (제출물 수가 바뀌어도 안전)
-        max_off = max(0, len(sub_rows_desc) - VISIBLE_COLS)
-        st.session_state["credit_col_offset"] = min(max_off, max(0, int(st.session_state["credit_col_offset"]) or 0))
-        off = int(st.session_state["credit_col_offset"])
+        if "credit_page_idx" not in st.session_state:
+            st.session_state["credit_page_idx"] = 0  # ✅ 최신 페이지
 
-        nav = st.columns([1.2, 1.2, 2.6])
-        with nav[0]:
-            if st.button("◀", use_container_width=True, key="cred_left"):
-                st.session_state["credit_col_offset"] = max(0, off - VISIBLE_COLS)
-                st.rerun()
-        with nav[1]:
-            if st.button("▶", use_container_width=True, key="cred_right"):
-                st.session_state["credit_col_offset"] = min(max_off, off + VISIBLE_COLS)
-                st.rerun()
+        # page_idx 안전 보정
+        st.session_state["credit_page_idx"] = max(
+            0,
+            min(int(st.session_state["credit_page_idx"]), total_pages - 1),
+        )
+        page_idx = int(st.session_state["credit_page_idx"])
+        cur_page = page_idx + 1  # 1-based
 
-        # ✅ 최신이 왼쪽: 최신→과거 리스트에서 그대로 슬라이스
-        sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]
+        def _credit_goto_page(p: int):
+            p = max(1, min(int(p), total_pages))
+            st.session_state["credit_page_idx"] = p - 1
+            st.rerun()
+
+        def _page_items(cur: int, last: int):
+            if last <= 9:
+                return list(range(1, last + 1))
+            items = [1]
+            left = max(2, cur - 1)
+            right = min(last - 1, cur + 1)
+            if left > 2:
+                items.append("…")
+            items.extend(range(left, right + 1))
+            if right < last - 1:
+                items.append("…")
+            items.append(last)
+            out = []
+            for x in items:
+                if not out or out[-1] != x:
+                    out.append(x)
+            return out
+
+        # -------------------------
+        # 네비게이션 UI
+        # -------------------------
+        nav_row = st.columns([7.6, 2.4], gap="small")
+
+        with nav_row[0]:
+            items = _page_items(cur_page, total_pages)
+            widths = [0.9] + [0.6] * len(items) + [1.1] + [0.9]
+            nav_cols = st.columns(widths, gap="small")
+
+            # ◀
+            with nav_cols[0]:
+                if st.button(
+                    "◀",
+                    key="credit_nav_left",
+                    use_container_width=True,
+                    disabled=(cur_page <= 1),
+                ):
+                    _credit_goto_page(cur_page - 1)
+
+            # 페이지 숫자
+            for i, it in enumerate(items):
+                with nav_cols[i + 1]:
+                    if it == "…":
+                        st.markdown(
+                            "<div style='text-align:center; opacity:0.55;'>…</div>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        p = int(it)
+                        if st.button(
+                            f"{p}",
+                            key=f"credit_nav_p_{p}",
+                            use_container_width=True,
+                            disabled=(p == cur_page),
+                        ):
+                            _credit_goto_page(p)
+
+            # / 전체페이지 N (텍스트)
+            with nav_cols[len(items) + 1]:
+                st.markdown(
+                    f"<div style='text-align:left; font-weight:700; padding-top:6px;'>"
+                    f"/ 전체페이지 {total_pages}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+            # ▶
+            with nav_cols[len(items) + 2]:
+                if st.button(
+                    "▶",
+                    key="credit_nav_right",
+                    use_container_width=True,
+                    disabled=(cur_page >= total_pages),
+                ):
+                    _credit_goto_page(cur_page + 1)
+
+        # -------------------------
+        # ✅ page_idx 기준으로 날짜 컬럼 슬라이스
+        # -------------------------
+        start = page_idx * VISIBLE_COLS
+        end = start + VISIBLE_COLS
+        sub_rows_view = sub_rows_desc[start:end]
 
         # ---- 헤더(날짜 + 제출물 내역 2줄) ----
         hdr_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
