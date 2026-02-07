@@ -4662,14 +4662,23 @@ if "🏦 은행(적금)" in tabs:
 
         bank_rate_cfg = _get_bank_rate_cfg()
 
-        def _get_interest_rate_percent(grade: int, weeks: int) -> float:
-            g = str(int(grade))
-            w = str(int(weeks))
-            rates = bank_rate_cfg.get("rates", {}) or {}
-            if g in rates and w in (rates.get(g) or {}):
-                return float(rates[g][w])
-            # 없으면 0%
-            return 0.0
+def get_interest_rate_percent(credit_grade: int, weeks: int) -> int:
+    """
+    은행 예금 이자율 계산표(%) – 엑셀 기준
+    이자율(%) = (11 - 신용등급) × 기간(주)
+    """
+    try:
+        g = int(credit_grade)
+        w = int(weeks)
+    except Exception:
+        return 0
+
+    if g < 1: g = 1
+    if g > 10: g = 10
+    if w < 1: w = 1
+    if w > 10: w = 10
+
+    return (11 - g) * w
 
         # -------------------------------------------------
         # (2) 신용점수/등급(현재 시점) 계산 (학생 1명용)
