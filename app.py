@@ -2369,112 +2369,110 @@ if "🏦 내 통장" in tabs:
             st.markdown(f"## 🧾 {login_name} 통장")
             st.markdown(f"#### 통장 잔액: **{balance} 포인트**")
 
-            sub1, sub2 = st.tabs(["📝 거래", "📒 내역"])
+            # ✅ 서브탭 제거: 한 화면에 거래 → 되돌리기 → 내역 순서로 표시(하우스 포인트뱅크 스타일)
+            st.subheader("📝 거래 기록(통장에 찍기)")
 
-            with sub1:
-                st.subheader("📝 거래 기록(통장에 찍기)")
+            memo_u, dep_u, wd_u = render_admin_trade_ui(
+                prefix=f"user_trade_{login_name}",
+                templates_list=TEMPLATES,
+                template_by_display=TEMPLATE_BY_DISPLAY,
+            )
 
-                memo_u, dep_u, wd_u = render_admin_trade_ui(
-                    prefix=f"user_trade_{login_name}",
-                    templates_list=TEMPLATES,
-                    template_by_display=TEMPLATE_BY_DISPLAY,
-                )
+            col_btn1, col_btn2 = st.columns([1, 1])
 
-                col_btn1, col_btn2 = st.columns([1, 1])
+            with col_btn1:
+                if st.button("저장", key=f"save_{login_name}", use_container_width=True):
+                    memo = str(memo_u or "").strip()
+                    deposit = int(dep_u or 0)
+                    withdraw = int(wd_u or 0)
 
-                with col_btn1:
-                    if st.button("저장", key=f"save_{login_name}", use_container_width=True):
-                        memo = str(memo_u or "").strip()
-                        deposit = int(dep_u or 0)
-                        withdraw = int(wd_u or 0)
+                    if not memo:
+                        st.error("내역을 입력해 주세요.")
+                    elif (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
+                        st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
+                    else:
+                        res = api_add_tx(login_name, login_pin, memo, deposit, withdraw)
+                        if res.get("ok"):
+                            toast("저장 완료!", icon="✅")
 
-                        if not memo:
-                            st.error("내역을 입력해 주세요.")
-                        elif (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
-                            st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
+                            new_bal = int(res.get("balance", balance) or balance)
+                            st.session_state.data.setdefault(login_name, {})
+                            st.session_state.data[login_name]["balance"] = new_bal
+
+                            if student_id:
+                                tx_res = api_get_txs_by_student_id(student_id, limit=120)
+                                if tx_res.get("ok"):
+                                    df_new = pd.DataFrame(tx_res.get("rows", []))
+                                    if not df_new.empty:
+                                        df_new = df_new.sort_values("created_at_utc", ascending=False)
+                                    st.session_state.data[login_name]["df_tx"] = df_new
+
+                            pfx = f"user_trade_{login_name}"
+                            st.session_state[f"{pfx}_reset_request"] = True
+                            st.rerun()
                         else:
-                            res = api_add_tx(login_name, login_pin, memo, deposit, withdraw)
-                            if res.get("ok"):
-                                toast("저장 완료!", icon="✅")
+                            st.error(res.get("error", "저장 실패"))
 
-                                new_bal = int(res.get("balance", balance) or balance)
-                                st.session_state.data.setdefault(login_name, {})
-                                st.session_state.data[login_name]["balance"] = new_bal
+            with col_btn2:
+                if st.button("되돌리기(관리자)", key=f"undo_btn_{login_name}", use_container_width=True):
+                    st.session_state.undo_mode = not st.session_state.undo_mode
 
-                                if student_id:
-                                    tx_res = api_get_txs_by_student_id(student_id, limit=120)
-                                    if tx_res.get("ok"):
-                                        df_new = pd.DataFrame(tx_res.get("rows", []))
-                                        if not df_new.empty:
-                                            df_new = df_new.sort_values("created_at_utc", ascending=False)
-                                        st.session_state.data[login_name]["df_tx"] = df_new
+            if st.session_state.undo_mode:
+                st.divider()
+                st.subheader("↩️ 선택 되돌리기(관리자 전용)")
+                admin_pin2 = st.text_input("관리자 PIN 입력", type="password", key=f"undo_admin_pin_{login_name}").strip()
 
-                                pfx = f"user_trade_{login_name}"
-                                st.session_state[f"{pfx}_reset_request"] = True
+                if df_tx is None or df_tx.empty:
+                    st.info("거래 내역이 없어요.")
+                else:
+                    view_df = df_tx.head(50).copy()
+
+                    def _can_rollback_row(row):
+                        if str(row.get("type", "")) == "rollback":
+                            return False
+                        if _is_savings_memo(row.get("memo", "")) or str(row.get("type", "")) in ("maturity",):
+                            return False
+                        return True
+
+                    view_df["가능"] = view_df.apply(_can_rollback_row, axis=1)
+                    st.caption("✅ 체크한 항목만 되돌립니다. (이미 되돌림/적금은 제외)")
+
+                    selected_ids = []
+                    for _, r in view_df.iterrows():
+                        tx_id = r["tx_id"]
+                        label = f"{r['created_at_kr']} | {r['memo']} | +{int(r['deposit'])} / -{int(r['withdraw'])}"
+                        ck = st.checkbox(label, key=f"rb_ck_{login_name}_{tx_id}", disabled=(not bool(r["가능"])))
+                        if ck and bool(r["가능"]):
+                            selected_ids.append(tx_id)
+
+                    if st.button("선택 항목 되돌리기", key=f"do_rb_{login_name}", use_container_width=True):
+                        if not is_admin_pin(admin_pin2):
+                            st.error("관리자 PIN이 틀립니다.")
+                        elif not selected_ids:
+                            st.warning("체크된 항목이 없어요.")
+                        else:
+                            res2 = api_admin_rollback_selected(admin_pin2, student_id, selected_ids)
+                            if res2.get("ok"):
+                                toast(f"선택 {res2.get('undone')}건 되돌림 완료", icon="↩️")
+                                tx_res2 = api_get_txs_by_student_id(student_id, limit=120)
+                                if tx_res2.get("ok"):
+                                    df_new2 = pd.DataFrame(tx_res2.get("rows", []))
+                                    if not df_new2.empty:
+                                        df_new2 = df_new2.sort_values("created_at_utc", ascending=False)
+                                    st.session_state.data[login_name]["df_tx"] = df_new2
+
+                                bal_res2 = api_get_balance(login_name, login_pin)
+                                if bal_res2.get("ok"):
+                                    st.session_state.data[login_name]["balance"] = int(bal_res2.get("balance", 0) or 0)
+
+                                st.session_state.undo_mode = False
                                 st.rerun()
                             else:
-                                st.error(res.get("error", "저장 실패"))
+                                st.error(res2.get("error", "되돌리기 실패"))
 
-                with col_btn2:
-                    if st.button("되돌리기(관리자)", key=f"undo_btn_{login_name}", use_container_width=True):
-                        st.session_state.undo_mode = not st.session_state.undo_mode
-
-                if st.session_state.undo_mode:
-                    st.divider()
-                    st.subheader("↩️ 선택 되돌리기(관리자 전용)")
-                    admin_pin2 = st.text_input("관리자 PIN 입력", type="password", key=f"undo_admin_pin_{login_name}").strip()
-
-                    if df_tx is None or df_tx.empty:
-                        st.info("거래 내역이 없어요.")
-                    else:
-                        view_df = df_tx.head(50).copy()
-
-                        def _can_rollback_row(row):
-                            if str(row.get("type", "")) == "rollback":
-                                return False
-                            if _is_savings_memo(row.get("memo", "")) or str(row.get("type", "")) in ("maturity",):
-                                return False
-                            return True
-
-                        view_df["가능"] = view_df.apply(_can_rollback_row, axis=1)
-                        st.caption("✅ 체크한 항목만 되돌립니다. (이미 되돌림/적금은 제외)")
-
-                        selected_ids = []
-                        for _, r in view_df.iterrows():
-                            tx_id = r["tx_id"]
-                            label = f"{r['created_at_kr']} | {r['memo']} | +{int(r['deposit'])} / -{int(r['withdraw'])}"
-                            ck = st.checkbox(label, key=f"rb_ck_{login_name}_{tx_id}", disabled=(not bool(r["가능"])))
-                            if ck and bool(r["가능"]):
-                                selected_ids.append(tx_id)
-
-                        if st.button("선택 항목 되돌리기", key=f"do_rb_{login_name}", use_container_width=True):
-                            if not is_admin_pin(admin_pin2):
-                                st.error("관리자 PIN이 틀립니다.")
-                            elif not selected_ids:
-                                st.warning("체크된 항목이 없어요.")
-                            else:
-                                res2 = api_admin_rollback_selected(admin_pin2, student_id, selected_ids)
-                                if res2.get("ok"):
-                                    toast(f"선택 {res2.get('undone')}건 되돌림 완료", icon="↩️")
-                                    tx_res2 = api_get_txs_by_student_id(student_id, limit=120)
-                                    if tx_res2.get("ok"):
-                                        df_new2 = pd.DataFrame(tx_res2.get("rows", []))
-                                        if not df_new2.empty:
-                                            df_new2 = df_new2.sort_values("created_at_utc", ascending=False)
-                                        st.session_state.data[login_name]["df_tx"] = df_new2
-
-                                    bal_res2 = api_get_balance(login_name, login_pin)
-                                    if bal_res2.get("ok"):
-                                        st.session_state.data[login_name]["balance"] = int(bal_res2.get("balance", 0) or 0)
-
-                                    st.session_state.undo_mode = False
-                                    st.rerun()
-                                else:
-                                    st.error(res2.get("error", "되돌리기 실패"))
-
-            with sub2:
-                st.subheader("📒 통장 내역(최신순)")
-                render_tx_table(df_tx)
+            st.divider()
+            st.subheader("📒 통장 내역(최신순)")
+            render_tx_table(df_tx)
 
 # =========================
 # 👥 계정 정보/활성화 (관리자 전용)
