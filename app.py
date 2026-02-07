@@ -4141,6 +4141,274 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                     st.error(resd2.get("error", "삭제 실패"))
 
 # =========================
+# 💳 신용등급 탭
+# - 통계청 제출(O/X/△) 누적 기반 신용점수/등급 기록표
+# =========================
+if "💳 신용등급" in tabs:
+    with tab_map["💳 신용등급"]:
+        st.subheader("💳 신용등급")
+
+        if not is_admin:
+            st.info("관리자 전용 탭입니다.")
+            st.stop()
+
+        # -------------------------
+        # 0) 학생 목록(번호/이름) : 계정정보 탭과 동일(활성 학생)
+        # -------------------------
+        docs_acc = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        stu_rows = []
+        for d in docs_acc:
+            x = d.to_dict() or {}
+            try:
+                no = int(x.get("no", 999999) or 999999)
+            except Exception:
+                no = 999999
+            nm = str(x.get("name", "") or "").strip()
+            if nm:
+                stu_rows.append({"student_id": d.id, "no": no, "name": nm})
+        stu_rows.sort(key=lambda r: (r["no"], r["name"]))
+
+        if not stu_rows:
+            st.info("활성화된 학생(계정)이 없습니다.")
+            st.stop()
+
+        # -------------------------
+        # 1) 점수/등급 규칙표(1~10등급)
+        # -------------------------
+        st.markdown("### 📌 신용등급 구분표")
+        st.markdown(
+            """
+<style>
+.credit-band { border:1px solid #ddd; border-radius:12px; overflow:hidden; }
+.credit-band table { width:100%; border-collapse:collapse; font-weight:700; }
+.credit-band th, .credit-band td { border-right:1px solid #ddd; padding:10px 6px; text-align:center; }
+.credit-band th:last-child, .credit-band td:last-child { border-right:none; }
+.credit-band th { background:#f3f4f6; }
+</style>
+<div class="credit-band">
+  <table>
+    <tr>
+      <th>1등급</th><th>2등급</th><th>3등급</th><th>4등급</th><th>5등급</th>
+      <th>6등급</th><th>7등급</th><th>8등급</th><th>9등급</th><th>10등급</th>
+    </tr>
+    <tr>
+      <td>90이상</td><td>80-89</td><td>70-79</td><td>60-69</td><td>50-59</td>
+      <td>40-49</td><td>30-39</td><td>20-29</td><td>10-19</td><td>0-9</td>
+    </tr>
+  </table>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+        def _score_to_grade(score: int) -> int:
+            s = int(score)
+            if s >= 90:
+                return 1
+            if s >= 80:
+                return 2
+            if s >= 70:
+                return 3
+            if s >= 60:
+                return 4
+            if s >= 50:
+                return 5
+            if s >= 40:
+                return 6
+            if s >= 30:
+                return 7
+            if s >= 20:
+                return 8
+            if s >= 10:
+                return 9
+            return 10
+
+        def _fmt_kor_date_short(iso_utc: str) -> str:
+            # "0월 0일(요일한글자)" 형태
+            try:
+                # 예: 2026-02-07T00:00:00Z
+                dt = datetime.fromisoformat(str(iso_utc).replace("Z", "+00:00")).astimezone(KST)
+                wd = ["월", "화", "수", "목", "금", "토", "일"][dt.weekday()]
+                return f"{dt.month}월 {dt.day}일({wd})"
+            except Exception:
+                return ""
+
+        st.divider()
+
+        # -------------------------
+        # 2) 점수 계산 설정(기본값)
+        # -------------------------
+        def _get_credit_cfg():
+            ref = db.collection("config").document("credit_scoring")
+            snap = ref.get()
+            if not snap.exists:
+                return {"base": 50, "o": 1, "x": -3, "tri": 0}
+            d = snap.to_dict() or {}
+            return {
+                "base": int(d.get("base", 50) or 50),
+                "o": int(d.get("o", 1) or 1),
+                "x": int(d.get("x", -3) or -3),
+                "tri": int(d.get("tri", 0) or 0),
+            }
+
+        def _save_credit_cfg(cfg: dict):
+            db.collection("config").document("credit_scoring").set(
+                {
+                    "base": int(cfg.get("base", 50) or 50),
+                    "o": int(cfg.get("o", 1) or 1),
+                    "x": int(cfg.get("x", -3) or -3),
+                    "tri": int(cfg.get("tri", 0) or 0),
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+
+        credit_cfg = _get_credit_cfg()
+
+        with st.expander("⚙️ 점수 계산 설정(O/X/△ 점수 변경)", expanded=False):
+            c1, c2, c3, c4, c5 = st.columns([1.1, 1, 1, 1, 1.2])
+            with c1:
+                base_in = st.number_input("초기 점수", min_value=0, max_value=100, step=1, value=int(credit_cfg["base"]), key="cred_base")
+            with c2:
+                o_in = st.number_input("O 일 때", step=1, value=int(credit_cfg["o"]), key="cred_o")
+            with c3:
+                x_in = st.number_input("X 일 때", step=1, value=int(credit_cfg["x"]), key="cred_x")
+            with c4:
+                tri_in = st.number_input("△ 일 때", step=1, value=int(credit_cfg["tri"]), key="cred_tri")
+            with c5:
+                if st.button("✅ 설정 저장", use_container_width=True, key="cred_cfg_save"):
+                    _save_credit_cfg({"base": base_in, "o": o_in, "x": x_in, "tri": tri_in})
+                    toast("설정 저장 완료!", icon="✅")
+                    st.rerun()
+
+        # -------------------------
+        # 3) 통계청 제출물(열) 로드 → 누적 점수 계산
+        # -------------------------
+        sub_res = api_list_stat_submissions_cached(limit_cols=60)
+        sub_rows_all = sub_res.get("rows", []) if sub_res.get("ok") else []
+
+        if not sub_rows_all:
+            st.info("통계청 제출물 내역이 없습니다. 먼저 통계청 탭에서 제출물을 추가하세요.")
+            st.stop()
+
+        # API가 보통 최신순(내림차순)이라 가정 → 누적 계산은 오래된 것부터
+        # created_at_utc 없으면 현재 순서 reverse로 처리
+        def _get_sort_key(s):
+            return str(s.get("created_at_utc", "") or "")
+
+        sub_rows_asc = sorted(sub_rows_all, key=_get_sort_key)  # 오래된→최신
+        sub_rows_desc = list(reversed(sub_rows_asc))            # 최신→오래된(표시용)
+
+        base = int(credit_cfg.get("base", 50) or 50)
+        o_pt = int(credit_cfg.get("o", 1) or 1)
+        x_pt = int(credit_cfg.get("x", -3) or -3)
+        tri_pt = int(credit_cfg.get("tri", 0) or 0)
+
+        def _delta(v: str) -> int:
+            v = str(v or "X")
+            if v == "O":
+                return o_pt
+            if v == "△":
+                return tri_pt
+            return x_pt  # 기본 X
+
+        # 학생별 누적 점수 스냅샷: scores_by_sub[sub_id][student_id] = score_after
+        scores_by_sub = {}  # submission_id -> {student_id: score}
+        cur_score = {str(s["student_id"]): int(base) for s in stu_rows}
+
+        for sub in sub_rows_asc:
+            sub_id = str(sub.get("submission_id") or "")
+            if not sub_id:
+                continue
+            statuses = dict(sub.get("statuses", {}) or {})
+            snap_map = {}
+
+            for stx in stu_rows:
+                stid = str(stx["student_id"])
+                v = str(statuses.get(stid, "X") or "X")  # 없으면 X로 처리(통계청 기본과 동일)
+                nxt = int(cur_score.get(stid, base) + _delta(v))
+                # 0~100 클램프
+                if nxt > 100:
+                    nxt = 100
+                if nxt < 0:
+                    nxt = 0
+                cur_score[stid] = nxt
+                snap_map[stid] = nxt
+
+            scores_by_sub[sub_id] = snap_map
+
+        # -------------------------
+        # 4) 표 표시(가로 페이징: 한 화면 N개 날짜)
+        # -------------------------
+        st.markdown("### 🧾 신용등급 변동 기록표")
+        st.caption("• 점수는 제출물(O/X/△) 결과가 쌓일 때마다 누적됩니다. • 점수는 0~100 범위에서만 변합니다.")
+
+        VISIBLE_COLS = 5
+        if "credit_col_offset" not in st.session_state:
+            st.session_state["credit_col_offset"] = 0
+
+        nav = st.columns([1.2, 1.2, 2.6])
+        with nav[0]:
+            if st.button("◀", use_container_width=True, key="cred_left"):
+                st.session_state["credit_col_offset"] = max(0, int(st.session_state["credit_col_offset"]) - VISIBLE_COLS)
+        with nav[1]:
+            if st.button("▶", use_container_width=True, key="cred_right"):
+                max_off = max(0, len(sub_rows_desc) - VISIBLE_COLS)
+                st.session_state["credit_col_offset"] = min(max_off, int(st.session_state["credit_col_offset"]) + VISIBLE_COLS)
+
+        off = int(st.session_state.get("credit_col_offset", 0) or 0)
+        sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]  # 최신부터 N개
+
+        # 헤더(날짜)
+        hdr_cols = st.columns([0.55, 1.2] + [1.6] * len(sub_rows_view))
+        with hdr_cols[0]:
+            st.markdown("**번호**")
+        with hdr_cols[1]:
+            st.markdown("**이름**")
+
+        for j, s in enumerate(sub_rows_view):
+            with hdr_cols[j + 2]:
+                # date_display 우선, 없으면 created_at_utc로 "0월0일(요일)" 생성
+                date_disp = str(s.get("date_display", "") or "").strip()
+                if not date_disp:
+                    date_disp = _fmt_kor_date_short(s.get("created_at_utc", ""))
+                st.markdown(f"<div style='text-align:center;font-weight:800;line-height:1.15'>{date_disp}</div>", unsafe_allow_html=True)
+                st.markdown("<div style='text-align:center;color:#6b7280;font-weight:700;font-size:0.82rem'>점수 / 등급</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+        # 본문(학생별)
+        for stx in stu_rows:
+            stid = str(stx["student_id"])
+            no = int(stx["no"])
+            nm = stx["name"]
+
+            row_cols = st.columns([0.55, 1.2] + [1.6] * len(sub_rows_view))
+            with row_cols[0]:
+                st.markdown(str(no))
+            with row_cols[1]:
+                st.markdown(str(nm))
+
+            for j, sub in enumerate(sub_rows_view):
+                sub_id = str(sub.get("submission_id") or "")
+                sc = None
+                if sub_id and sub_id in scores_by_sub:
+                    sc = int(scores_by_sub[sub_id].get(stid, base))
+                else:
+                    sc = int(base)
+
+                gr = _score_to_grade(sc)
+                with row_cols[j + 2]:
+                    st.markdown(
+                        f"<div style='text-align:center;font-weight:900'>{sc}</div>"
+                        f"<div style='text-align:center;color:#374151;font-weight:800;font-size:0.9rem'>{gr}등급</div>",
+                        unsafe_allow_html=True,
+                    )
+
+        st.divider()
+        st.caption("• 왼쪽/오른쪽 버튼으로 날짜(제출물) 열을 이동해서 확인할 수 있어요.")
+
+# =========================
 # 10) 🗓️ 일정 (권한별 수정)
 # =========================
 def add_schedule(area: str, d: date, title: str, owner_roles: list[str], created_by: str):
