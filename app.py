@@ -1108,7 +1108,34 @@ def api_get_balance(name, pin):
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
     data = student_doc.to_dict() or {}
-    return {"ok": True, "balance": int(data.get("balance", 0) or 0), "student_id": student_doc.id}
+
+    # ✅ 신용등급(없으면 0)
+    credit_grade = int(data.get("credit_grade", 0) or 0)
+
+    return {
+        "ok": True,
+        "balance": int(data.get("balance", 0) or 0),
+        "student_id": student_doc.id,
+        "credit_grade": credit_grade,
+    }
+
+def api_get_credit_grade_by_student_id(student_id: str) -> int:
+    """
+    ✅ 학생 신용등급 조회
+    - 신용등급 탭에서 저장해둔 값을 students 문서의 credit_grade 필드로 사용한다고 가정
+    - 없으면 0등급으로 표시
+    """
+    try:
+        if not student_id:
+            return 0
+        snap = db.collection("students").document(student_id).get()
+        if not snap.exists:
+            return 0
+        data = snap.to_dict() or {}
+        return int(data.get("credit_grade", 0) or 0)
+    except Exception:
+        return 0
+
 
 # =========================
 # Admin rollback (너 코드 그대로)
@@ -2300,6 +2327,7 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
 
     balance = int(bal_res["balance"])
     student_id = bal_res.get("student_id")
+    credit_grade = int(bal_res.get("credit_grade", 0) or 0)
 
     tx_res = api_get_txs_by_student_id(student_id, limit=300)
     if not tx_res.get("ok"):
@@ -2315,6 +2343,8 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
         "balance": balance,
         "student_id": student_id,
         "ts": now,
+        "credit_grade": credit_grade,
+
     }
 
 
