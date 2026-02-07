@@ -4338,12 +4338,15 @@ if "💳 신용등급" in tabs:
             scores_by_sub[sub_id] = snap_map
 
         # -------------------------
-        # 4) 표 표시(가로 페이징: 한 화면 N개 날짜)
+        # 4) 표 표시(가로 페이징: 한 화면 7개 날짜)
+        # - 왼쪽이 최신
+        # - 헤더: 날짜 + 제출물 내역(라벨) 2줄
+        # - 셀: "35점/7등급" 한 줄
         # -------------------------
         st.markdown("### 🧾 신용등급 변동 기록표")
         st.caption("• 점수는 제출물(O/X/△) 결과가 쌓일 때마다 누적됩니다. • 점수는 0~100 범위에서만 변합니다.")
 
-        VISIBLE_COLS = 5
+        VISIBLE_COLS = 7
         if "credit_col_offset" not in st.session_state:
             st.session_state["credit_col_offset"] = 0
 
@@ -4351,16 +4354,19 @@ if "💳 신용등급" in tabs:
         with nav[0]:
             if st.button("◀", use_container_width=True, key="cred_left"):
                 st.session_state["credit_col_offset"] = max(0, int(st.session_state["credit_col_offset"]) - VISIBLE_COLS)
+                st.rerun()
         with nav[1]:
             if st.button("▶", use_container_width=True, key="cred_right"):
                 max_off = max(0, len(sub_rows_desc) - VISIBLE_COLS)
                 st.session_state["credit_col_offset"] = min(max_off, int(st.session_state["credit_col_offset"]) + VISIBLE_COLS)
+                st.rerun()
 
         off = int(st.session_state.get("credit_col_offset", 0) or 0)
-        sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]  # 최신부터 N개
+        # ✅ 최신이 왼쪽: sub_rows_desc(최신→오래된)에서 그대로 슬라이스
+        sub_rows_view = sub_rows_desc[off : off + VISIBLE_COLS]
 
-        # 헤더(날짜)
-        hdr_cols = st.columns([0.55, 1.2] + [1.6] * len(sub_rows_view))
+        # ---- 헤더(날짜 + 제출물 내역 2줄) ----
+        hdr_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
         with hdr_cols[0]:
             st.markdown("**번호**")
         with hdr_cols[1]:
@@ -4368,22 +4374,28 @@ if "💳 신용등급" in tabs:
 
         for j, s in enumerate(sub_rows_view):
             with hdr_cols[j + 2]:
-                # date_display 우선, 없으면 created_at_utc로 "0월0일(요일)" 생성
                 date_disp = str(s.get("date_display", "") or "").strip()
                 if not date_disp:
                     date_disp = _fmt_kor_date_short(s.get("created_at_utc", ""))
-                st.markdown(f"<div style='text-align:center;font-weight:800;line-height:1.15'>{date_disp}</div>", unsafe_allow_html=True)
-                st.markdown("<div style='text-align:center;color:#6b7280;font-weight:700;font-size:0.82rem'>점수 / 등급</div>", unsafe_allow_html=True)
+
+                lab = str(s.get("label", "") or "").strip()
+
+                st.markdown(
+                    f"<div style='text-align:center; font-weight:900; line-height:1.15;'>"
+                    f"{date_disp}<br>{lab}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
         st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-        # 본문(학생별)
+        # ---- 본문(학생별) ----
         for stx in stu_rows:
             stid = str(stx["student_id"])
             no = int(stx["no"])
             nm = stx["name"]
 
-            row_cols = st.columns([0.55, 1.2] + [1.6] * len(sub_rows_view))
+            row_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
             with row_cols[0]:
                 st.markdown(str(no))
             with row_cols[1]:
@@ -4391,17 +4403,16 @@ if "💳 신용등급" in tabs:
 
             for j, sub in enumerate(sub_rows_view):
                 sub_id = str(sub.get("submission_id") or "")
-                sc = None
                 if sub_id and sub_id in scores_by_sub:
                     sc = int(scores_by_sub[sub_id].get(stid, base))
                 else:
                     sc = int(base)
 
                 gr = _score_to_grade(sc)
+
                 with row_cols[j + 2]:
                     st.markdown(
-                        f"<div style='text-align:center;font-weight:900'>{sc}</div>"
-                        f"<div style='text-align:center;color:#374151;font-weight:800;font-size:0.9rem'>{gr}등급</div>",
+                        f"<div style='text-align:center; font-weight:900;'>{sc}점/{gr}등급</div>",
                         unsafe_allow_html=True,
                     )
 
