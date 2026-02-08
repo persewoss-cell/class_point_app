@@ -2679,7 +2679,7 @@ def tab_visible(tab_name: str):
 if is_admin:
     tabs = [t for t in ALL_TABS if tab_visible(t)]
     # ✅ 관리자 탭에서만 '🏦 내 통장' 탭 이름을 변경(학생 탭에는 영향 없음)
-    tabs_display = [("🎁보상/벌금/템플릿" if t == "🏦 내 통장" else t) for t in tabs]
+    tabs_display = [("🏦보상/벌금/템플릿" if t == "🏦 내 통장" else t) for t in tabs]
     tab_objs = st.tabs(tabs_display)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
