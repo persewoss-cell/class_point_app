@@ -4076,6 +4076,12 @@ if "🔎 개별조회" in tabs:
                 sres = api_savings_list_by_student_id(sid)
                 savings = sres.get("savings", []) if sres.get("ok") else []
                 sv_total = savings_active_total(savings)
+                # ✅ '적금 탭에서 보이는 원금 합계'와 동일하게: 만기/해지 제외 전부 합산
+                sv_total = sum(
+                    int(s.get("principal", 0) or 0)
+                    for s in savings
+                    if str(s.get("status", "")).lower().strip() not in ("matured", "canceled", "cancelled")
+                )
 
                 # 투자(보유) 요약  ✅ (text, total) 로 받기
                 inv_text, inv_total = _get_invest_summary_by_student_id(sid)
