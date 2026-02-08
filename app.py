@@ -3164,15 +3164,11 @@ if "📈 투자" in tabs:
                             # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
                             left, right = st.columns([1.7, 1.9], gap="large")
 
-                            st.markdown(
-                                """
-                                <style>
-                                table { width: 100% !important; }
-                                th { text-align: center !important; }
-                                </style>
-                                """ + df.to_html(escape=False, index=False),
-                                unsafe_allow_html=True,
-                            )
+                            with left:
+                                st.markdown(
+                                    df.to_html(escape=False, index=False),
+                                    unsafe_allow_html=True,
+                                )
 
                             with right:
                                 # 가로: 변동사유 / 세로: 변동 후(주가)
