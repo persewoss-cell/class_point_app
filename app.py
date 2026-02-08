@@ -677,33 +677,58 @@ INV_LEDGER_COL = "invest_ledger"
 @st.cache_data(ttl=60, show_spinner=False)
 def _get_role_name_by_student_id(student_id: str) -> str:
     try:
-        snap = db.collection("students").document(str(student_id)).get()
-        if not snap.exists:
+        sid = str(student_id or "").strip()
+        if not sid:
             return "없음"
 
-        sdata = snap.to_dict() or {}
+        # (1) students 문서에서 먼저 찾기 (job_name/job/role_id/job_role_id/job_id 등)
+        snap = db.collection("students").document(sid).get()
+        if snap.exists:
+            sdata = snap.to_dict() or {}
 
-        # ✅ 학생 문서에 role_id / job_role_id / job_id 등으로 들어오는 경우까지 흡수
-        role_id = str(
-            (sdata.get("role_id") or sdata.get("job_role_id") or sdata.get("job_id") or "") 
-        ).strip()
-        if not role_id:
-            return "없음"
+            rid = str(
+                sdata.get("role_id")
+                or sdata.get("job_role_id")
+                or sdata.get("job_id")
+                or ""
+            ).strip()
 
-        rdoc = db.collection("roles").document(role_id).get()
-        if not rdoc.exists:
-            return "없음"
+            # ✅ 학생 문서에 job_name/job이 직접 들어있는 경우
+            job_direct = str(sdata.get("job_name") or sdata.get("job") or "").strip()
+            if job_direct:
+                return job_direct
 
-        r = rdoc.to_dict() or {}
+            # ✅ role_id가 있으면 roles 컬렉션에서 이름 조회
+            if rid:
+                rdoc = db.collection("roles").document(rid).get()
+                if rdoc.exists:
+                    r = rdoc.to_dict() or {}
+                    nm = str(r.get("role_name") or r.get("name") or rid).strip()
+                    return nm if nm else rid
 
-        # ✅ roles 문서 필드명이 role_name이 아닐 수도 있어서 다 대응
-        nm = (
-            str(r.get("role_name", "") or "").strip()
-            or str(r.get("name", "") or "").strip()
-            or str(r.get("job_name", "") or "").strip()
-            or str(r.get("title", "") or "").strip()
-        )
-        return nm if nm else "없음"
+                # roles 문서가 없으면 role_id 자체를 직업명으로 보여주기
+                return rid
+
+        # (2) students에 없으면 job_salary에서 assigned_ids로 찾기 (직업/월급 탭 방식)
+        jobs = []
+        for jdoc in db.collection("job_salary").stream():
+            jd = jdoc.to_dict() or {}
+            assigned = [str(x) for x in (jd.get("assigned_ids", []) or [])]
+            if sid in assigned:
+                jname = str(jd.get("job") or jd.get("role_name") or "").strip()
+                if jname:
+                    jobs.append(jname)
+
+        if jobs:
+            # 중복 제거(순서 유지)
+            uniq = []
+            for j in jobs:
+                if j not in uniq:
+                    uniq.append(j)
+            return ", ".join(uniq)
+
+        return "없음"
+
     except Exception:
         return "없음"
 
@@ -1791,17 +1816,23 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
 # Savings (적금)
 # =========================
 def api_savings_list_by_student_id(student_id: str):
-    """✅ student_id 기준 적금 목록 조회"""
+    """✅ student_id 기준 적금 목록 조회 (문자/숫자 타입 모두 대응)"""
     try:
-        docs = (
-            db.collection(SAV_COL if "SAV_COL" in globals() else "savings")
-            .where(filter=FieldFilter("student_id", "==", str(student_id)))
+        col = SAV_COL if "SAV_COL" in globals() else "savings"
+
+        sid_str = str(student_id)
+        out = []
+
+        # 1) student_id가 문자열로 저장된 경우
+        docs1 = (
+            db.collection(col)
+            .where(filter=FieldFilter("student_id", "==", sid_str))
             .order_by("start_date", direction=firestore.Query.DESCENDING)
             .limit(50)
             .stream()
         )
-        out = []
-        for d in docs:
+
+        for d in docs1:
             s = d.to_dict() or {}
             out.append(
                 {
@@ -1813,10 +1844,34 @@ def api_savings_list_by_student_id(student_id: str):
                     "status": s.get("status", "active"),
                 }
             )
+
+        # 2) 결과가 없고, 숫자로 저장된 경우까지 추가 탐색
+        if (not out) and sid_str.isdigit():
+            sid_int = int(sid_str)
+            docs2 = (
+                db.collection(col)
+                .where(filter=FieldFilter("student_id", "==", sid_int))
+                .order_by("start_date", direction=firestore.Query.DESCENDING)
+                .limit(50)
+                .stream()
+            )
+            for d in docs2:
+                s = d.to_dict() or {}
+                out.append(
+                    {
+                        "savings_id": d.id,
+                        "principal": int(s.get("principal", 0) or 0),
+                        "weeks": int(s.get("weeks", 0) or 0),
+                        "interest": int(s.get("interest", 0) or 0),
+                        "maturity_date": _to_utc_datetime(s.get("maturity_date")),
+                        "status": s.get("status", "active"),
+                    }
+                )
+
         return {"ok": True, "savings": out}
+
     except Exception as e:
         return {"ok": False, "error": str(e), "savings": []}
-
 
 def api_savings_list(login_name: str, login_pin: str):
     """✅ (사용자) 로그인 정보로 적금 목록 조회"""
