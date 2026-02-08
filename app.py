@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 from datetime import datetime, timezone, timedelta, date
 
 import firebase_admin
@@ -1156,6 +1157,78 @@ def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, d
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"저장 실패: {e}"}
+
+
+def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, memo: str, deposit: int):
+    """
+    ✅ '투자증권' 직업(roles.role_name == '투자증권') 학생이 다른 학생 통장에 '입금(+)'만 할 수 있게 하는 함수
+    - 투자 회수(지급) 용도
+    - 출금은 불가
+    """
+    try:
+        actor_student_id = str(actor_student_id or "").strip()
+        student_id = str(student_id or "").strip()
+        memo = str(memo or "").strip()
+        deposit = int(deposit or 0)
+
+        if not actor_student_id:
+            return {"ok": False, "error": "actor_student_id가 없습니다."}
+        if not student_id:
+            return {"ok": False, "error": "student_id가 없습니다."}
+        if not memo:
+            return {"ok": False, "error": "내역이 필요합니다."}
+        if deposit <= 0:
+            return {"ok": False, "error": "입금 금액이 1 이상이어야 합니다."}
+
+        # ✅ 역할 확인: roles에서 role_name == '투자증권'
+        try:
+            actor_snap = db.collection("students").document(actor_student_id).get()
+            if not actor_snap.exists:
+                return {"ok": False, "error": "권한 확인 실패(계정 없음)."}
+            actor = actor_snap.to_dict() or {}
+            rid = str(actor.get("role_id", "") or "")
+            if not rid:
+                return {"ok": False, "error": "투자 회수 권한이 없습니다."}
+            roles = api_list_roles_cached()
+            role_name = ""
+            for r in roles:
+                if str(r.get("role_id")) == rid:
+                    role_name = str(r.get("role_name", "") or "")
+                    break
+            if role_name != "투자증권":
+                return {"ok": False, "error": "투자 회수 권한이 없습니다."}
+        except Exception:
+            return {"ok": False, "error": "권한 확인 실패."}
+
+        student_ref = db.collection("students").document(student_id)
+        tx_ref = db.collection("transactions").document()
+
+        @firestore.transactional
+        def _do(transaction):
+            snap = student_ref.get(transaction=transaction)
+            if not snap.exists:
+                raise ValueError("대상 학생을 찾지 못했어요.")
+            bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
+            new_bal = bal + int(deposit)
+
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.set(
+                tx_ref,
+                {
+                    "student_id": student_id,
+                    "type": "deposit",
+                    "amount": int(deposit),
+                    "balance_after": new_bal,
+                    "memo": memo,
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                },
+            )
+            return new_bal
+
+        new_bal = _do(db.transaction())
+        return {"ok": True, "balance": int(new_bal)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 def api_get_txs_by_student_id(student_id: str, limit=200):
     if not student_id:
@@ -2370,22 +2443,46 @@ def tab_visible(tab_name: str):
 # -------------------------
 # ✅ 탭 구성
 # - 관리자: 기존 ALL_TABS(tab_visible) 그대로
-# - 학생(개별로그인): "거래/적금/목표" 3개만 표시 (캡쳐 UI)
+# - 학생(개별로그인): "거래/투자/적금/목표" (투자 비활성화면 투자 탭 숨김)
 # -------------------------
 if is_admin:
     tabs = [t for t in ALL_TABS if tab_visible(t)]
     tab_objs = st.tabs(tabs)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
-    # 화면에는 "거래/적금/목표"로 보이지만,
-    # 아래 기존 로직(내 통장/은행 탭 코드)을 그대로 재사용하기 위해 tab_map 키는 유지합니다.
-    user_tab_labels = ["📝 거래", "💰 적금", "🎯 목표"]
+    # ✅ 투자 탭 노출 여부(계정 정보/활성화에서 '투자활성화' 꺼진 학생은 숨김)
+    inv_ok = True
+    try:
+        if my_student_id:
+            snap = db.collection("students").document(str(my_student_id)).get()
+            if snap.exists:
+                inv_ok = bool((snap.to_dict() or {}).get("invest_enabled", True))
+    except Exception:
+        inv_ok = True
+
+    # 화면 탭 라벨
+    user_tab_labels = ["📝 거래"]
+    if inv_ok:
+        user_tab_labels.append("📈 투자")
+    user_tab_labels += ["💰 적금", "🎯 목표"]
+
     tab_objs = st.tabs(user_tab_labels)
-    tab_map = {
-        "🏦 내 통장": tab_objs[0],
-        "🏦 은행(적금)": tab_objs[1],
-        "🎯 목표": tab_objs[2],
-    }
+
+    # 아래 기존 로직(내 통장/은행/목표)을 재사용하기 위해 tab_map 키는 유지합니다.
+    if inv_ok:
+        tab_map = {
+            "🏦 내 통장": tab_objs[0],
+            "📈 투자": tab_objs[1],
+            "🏦 은행(적금)": tab_objs[2],
+            "🎯 목표": tab_objs[3],
+        }
+    else:
+        tab_map = {
+            "🏦 내 통장": tab_objs[0],
+            "🏦 은행(적금)": tab_objs[1],
+            "🎯 목표": tab_objs[2],
+        }
+
     tabs = list(tab_map.keys())
 
 # =========================
@@ -2729,6 +2826,517 @@ if "🏦 내 통장" in tabs:
             st.subheader("📒 통장 내역(최신순)")
             render_tx_table(df_tx)
 
+
+
+# =========================
+# 📈 투자
+# =========================
+if "📈 투자" in tabs:
+    with tab_map["📈 투자"]:
+        INV_PROD_COL = "invest_products"
+        INV_HIST_COL = "invest_price_history"
+        INV_LEDGER_COL = "invest_ledger"
+
+        def _fmt_kor_day1(dt_obj: datetime) -> str:
+            days = ["월", "화", "수", "목", "금", "토", "일"]
+            try:
+                return days[int(dt_obj.weekday())]
+            except Exception:
+                return ""
+
+        def _fmt_kor_date_md(dt_obj: datetime) -> str:
+            # 0월 0일(요)
+            try:
+                dt_kst = dt_obj.astimezone(KST)
+            except Exception:
+                dt_kst = dt_obj
+            return f"{dt_kst.month}월 {dt_kst.day}일({_fmt_kor_day1(dt_kst)})"
+
+        def _as_price1(v) -> float:
+            try:
+                x = float(v)
+            except Exception:
+                x = 0.0
+            # 소수 1자리로 고정
+            return float(f"{x:.1f}")
+
+        def _get_products(active_only=True):
+            try:
+                q = db.collection(INV_PROD_COL)
+                if active_only:
+                    q = q.where(filter=FieldFilter("is_active", "==", True))
+                docs = q.stream()
+                out = []
+                for d in docs:
+                    x = d.to_dict() or {}
+                    out.append(
+                        {
+                            "product_id": d.id,
+                            "name": str(x.get("name", "") or "").strip(),
+                            "current_price": _as_price1(x.get("current_price", 0.0)),
+                            "is_active": bool(x.get("is_active", True)),
+                        }
+                    )
+                out = [o for o in out if o["name"]]
+                out.sort(key=lambda r: r["name"])
+                return out
+            except Exception:
+                return []
+
+        def _get_history(product_id: str, limit=50):
+            try:
+                q = (
+                    db.collection(INV_HIST_COL)
+                    .where(filter=FieldFilter("product_id", "==", str(product_id)))
+                    .order_by("created_at", direction=firestore.Query.ASCENDING)
+                    .limit(int(limit))
+                    .stream()
+                )
+                out = []
+                for d in q:
+                    x = d.to_dict() or {}
+                    out.append(
+                        {
+                            "reason": str(x.get("reason", "") or "").strip(),
+                            "price": _as_price1(x.get("price", 0.0)),
+                            "created_at": x.get("created_at"),
+                        }
+                    )
+                return out
+            except Exception:
+                return []
+
+        def _can_redeem(actor_student_id: str) -> bool:
+            if is_admin:
+                return True
+            # '투자증권' 직업(roles.role_name)만 허용
+            try:
+                if not actor_student_id:
+                    return False
+                snap = db.collection("students").document(str(actor_student_id)).get()
+                if not snap.exists:
+                    return False
+                rid = str((snap.to_dict() or {}).get("role_id", "") or "")
+                if not rid:
+                    return False
+                roles = api_list_roles_cached()
+                for r in roles:
+                    if str(r.get("role_id")) == rid:
+                        return str(r.get("role_name", "") or "") == "투자증권"
+                return False
+            except Exception:
+                return False
+
+        def _load_ledger(for_student_id: str | None):
+            try:
+                q = db.collection(INV_LEDGER_COL).order_by("buy_at", direction=firestore.Query.DESCENDING).limit(300)
+                docs = list(q.stream())
+                rows = []
+                for d in docs:
+                    x = d.to_dict() or {}
+                    if for_student_id and str(x.get("student_id")) != str(for_student_id):
+                        continue
+                    rows.append({**x, "_doc_id": d.id})
+                return rows
+            except Exception:
+                return []
+
+        def _calc_redeem_amount(invest_amount: int, buy_price: float, sell_price: float):
+            invest_amount = int(invest_amount or 0)
+            buy_price = _as_price1(buy_price)
+            sell_price = _as_price1(sell_price)
+            diff = _as_price1(sell_price - buy_price)
+
+            # diff가 -100 이하이면 전액 손실
+            if diff <= -100:
+                profit = -invest_amount
+                redeem_amt = 0
+            else:
+                profit = invest_amount * float(diff) / 100.0
+                redeem_amt = invest_amount + profit
+                if redeem_amt < 0:
+                    redeem_amt = 0
+            return diff, profit, int(round(redeem_amt))
+
+        # -------------------------------------------------
+        # 1) (상단) 종목 및 주가 변동
+        # -------------------------------------------------
+        st.markdown("### 📈 종목 및 주가 변동")
+
+        products = _get_products(active_only=True)
+        if not products:
+            st.info("등록된 투자 종목이 없습니다. (관리자) 아래에서 종목을 먼저 추가해 주세요.")
+        else:
+            for p in products:
+                nm = p["name"]
+                cur = p["current_price"]
+                st.markdown(f"- **{nm}** (현재주가 **{cur:.1f}**)")
+                # 관리자만: 주가 변동 입력 + 그래프
+                if is_admin:
+                    with st.expander(f"{nm} 주가 변동 반영", expanded=False):
+                        # 입력 UI
+                        c1, c2, c3 = st.columns([3.2, 2.2, 1.2], gap="small")
+                        with c1:
+                            reason = st.text_input("변동 사유", key=f"inv_reason_{p['product_id']}")
+                        with c2:
+                            new_price = st.number_input(
+                                "주가",
+                                min_value=0.0,
+                                max_value=999.9,
+                                step=0.1,
+                                format="%.1f",
+                                value=float(cur),
+                                key=f"inv_price_{p['product_id']}",
+                            )
+                        with c3:
+                            save_btn = st.button("저장", use_container_width=True, key=f"inv_save_{p['product_id']}")
+                        if save_btn:
+                            reason2 = str(reason or "").strip()
+                            if not reason2:
+                                st.warning("변동 사유를 입력해 주세요.")
+                            else:
+                                try:
+                                    payload = {
+                                        "product_id": p["product_id"],
+                                        "reason": reason2,
+                                        "price": _as_price1(new_price),
+                                        "created_at": firestore.SERVER_TIMESTAMP,
+                                    }
+                                    db.collection(INV_HIST_COL).document().set(payload)
+                                    db.collection(INV_PROD_COL).document(p["product_id"]).set(
+                                        {"current_price": _as_price1(new_price), "updated_at": firestore.SERVER_TIMESTAMP},
+                                        merge=True,
+                                    )
+                                    toast("주가가 반영되었습니다.", icon="✅")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"저장 실패: {e}")
+
+                        # 그래프
+                        hist = _get_history(p["product_id"], limit=60)
+                        if hist:
+                            df = pd.DataFrame(hist)
+                            # reason이 비면 날짜로 대체
+                            if "reason" in df.columns:
+                                df["label"] = df["reason"].apply(lambda x: x if str(x).strip() else "(무제)")
+                            else:
+                                df["label"] = "(무제)"
+                            df["price"] = df["price"].astype(float)
+
+                            chart = (
+                                alt.Chart(df)
+                                .mark_line(point=True)
+                                .encode(
+                                    x=alt.X("label:N", title=None, sort=None),
+                                    y=alt.Y("price:Q", title=None),
+                                )
+                                .properties(height=260)
+                            )
+                            st.altair_chart(chart, use_container_width=True)
+                        else:
+                            st.caption("아직 주가 변동 기록이 없습니다. (저장하면 그래프가 생성됩니다.)")
+                else:
+                    # 사용자: 그래프만
+                    with st.expander(f"{nm} 주가 그래프", expanded=False):
+                        hist = _get_history(p["product_id"], limit=60)
+                        if hist:
+                            df = pd.DataFrame(hist)
+                            df["label"] = df["reason"].apply(lambda x: x if str(x).strip() else "(무제)")
+                            df["price"] = df["price"].astype(float)
+                            chart = (
+                                alt.Chart(df)
+                                .mark_line(point=True)
+                                .encode(
+                                    x=alt.X("label:N", title=None, sort=None),
+                                    y=alt.Y("price:Q", title=None),
+                                )
+                                .properties(height=260)
+                            )
+                            st.altair_chart(chart, use_container_width=True)
+                        else:
+                            st.caption("아직 주가 변동 기록이 없습니다.")
+
+        st.divider()
+
+        # -------------------------------------------------
+        # 2) 투자 상품 관리 장부
+        # -------------------------------------------------
+        st.markdown("### 🧾 투자 상품 관리 장부")
+
+        ledger_rows = _load_ledger(None if is_admin else my_student_id)
+
+        # 표(읽기용)
+        view_rows = []
+        for x in ledger_rows:
+            redeemed = bool(x.get("redeemed", False))
+            view_rows.append(
+                {
+                    "번호": int(x.get("no", 0) or 0),
+                    "이름": str(x.get("name", "") or ""),
+                    "종목": str(x.get("product_name", "") or ""),
+                    "매입일자": str(x.get("buy_date_label", "") or ""),
+                    "매입 주가": f"{_as_price1(x.get('buy_price', 0.0)):.1f}",
+                    "투자 금액": int(x.get("invest_amount", 0) or 0),
+                    "지급완료": "✅" if redeemed else "",
+                    "매수일자": str(x.get("sell_date_label", "") or ""),
+                    "매수 주가": f"{_as_price1(x.get('sell_price', 0.0)):.1f}" if redeemed else "",
+                    "주가차이": f"{_as_price1(x.get('diff', 0.0)):.1f}" if redeemed else "",
+                    "수익/손실금": int(round(float(x.get("profit", 0.0) or 0.0))) if redeemed else "",
+                    "찾을 금액": int(x.get("redeem_amount", 0) or 0) if redeemed else "",
+                    "_doc_id": x.get("_doc_id"),
+                    "_student_id": x.get("student_id"),
+                }
+            )
+        if view_rows:
+            df_view = pd.DataFrame(view_rows)
+            st.dataframe(df_view.drop(columns=["_doc_id", "_student_id"], errors="ignore"), use_container_width=True, hide_index=True)
+        else:
+            st.caption("투자 내역이 없습니다.")
+
+        # 지급(회수) 처리
+        can_redeem_now = _can_redeem(my_student_id)
+
+        # 지급 처리 목록: 미지급(=redeemed False)만
+        pending = [x for x in ledger_rows if not bool(x.get("redeemed", False))]
+        if pending:
+            st.markdown("#### 💸 투자 회수(지급)")
+            if (not is_admin) and (not can_redeem_now):
+                st.info("투자 회수는 관리자 또는 '투자증권' 직업 학생만 할 수 있어요.")
+            else:
+                for x in pending[:80]:
+                    pid = str(x.get("product_id", "") or "")
+                    prod_name = str(x.get("product_name", "") or "")
+                    buy_price = _as_price1(x.get("buy_price", 0.0))
+                    invest_amt = int(x.get("invest_amount", 0) or 0)
+                    sid = str(x.get("student_id", "") or "")
+                    doc_id = str(x.get("_doc_id", "") or "")
+                    cur_price = None
+                    for p in products:
+                        if str(p["product_id"]) == pid:
+                            cur_price = _as_price1(p["current_price"])
+                            break
+                    if cur_price is None:
+                        cur_price = buy_price
+
+                    diff, profit, redeem_amt = _calc_redeem_amount(invest_amt, buy_price, cur_price)
+
+                    row = st.columns([1.2, 2.3, 2.0, 1.3], gap="small")
+                    with row[0]:
+                        st.markdown(f"**{int(x.get('no',0) or 0)}**")
+                    with row[1]:
+                        st.markdown(f"{str(x.get('name','') or '')}")
+                        st.caption(f"{prod_name}")
+                    with row[2]:
+                        st.caption(f"매입주가 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
+                        st.caption(f"수익/손실 {profit:.1f}  |  찾을 금액 {redeem_amt}")
+                    with row[3]:
+                        if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
+                            sell_dt = datetime.now(tz=KST)
+                            sell_label = _fmt_kor_date_md(sell_dt)
+                            memo = f"투자 회수({prod_name})"
+
+                            # ✅ 관리자면 admin API 사용, 아니면 투자증권 권한(입금만)
+                            if is_admin:
+                                res = api_admin_add_tx_by_student_id(
+                                    admin_pin=ADMIN_PIN,
+                                    student_id=sid,
+                                    memo=memo,
+                                    deposit=int(redeem_amt),
+                                    withdraw=0,
+                                )
+                            else:
+                                res = api_broker_deposit_by_student_id(
+                                    actor_student_id=my_student_id,
+                                    student_id=sid,
+                                    memo=memo,
+                                    deposit=int(redeem_amt),
+                                )
+
+                            if res.get("ok"):
+                                try:
+                                    db.collection(INV_LEDGER_COL).document(doc_id).set(
+                                        {
+                                            "redeemed": True,
+                                            "sell_at": firestore.SERVER_TIMESTAMP,
+                                            "sell_date_label": sell_label,
+                                            "sell_price": _as_price1(cur_price),
+                                            "diff": _as_price1(diff),
+                                            "profit": float(profit),
+                                            "redeem_amount": int(redeem_amt),
+                                        },
+                                        merge=True,
+                                    )
+                                    toast("지급 완료!", icon="✅")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"장부 업데이트 실패: {e}")
+                            else:
+                                st.error(res.get("error", "지급 실패"))
+        st.divider()
+
+        # -------------------------------------------------
+        # 3) (사용자) 투자 실행
+        # -------------------------------------------------
+        if not is_admin:
+            st.markdown("### 💳 투자하기")
+            # 투자 활성화 체크
+            inv_ok2 = True
+            try:
+                if my_student_id:
+                    snap = db.collection("students").document(str(my_student_id)).get()
+                    if snap.exists:
+                        inv_ok2 = bool((snap.to_dict() or {}).get("invest_enabled", True))
+            except Exception:
+                inv_ok2 = True
+
+            if not inv_ok2:
+                st.warning("이 계정은 현재 투자 기능이 비활성화되어 있어요.")
+            elif not products:
+                st.info("투자 종목이 아직 없어요. 관리자에게 종목 추가를 요청해 주세요.")
+            else:
+                # 종목 선택
+                prod_labels = [f"{p['name']} (현재 {p['current_price']:.1f})" for p in products]
+                by_label = {lab: p for lab, p in zip(prod_labels, products)}
+
+                sel_lab = st.selectbox("투자 종목 선택", prod_labels, key="inv_user_sel_prod")
+                sel_prod = by_label.get(sel_lab)
+
+                amt = st.number_input("투자 금액", min_value=0, step=10, value=0, key="inv_user_amt")
+                invest_click = st.button("투자", use_container_width=True, key="inv_user_btn")
+
+                if invest_click:
+                    if int(amt) <= 0:
+                        st.warning("투자 금액을 입력해 주세요.")
+                    else:
+                        st.session_state["inv_user_confirm"] = True
+
+                if st.session_state.get("inv_user_confirm", False):
+                    st.warning("정말로 투자할까요?")
+                    y, n = st.columns(2)
+                    with y:
+                        if st.button("예", use_container_width=True, key="inv_user_yes"):
+                            st.session_state["inv_user_confirm"] = False
+
+                            # ✅ 통장에서 출금(투자금)
+                            memo = f"투자 매입({sel_prod['name']})"
+                            res = api_add_tx(login_name, login_pin, memo=memo, deposit=0, withdraw=int(amt))
+                            if res.get("ok"):
+                                # 장부 기록
+                                try:
+                                    sd = fs_auth_student(login_name, login_pin)
+                                    sdata = sd.to_dict() or {}
+                                    no = int(sdata.get("no", 0) or 0)
+
+                                    buy_dt = datetime.now(tz=KST)
+                                    buy_label = _fmt_kor_date_md(buy_dt)
+
+                                    db.collection(INV_LEDGER_COL).document().set(
+                                        {
+                                            "student_id": sd.id,
+                                            "no": no,
+                                            "name": str(sdata.get("name", "") or ""),
+                                            "product_id": sel_prod["product_id"],
+                                            "product_name": sel_prod["name"],
+                                            "buy_at": firestore.SERVER_TIMESTAMP,
+                                            "buy_date_label": buy_label,
+                                            "buy_price": _as_price1(sel_prod["current_price"]),
+                                            "invest_amount": int(amt),
+                                            "redeemed": False,
+                                        }
+                                    )
+                                    toast("투자 완료! (장부에 반영됨)", icon="✅")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"장부 저장 실패: {e}")
+                            else:
+                                st.error(res.get("error", "투자 실패"))
+                    with n:
+                        if st.button("아니오", use_container_width=True, key="inv_user_no"):
+                            st.session_state["inv_user_confirm"] = False
+                            st.rerun()
+
+        # -------------------------------------------------
+        # 4) (관리자) 투자 종목 추가/수정/삭제
+        # -------------------------------------------------
+        if is_admin:
+            st.divider()
+            st.markdown("### 🧰 투자 종목 추가/수정/삭제")
+
+            prod_all = _get_products(active_only=False)
+            labels = ["(신규 추가)"] + [p["name"] for p in prod_all if p["name"]]
+            sel = st.selectbox("편집 대상", labels, key="inv_admin_edit_sel")
+
+            cur_obj = None
+            if sel != "(신규 추가)":
+                for p in prod_all:
+                    if p["name"] == sel:
+                        cur_obj = p
+                        break
+
+            name_default = "" if cur_obj is None else cur_obj["name"]
+            price_default = 0.0 if cur_obj is None else float(cur_obj["current_price"])
+
+            c1, c2 = st.columns([2.2, 1.2], gap="small")
+            with c1:
+                new_name = st.text_input("투자 종목명", value=name_default, key="inv_admin_name")
+            with c2:
+                new_price = st.number_input(
+                    "초기/현재 주가",
+                    min_value=0.0,
+                    max_value=999.9,
+                    step=0.1,
+                    format="%.1f",
+                    value=float(price_default),
+                    key="inv_admin_price",
+                )
+
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("저장", use_container_width=True, key="inv_admin_save"):
+                    nm = str(new_name or "").strip()
+                    if not nm:
+                        st.warning("종목명을 입력해 주세요.")
+                    else:
+                        try:
+                            if cur_obj is None:
+                                db.collection(INV_PROD_COL).document().set(
+                                    {
+                                        "name": nm,
+                                        "current_price": _as_price1(new_price),
+                                        "is_active": True,
+                                        "created_at": firestore.SERVER_TIMESTAMP,
+                                        "updated_at": firestore.SERVER_TIMESTAMP,
+                                    }
+                                )
+                                toast("종목이 추가되었습니다.", icon="✅")
+                            else:
+                                db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
+                                    {
+                                        "name": nm,
+                                        "current_price": _as_price1(new_price),
+                                        "is_active": True,
+                                        "updated_at": firestore.SERVER_TIMESTAMP,
+                                    },
+                                    merge=True,
+                                )
+                                toast("종목이 수정되었습니다.", icon="✅")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"저장 실패: {e}")
+            with b2:
+                if st.button("삭제", use_container_width=True, key="inv_admin_del", disabled=(cur_obj is None)):
+                    if cur_obj is None:
+                        st.stop()
+                    try:
+                        # 안전: 삭제는 is_active=False로 처리(장부 참조 깨짐 방지)
+                        db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
+                            {"is_active": False, "updated_at": firestore.SERVER_TIMESTAMP},
+                            merge=True,
+                        )
+                        toast("삭제(비활성화) 완료", icon="🗑️")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"삭제 실패: {e}")
 # =========================
 # 👥 계정 정보/활성화 (관리자 전용)
 # =========================
