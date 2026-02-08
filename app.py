@@ -3307,7 +3307,16 @@ if "🏦 내 통장" in tabs:
             with sub_tab_personal:
                 st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
                 accounts_now = api_list_accounts_cached().get("accounts", [])
-                accounts_now = sorted(accounts_now, key=lambda x: str(x.get("name", "")))
+                import re
+
+                def _num_key(acc):
+                    name = str(acc.get("name", ""))
+                    m = re.search(r"\d+", name)
+                    if m:
+                        return int(m.group())   # 1~9 → 01~09처럼 숫자 기준 정렬
+                    return 9999                # 번호 없으면 맨 뒤
+
+                accounts_now = sorted(accounts_now, key=_num_key)
 
                 if not accounts_now:
                     st.info("활성 계정이 없습니다.")
