@@ -3185,7 +3185,7 @@ if "📈 투자" in tabs:
                                 if init_price is None:
                                     init_price = float(p.get("current_price", 0.0) or 0.0)
 
-                                chart_rows.append({"변동사유": "초기주가", "변동 후": round(init_price, 1)})
+                                chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
 
                                 # ✅ 이후 변동(오래된→최신)
                                 for h2 in reversed(hist):
