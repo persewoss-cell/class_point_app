@@ -3768,7 +3768,7 @@ if "🏦 내 통장" in tabs:
             # =================================================
             with sub_tab_personal:
                 st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
-                accounts_now = acc_res.get("accounts", []) if acc_res.get("ok") else []
+                res.get("accounts", []) if acc_res.get("ok") else []
                 if not acc_res.get("ok"):
                     st.warning(f"계정 목록을 불러오지 못했어요: {acc_res.get('error','')}")
                 import re
@@ -3780,6 +3780,21 @@ if "🏦 내 통장" in tabs:
                         return int(m.group())   # 1~9 → 01~09처럼 숫자 기준 정렬
                     return 9999                # 번호 없으면 맨 뒤
 
+                # =========================
+                # Accounts (안전 로딩)
+                # =========================
+                acc_res = {"ok": False, "accounts": [], "error": ""}
+
+                try:
+                    acc_res = api_list_accounts_cached()
+                except Exception as e:
+                    acc_res = {"ok": False, "accounts": [], "error": str(e)}
+
+                accounts_now = acc_res.get("accounts", []) if acc_res.get("ok") else []
+
+                if not acc_res.get("ok") and acc_res.get("error"):
+                    st.warning(f"계정 목록을 불러오지 못했어요: {acc_res.get('error')}")
+                
                 accounts_now = sorted(accounts_now, key=_num_key)
 
                 if not accounts_now:
