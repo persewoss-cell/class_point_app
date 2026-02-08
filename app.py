@@ -2570,14 +2570,26 @@ if "🏦 내 통장" in tabs:
                 stu = stu_doc.to_dict() if stu_doc.exists else {}
                 job_name = str(stu.get("job_name") or stu.get("job") or stu.get("role_id") or "").strip()
 
-                # (2) 없으면 job_salary 컬렉션에서 assigned_ids에 sid가 들어있는 직업 찾기
+                # (2) 없으면 job_salary 컬렉션에서 assigned_ids에 sid가 들어있는 직업들을 모두 모아서 표시
                 if not job_name:
+                    jobs = []
                     for jdoc in db.collection("job_salary").stream():
                         jd = jdoc.to_dict() or {}
                         assigned = [str(x) for x in (jd.get("assigned_ids", []) or [])]
                         if sid in assigned:
-                            job_name = str(jd.get("job") or "").strip()
-                            break
+                            jname = str(jd.get("job") or "").strip()
+                            if jname:
+                                jobs.append(jname)
+
+                    # 중복 제거(순서 유지) + ", "로 연결
+                    if jobs:
+                        uniq = []
+                        seen = set()
+                        for j in jobs:
+                            if j not in seen:
+                                uniq.append(j)
+                                seen.add(j)
+                        job_name = ", ".join(uniq)
 
                 if not job_name:
                     job_name = "없음"
