@@ -2560,26 +2560,24 @@ if "🏦 내 통장" in tabs:
             except Exception:
                 total_savings_principal = 0
 
-            # 2) 직업: students.role_id 우선 반영 (관리자 '직업 부여'는 role_id만 저장)
+            # 2) 직업: 관리자 '직업/월급 목록'에서 배정한 값(job_salary.assigned_ids)으로 표시
             job_name = "없음"
             try:
-                stu_doc = db.collection("students").document(str(student_id)).get()
+                sid = str(student_id)
+
+                # (1) 혹시 students에 저장된 값이 있으면 우선 사용(호환)
+                stu_doc = db.collection("students").document(sid).get()
                 stu = stu_doc.to_dict() if stu_doc.exists else {}
+                job_name = str(stu.get("job_name") or stu.get("job") or stu.get("role_id") or "").strip()
 
-                # (1) 혹시 예전 버전 필드가 있으면 우선 사용
-                job_name = str(stu.get("job_name") or stu.get("job") or "").strip()
-
-                # (2) 없으면 role_id → roles 문서(role_name)로 조회
+                # (2) 없으면 job_salary 컬렉션에서 assigned_ids에 sid가 들어있는 직업 찾기
                 if not job_name:
-                    role_id = str(stu.get("role_id") or "").strip()
-                    if role_id:
-                        rdoc = db.collection("roles").document(role_id).get()
-                        if rdoc.exists:
-                            rd = rdoc.to_dict() or {}
-                            job_name = str(rd.get("role_name") or role_id).strip()
-                        else:
-                            # roles 문서가 없더라도 role_id 자체를 직업명으로 표시
-                            job_name = role_id
+                    for jdoc in db.collection("job_salary").stream():
+                        jd = jdoc.to_dict() or {}
+                        assigned = [str(x) for x in (jd.get("assigned_ids", []) or [])]
+                        if sid in assigned:
+                            job_name = str(jd.get("job") or "").strip()
+                            break
 
                 if not job_name:
                     job_name = "없음"
