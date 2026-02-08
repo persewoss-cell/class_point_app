@@ -2560,25 +2560,25 @@ if "🏦 내 통장" in tabs:
             except Exception:
                 total_savings_principal = 0
 
-            # 2) 직업: students.role_id 우선 반영 (admin_set_role은 role_id만 저장함)
+            # 2) 직업: students.role_id 우선 반영 (관리자 '직업 부여'는 role_id만 저장)
             job_name = "없음"
             try:
                 stu_doc = db.collection("students").document(str(student_id)).get()
                 stu = stu_doc.to_dict() if stu_doc.exists else {}
 
-                # (1) 혹시 job_name/job 필드를 쓰는 버전이면 그 값 사용
-                job_name = (stu.get("job_name") or stu.get("job") or "").strip()
+                # (1) 혹시 예전 버전 필드가 있으면 우선 사용
+                job_name = str(stu.get("job_name") or stu.get("job") or "").strip()
 
-                # (2) 없으면 role_id → roles 문서에서 직업명 가져오기
+                # (2) 없으면 role_id → roles 문서(role_name)로 조회
                 if not job_name:
                     role_id = str(stu.get("role_id") or "").strip()
                     if role_id:
-                        role_snap = db.collection("roles").document(role_id).get()
-                        if role_snap.exists:
-                            rd = role_snap.to_dict() or {}
+                        rdoc = db.collection("roles").document(role_id).get()
+                        if rdoc.exists:
+                            rd = rdoc.to_dict() or {}
                             job_name = str(rd.get("role_name") or role_id).strip()
                         else:
-                            # roles에 없더라도 role_id 자체가 직업명이므로 표시
+                            # roles 문서가 없더라도 role_id 자체를 직업명으로 표시
                             job_name = role_id
 
                 if not job_name:
