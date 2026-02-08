@@ -3126,25 +3126,19 @@ if "📈 투자" in tabs:
                                 pa = float(h.get("price_after", 0.0) or 0.0)
                                 diff = round(pa - pb, 1)
 
-                                # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
-                                def _fmt_kor_datetime(dt_obj):
-                                    if not dt_obj:
-                                        return "-"
-                                    try:
-                                        dt_kst = dt_obj.astimezone(KST)
-                                    except Exception:
-                                        dt_kst = dt_obj
-
-                                    hour = dt_kst.hour
-                                    ampm = "오전" if hour < 12 else "오후"
-                                    hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
-                                    return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
-
-                                # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
+                                # ▲ 아이콘 통일 (색으로 상승/하락 구분)
                                 if diff > 0:
-                                    diff_view = f"🔺 <span style='color:red'>+{diff:.1f}</span>"
+                                    diff_view = (
+                                        "<span style='color:red; font-weight:600'>"
+                                        f"▲ +{diff:.1f}"
+                                        "</span>"
+                                    )
                                 elif diff < 0:
-                                    diff_view = f"🔽 <span style='color:blue'>{diff:.1f}</span>"
+                                    diff_view = (
+                                        "<span style='color:blue; font-weight:600'>"
+                                        f"▲ {diff:.1f}"
+                                        "</span>"
+                                    )
                                 else:
                                     diff_view = "-"
 
