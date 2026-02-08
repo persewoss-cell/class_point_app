@@ -2606,7 +2606,7 @@ if "🏦 내 통장" in tabs:
             st.markdown(f"## 🧾 {login_name} 통장")
             st.markdown(
                 f"""
-**내 자산:** {balance + total_savings_principal}드림  
+**총 자산:** {balance + total_savings_principal}드림  
 **통장 잔액:** {balance}드림  
 **적금 금액:** {total_savings_principal}드림  
 **직업:** {job_name}  
