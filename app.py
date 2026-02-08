@@ -667,6 +667,100 @@ def savings_active_total(savings_list: list[dict]) -> int:
     )
 
 
+
+# =========================
+# (관리자 개별조회용) 요약 정보 helpers
+# - 학생 번호(no) 기준 정렬 + 접힘/펼침 한 줄 요약
+# =========================
+INV_PROD_COL = "invest_products"
+INV_LEDGER_COL = "invest_ledger"
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _get_role_name_by_student_id(student_id: str) -> str:
+    try:
+        snap = db.collection("students").document(str(student_id)).get()
+        if not snap.exists:
+            return "없음"
+        role_id = str((snap.to_dict() or {}).get("role_id", "") or "").strip()
+        if not role_id:
+            return "없음"
+        rdoc = db.collection("roles").document(role_id).get()
+        if not rdoc.exists:
+            return "없음"
+        return str((rdoc.to_dict() or {}).get("role_name", "") or "").strip() or "없음"
+    except Exception:
+        return "없음"
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _get_invest_summary_by_student_id(student_id: str) -> tuple[int, int]:
+    """return (종목수, 투자총액_현재가치추정)
+    - invest_ledger: redeemed=False 항목을 보유로 간주
+    - invest_products: current_price 사용
+    """
+    try:
+        sid = str(student_id)
+        # 1) 종목 현재가 맵
+        prod_map = {}
+        try:
+            for d in db.collection(INV_PROD_COL).where(filter=FieldFilter("is_active", "==", True)).stream():
+                x = d.to_dict() or {}
+                pid = str(x.get("product_id", d.id))
+                prod_map[pid] = float(x.get("current_price", 0.0) or 0.0)
+        except Exception:
+            # 인덱스/권한 등 문제시 그냥 전체 로드
+            for d in db.collection(INV_PROD_COL).stream():
+                x = d.to_dict() or {}
+                pid = str(x.get("product_id", d.id))
+                prod_map[pid] = float(x.get("current_price", 0.0) or 0.0)
+
+        # 2) 보유 장부(미환매)
+        q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
+        holdings = []
+        for d in q:
+            x = d.to_dict() or {}
+            if bool(x.get("redeemed", False)):
+                continue
+            pid = str(x.get("product_id", "") or "")
+            buy_price = float(x.get("buy_price", 0.0) or 0.0)
+            invest_amount = int(x.get("invest_amount", 0) or 0)
+            cur_price = float(prod_map.get(pid, 0.0) or 0.0)
+            # 현재가치(대략): 투자금 * (현재가/매수가)
+            if buy_price > 0 and cur_price > 0:
+                cur_val = invest_amount * (cur_price / buy_price)
+            else:
+                cur_val = invest_amount
+            holdings.append((pid, cur_val))
+
+        if not holdings:
+            return (0, 0)
+
+        prod_cnt = len({pid for pid, _ in holdings if pid})
+        total_val = int(round(sum(v for _, v in holdings)))
+        return (prod_cnt, total_val)
+    except Exception:
+        return (0, 0)
+
+def _safe_credit(student_id: str) -> tuple[int, int]:
+    """return (score, grade). _calc_credit_score_for_student가 없으면 0,0"""
+    f = globals().get("_calc_credit_score_for_student")
+    if callable(f):
+        try:
+            sc, gr = f(str(student_id))
+            return int(sc or 0), int(gr or 0)
+        except Exception:
+            return (0, 0)
+    return (0, 0)
+
+def _fmt_admin_one_line(no: int, name: str, asset_total: int, bal_now: int, sv_total: int, inv_cnt: int, inv_total: int, role_name: str, credit_score: int, credit_grade: int) -> str:
+    inv_part = "투자총액: 없음" if inv_cnt <= 0 else f"투자총액: {inv_cnt}종목 {int(inv_total)}드림"
+    role_part = f"직업: {role_name or '없음'}"
+    credit_part = f"신용등급: {int(credit_grade)}등급({int(credit_score)}점)"
+    return (
+        f"👤 {int(no)}번 {name} | "
+        f"총자산 {int(asset_total)}드림 · 통장잔액 {int(bal_now)}드림 · 적금총액 {int(sv_total)}드림 · "
+        f"{inv_part} · {role_part} · {credit_part}"
+    )
+
 # =========================
 # Goals
 # =========================
@@ -780,7 +874,7 @@ def api_list_accounts_cached():
         s = d.to_dict() or {}
         nm = s.get("name", "")
         if nm:
-            items.append({"student_id": d.id, "name": nm, "balance": int(s.get("balance", 0) or 0)})
+            items.append({"student_id": d.id, "no": int(s.get("no", 0) or 0), "name": nm, "balance": int(s.get("balance", 0) or 0)})
     items.sort(key=lambda x: x["name"])
     return {"ok": True, "accounts": items}
 
@@ -2639,6 +2733,7 @@ ALL_TABS = [
     "🏦 은행(적금)",
     "📈 투자",
     "🛒 구입/벌금",
+        "🔎 개별조회",
     "👥 계정 정보/활성화",
 ]
 
@@ -3590,6 +3685,110 @@ if "🏦 내 통장" in tabs:
 # =========================
 # 📈 투자
 # =========================
+
+# =========================
+# (관리자) 🔎 개별조회 - 번호순 expander 요약 + 상세
+# =========================
+if "🔎 개별조회" in tabs:
+    with tab_map["🔎 개별조회"]:
+        st.subheader("🔎 개별조회(번호순)")
+
+        if not is_admin:
+            st.error("관리자 전용 탭입니다.")
+            st.stop()
+
+        name_search2 = st.text_input("🔎 계정검색(이름 일부)", key="admin_ind_view_search").strip()
+
+        # ✅ students에서 번호(no) 포함해서 다시 로드(번호순 정렬)
+        docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        acc_rows = []
+        for d in docs:
+            x = d.to_dict() or {}
+            nm = str(x.get("name", "") or "").strip()
+            if not nm:
+                continue
+            if name_search2 and (name_search2 not in nm):
+                continue
+            try:
+                no = int(x.get("no", 999999) or 999999)
+            except Exception:
+                no = 999999
+            acc_rows.append(
+                {
+                    "student_id": d.id,
+                    "no": no,
+                    "name": nm,
+                    "balance": int(x.get("balance", 0) or 0),
+                }
+            )
+
+        acc_rows.sort(key=lambda r: (int(r.get("no", 999999) or 999999), str(r.get("name", ""))))
+
+        if not acc_rows:
+            st.info("표시할 계정이 없습니다.")
+        else:
+            for r in acc_rows:
+                sid = str(r["student_id"])
+                nm = str(r["name"])
+                no = int(r.get("no", 0) or 0)
+                bal_now = int(r.get("balance", 0) or 0)
+
+                # 적금
+                sres = api_savings_list_by_student_id(sid)
+                savings = sres.get("savings", []) if sres.get("ok") else []
+                sv_total = savings_active_total(savings)
+
+                # 투자(보유) 요약
+                inv_cnt, inv_total = _get_invest_summary_by_student_id(sid)
+
+                # 직업(roles)
+                role_name = _get_role_name_by_student_id(sid)
+
+                # 신용등급(있으면 계산식 사용)
+                credit_score, credit_grade = _safe_credit(sid)
+
+                # 총자산(통장+적금원금+투자현재가치추정)
+                asset_total = int(bal_now) + int(sv_total) + int(inv_total)
+
+                collapsed = _fmt_admin_one_line(
+                    no=no,
+                    name=nm,
+                    asset_total=asset_total,
+                    bal_now=bal_now,
+                    sv_total=sv_total,
+                    inv_cnt=inv_cnt,
+                    inv_total=inv_total,
+                    role_name=role_name,
+                    credit_score=credit_score,
+                    credit_grade=credit_grade,
+                )
+
+                with st.expander(collapsed, expanded=False):
+                    # ✅ 펼침: 한 줄 크게
+                    st.markdown(f"#### {collapsed}")
+
+                    # (기존 스타일) 통장/적금 요약
+                    render_asset_summary(bal_now, savings)
+
+                    # 투자 요약
+                    if inv_cnt <= 0:
+                        st.caption("📈 투자: 없음")
+                    else:
+                        st.info(f"📈 투자총액(보유): {inv_cnt}종목 · {int(inv_total)}드림")
+
+                    # 통장내역(최신 120)
+                    st.markdown("### 📒 통장내역")
+                    txr = api_get_txs_by_student_id(sid, limit=120)
+                    if not txr.get("ok"):
+                        st.error(txr.get("error", "내역을 불러오지 못했어요."))
+                    else:
+                        df_tx = pd.DataFrame(txr.get("rows", []))
+                        if df_tx.empty:
+                            st.info("거래 내역이 없어요.")
+                        else:
+                            df_tx = df_tx.sort_values("created_at_utc", ascending=False)
+                            render_tx_table(df_tx)
+
 if "📈 투자" in tabs:
     with tab_map["📈 투자"]:
 
