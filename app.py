@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
 from datetime import datetime, timezone, timedelta, date
 
 import firebase_admin
@@ -2852,6 +2851,23 @@ if "📈 투자" in tabs:
                 dt_kst = dt_obj
             return f"{dt_kst.month}월 {dt_kst.day}일({_fmt_kor_day1(dt_kst)})"
 
+        def _ts_to_dt(v):
+            """Firestore Timestamp/Datetime을 datetime으로 안전 변환"""
+            if v is None:
+                return None
+            if isinstance(v, datetime):
+                return v
+            # google.cloud.firestore_v1._helpers.Timestamp 등
+            for attr in ("to_datetime", "datetime"):
+                try:
+                    if hasattr(v, attr):
+                        out = getattr(v, attr)()
+                        if isinstance(out, datetime):
+                            return out
+                except Exception:
+                    pass
+            return None
+
         def _as_price1(v) -> float:
             try:
                 x = float(v)
@@ -2883,30 +2899,62 @@ if "📈 투자" in tabs:
             except Exception:
                 return []
 
-        def _get_history(product_id: str, limit=50):
+        def _get_history(product_id: str, limit=80):
+            """
+            주가 변동 기록을 Firestore에서 가져옵니다.
+            - where + order_by 조합은 인덱스가 없으면 실패할 수 있어, 실패 시 안전하게 fallback 합니다.
+            - 표 표시용으로 price_before/price_after를 우선 사용하고, 구버전(price)도 호환합니다.
+            """
+            pid = str(product_id)
+            out = []
+
+            # 1) (권장) 인덱스가 있는 경우: created_at 정렬
             try:
                 q = (
                     db.collection(INV_HIST_COL)
-                    .where(filter=FieldFilter("product_id", "==", str(product_id)))
-                    .order_by("created_at", direction=firestore.Query.ASCENDING)
+                    .where(filter=FieldFilter("product_id", "==", pid))
+                    .order_by("created_at", direction=firestore.Query.DESCENDING)
                     .limit(int(limit))
                     .stream()
                 )
-                out = []
                 for d in q:
                     x = d.to_dict() or {}
                     out.append(
                         {
                             "reason": str(x.get("reason", "") or "").strip(),
-                            "price": _as_price1(x.get("price", 0.0)),
+                            "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
+                            "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
                             "created_at": x.get("created_at"),
                         }
                     )
                 return out
             except Exception:
-                return []
+                pass
 
-        def _can_redeem(actor_student_id: str) -> bool:
+            # 2) fallback: 정렬 없이 가져온 뒤, 파이썬에서 created_at로 정렬
+            try:
+                q = (
+                    db.collection(INV_HIST_COL)
+                    .where(filter=FieldFilter("product_id", "==", pid))
+                    .limit(int(limit))
+                    .stream()
+                )
+                for d in q:
+                    x = d.to_dict() or {}
+                    out.append(
+                        {
+                            "reason": str(x.get("reason", "") or "").strip(),
+                            "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
+                            "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
+                            "created_at": x.get("created_at"),
+                        }
+                    )
+                # created_at이 None일 수 있으니 안전 정렬
+                out.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+                return out
+            except Exception:
+                return []
+def _can_redeem(actor_student_id: str) -> bool:
             if is_admin:
                 return True
             # '투자증권' 직업(roles.role_name)만 허용
@@ -3024,7 +3072,9 @@ if "📈 투자" in tabs:
                                     payload = {
                                         "product_id": p["product_id"],
                                         "reason": reason2,
-                                        "price": _as_price1(new_price),
+                                        # 저장 시점의 이전/이후 주가를 함께 기록(표에 바로 표시하기 위함)
+                                        "price_before": _as_price1(p.get("current_price", 0.0)),
+                                        "price_after": _as_price1(new_price),
                                         "created_at": firestore.SERVER_TIMESTAMP,
                                     }
                                     db.collection(INV_HIST_COL).document().set(payload)
@@ -3037,52 +3087,46 @@ if "📈 투자" in tabs:
                                 except Exception as e:
                                     st.error(f"저장 실패: {e}")
 
-                        # 그래프
-                        hist = _get_history(p["product_id"], limit=60)
+                                                # 변동 내역(표)
+                        hist = _get_history(p["product_id"], limit=80)
                         if hist:
-                            df = pd.DataFrame(hist)
-                            # reason이 비면 날짜로 대체
-                            if "reason" in df.columns:
-                                df["label"] = df["reason"].apply(lambda x: x if str(x).strip() else "(무제)")
-                            else:
-                                df["label"] = "(무제)"
-                            df["price"] = df["price"].astype(float)
-                            df = df[["label", "price"]]
-
-                            chart = (
-                                alt.Chart(df)
-                                .mark_line(point=True)
-                                .encode(
-                                    x=alt.X("label:N", title=None, sort=None),
-                                    y=alt.Y("price:Q", title=None),
+                            rows = []
+                            for i, h in enumerate(hist, start=1):
+                                dt = _ts_to_dt(h.get("created_at"))
+                                rows.append(
+                                    {
+                                        "번호": i,
+                                        "변동일자": _fmt_kor_date_md(dt) if dt else "-",
+                                        "변동 사유": h.get("reason", "") or "",
+                                        "변동 전": f'{float(h.get("price_before", 0.0)):.1f}',
+                                        "변동 후": f'{float(h.get("price_after", 0.0)):.1f}',
+                                    }
                                 )
-                                .properties(height=260)
-                            )
-                            st.altair_chart(chart, use_container_width=True)
-                        else:
-                            st.caption("아직 주가 변동 기록이 없습니다. (저장하면 그래프가 생성됩니다.)")
-                else:
-                    # 사용자: 그래프만
-                    with st.expander(f"{nm} 주가 그래프", expanded=False):
-                        hist = _get_history(p["product_id"], limit=60)
-                        if hist:
-                            df = pd.DataFrame(hist)
-                            df["label"] = df["reason"].apply(lambda x: x if str(x).strip() else "(무제)")
-                            df["price"] = df["price"].astype(float)
-                            df = df[["label", "price"]]
-                            chart = (
-                                alt.Chart(df)
-                                .mark_line(point=True)
-                                .encode(
-                                    x=alt.X("label:N", title=None, sort=None),
-                                    y=alt.Y("price:Q", title=None),
-                                )
-                                .properties(height=260)
-                            )
-                            st.altair_chart(chart, use_container_width=True)
+                            df = pd.DataFrame(rows)
+                            st.dataframe(df, use_container_width=True, hide_index=True)
                         else:
                             st.caption("아직 주가 변동 기록이 없습니다.")
-
+                else:
+                    # 사용자: 표만
+                    with st.expander(f"{nm} 주가 변동 내역", expanded=False):
+                        hist = _get_history(p["product_id"], limit=80)
+                        if hist:
+                            rows = []
+                            for i, h in enumerate(hist, start=1):
+                                dt = _ts_to_dt(h.get("created_at"))
+                                rows.append(
+                                    {
+                                        "번호": i,
+                                        "변동일자": _fmt_kor_date_md(dt) if dt else "-",
+                                        "변동 사유": h.get("reason", "") or "",
+                                        "변동 전": f'{float(h.get("price_before", 0.0)):.1f}',
+                                        "변동 후": f'{float(h.get("price_after", 0.0)):.1f}',
+                                    }
+                                )
+                            df = pd.DataFrame(rows)
+                            st.dataframe(df, use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("아직 주가 변동 기록이 없습니다.")
         st.divider()
 
         # -------------------------------------------------
