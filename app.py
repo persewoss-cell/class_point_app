@@ -3427,12 +3427,17 @@ if "📈 투자" in tabs:
             st.markdown("### 🧰 투자 종목 추가/수정/삭제")
 
             prod_all = _get_products(active_only=False)
-            labels = ["(신규 추가)"] + [p["name"] for p in prod_all if p["name"]]
+
+            # ✅ 드롭다운에는 "활성 종목"만 보이게(삭제=비활성은 숨김)
+            prod_active = [p for p in prod_all if bool(p.get("is_active", True))]
+
+            labels = ["(신규 추가)"] + [p["name"] for p in prod_active if p["name"]]
+
             sel = st.selectbox("편집 대상", labels, key="inv_admin_edit_sel")
 
             cur_obj = None
             if sel != "(신규 추가)":
-                for p in prod_all:
+                for p in prod_active:
                     if p["name"] == sel:
                         cur_obj = p
                         break
