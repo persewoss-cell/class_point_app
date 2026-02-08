@@ -4109,16 +4109,6 @@ if "🔎 개별조회" in tabs:
                 )
 
                 with st.expander(collapsed, expanded=False):
-                    # ✅ 펼침: (원하던) 캡쳐 스타일로 큰 숫자 표시
-                    r1 = st.columns(4)
-                    r1[0].metric("총자산", f"{int(asset_total)}드림")
-                    r1[1].metric("통장잔액", f"{int(bal_now)}드림")
-                    r1[2].metric("적금총액", f"{int(sv_total)}드림")
-                    r1[3].metric("투자총액", "없음" if (not inv_text or inv_text == "없음") else inv_text)
-
-                    r2 = st.columns(2)
-                    r2[0].metric("직업", role_name if role_name else "없음")
-                    r2[1].metric("신용등급", f"{int(credit_grade)}등급({int(credit_score)}점)")
 
                     # 통장내역(최신 120)
                     st.markdown("### 📒 통장내역")
