@@ -2461,10 +2461,10 @@ else:
         inv_ok = True
 
     # 화면 탭 라벨
-    user_tab_labels = ["📝 거래"]
+    user_tab_labels = ["📝 거래", "💰 적금"]
     if inv_ok:
         user_tab_labels.append("📈 투자")
-    user_tab_labels += ["💰 적금", "🎯 목표"]
+    user_tab_labels.append("🎯 목표")
 
     tab_objs = st.tabs(user_tab_labels)
 
@@ -2472,8 +2472,8 @@ else:
     if inv_ok:
         tab_map = {
             "🏦 내 통장": tab_objs[0],
-            "📈 투자": tab_objs[1],
-            "🏦 은행(적금)": tab_objs[2],
+            "🏦 은행(적금)": tab_objs[1],
+            "📈 투자": tab_objs[2],
             "🎯 목표": tab_objs[3],
         }
     else:
@@ -2952,7 +2952,7 @@ if "📈 투자" in tabs:
                 profit = -invest_amount
                 redeem_amt = 0
             else:
-                profit = invest_amount * float(diff) / 100.0
+                profit = invest_amount * float(diff) / 10.0
                 redeem_amt = invest_amount + profit
                 if redeem_amt < 0:
                     redeem_amt = 0
@@ -2962,6 +2962,31 @@ if "📈 투자" in tabs:
         # 1) (상단) 종목 및 주가 변동
         # -------------------------------------------------
         st.markdown("### 📈 종목 및 주가 변동")
+
+        # (사용자) 상단 요약: 현재 잔액 / 투자 총액
+        if not is_admin:
+            cur_bal = 0
+            try:
+                if my_student_id:
+                    s = db.collection("students").document(str(my_student_id)).get()
+                    if s.exists:
+                        cur_bal = int((s.to_dict() or {}).get("balance", 0) or 0)
+            except Exception:
+                cur_bal = 0
+
+            inv_total = 0
+            try:
+                my_rows = _load_ledger(my_student_id)
+                inv_total = sum(int(r.get("invest_amount", 0) or 0) for r in my_rows if not bool(r.get("redeemed", False)))
+            except Exception:
+                inv_total = 0
+
+            cA, cB = st.columns(2, gap="small")
+            with cA:
+                st.markdown(f"**현재 잔액:** {cur_bal}드림")
+            with cB:
+                st.markdown(f"**투자 총액:** {inv_total}드림")
+            st.divider()
 
         products = _get_products(active_only=True)
         if not products:
@@ -3022,6 +3047,7 @@ if "📈 투자" in tabs:
                             else:
                                 df["label"] = "(무제)"
                             df["price"] = df["price"].astype(float)
+                            df = df[["label", "price"]]
 
                             chart = (
                                 alt.Chart(df)
@@ -3043,6 +3069,7 @@ if "📈 투자" in tabs:
                             df = pd.DataFrame(hist)
                             df["label"] = df["reason"].apply(lambda x: x if str(x).strip() else "(무제)")
                             df["price"] = df["price"].astype(float)
+                            df = df[["label", "price"]]
                             chart = (
                                 alt.Chart(df)
                                 .mark_line(point=True)
