@@ -780,6 +780,33 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
     except Exception:
         return ("없음", 0)
 
+def _safe_credit(student_id: str):
+    """
+    ✅ (score, grade) 안전 조회
+    - _calc_credit_score_for_student()가 있으면 그걸 우선 사용
+    - 없거나 에러면 (0, 0)
+    """
+    try:
+        if not student_id:
+            return (0, 0)
+
+        f = globals().get("_calc_credit_score_for_student")
+        if callable(f):
+            sc, gr = f(str(student_id))
+            return (int(sc or 0), int(gr or 0))
+
+        # (혹시 계산 함수가 없을 때) students 문서에 저장된 값이 있으면 사용
+        snap = db.collection("students").document(str(student_id)).get()
+        if not snap.exists:
+            return (0, 0)
+        data = snap.to_dict() or {}
+        sc = int(data.get("credit_score", 0) or 0)
+        gr = int(data.get("credit_grade", 0) or 0)
+        return (sc, gr)
+
+    except Exception:
+        return (0, 0)
+
 def _fmt_admin_one_line(no: int, name: str, asset_total: int, bal_now: int, sv_total: int, inv_cnt: int, inv_total: int, role_name: str, credit_score: int, credit_grade: int) -> str:
     inv_part = "투자총액: 없음" if inv_cnt <= 0 else f"투자총액: {inv_cnt}종목 {int(inv_total)}드림"
     role_part = f"직업: {role_name or '없음'}"
