@@ -3163,7 +3163,7 @@ if "📈 투자" in tabs:
                             df = pd.DataFrame(rows)
 
                             # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                            left, right = st.columns([1.2, 0.7], gap="large")
+                            left, right = st.columns([1.7, 1.2], gap="large")
 
                             with left:
                                 st.markdown(
