@@ -807,10 +807,28 @@ def _safe_credit(student_id: str):
     except Exception:
         return (0, 0)
 
-def _fmt_admin_one_line(no: int, name: str, asset_total: int, bal_now: int, sv_total: int, inv_cnt: int, inv_total: int, role_name: str, credit_score: int, credit_grade: int) -> str:
-    inv_part = "투자총액: 없음" if inv_cnt <= 0 else f"투자총액: {inv_cnt}종목 {int(inv_total)}드림"
-    role_part = f"직업: {role_name or '없음'}"
+def _fmt_admin_one_line(
+    no: int,
+    name: str,
+    asset_total: int,
+    bal_now: int,
+    sv_total: int,
+    inv_text: str,
+    inv_total: int,
+    role_name: str,
+    credit_score: int,
+    credit_grade: int,
+) -> str:
+    """
+    ✅ 개별조회/전체통장 expander 제목(접힘 상태) 한 줄
+    - 투자: "없음" 또는 "국어 100드림, 수학 50드림" 같은 inv_text 그대로 사용
+    """
+    inv_text = str(inv_text or "").strip()
+    inv_part = "투자총액: 없음" if (not inv_text or inv_text == "없음") else f"투자총액: {inv_text}"
+
+    role_part = f"직업: {str(role_name or '없음')}"
     credit_part = f"신용등급: {int(credit_grade)}등급({int(credit_score)}점)"
+
     return (
         f"👤 {int(no)}번 {name} | "
         f"총자산 {int(asset_total)}드림 · 통장잔액 {int(bal_now)}드림 · 적금총액 {int(sv_total)}드림 · "
