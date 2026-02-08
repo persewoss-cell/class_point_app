@@ -799,10 +799,239 @@ def api_list_templates_cached():
                     "kind": t.get("kind"),
                     "amount": int(t.get("amount", 0) or 0),
                     "order": int(t.get("order", 999999) or 999999),
+                    "group": str(t.get("group", "") or ""),
+                    "base_label": str(t.get("base_label", "") or ""),
                 }
             )
-    templates.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
-    return {"ok": True, "templates": templates}
+    templates.sort(key=lambda x: (int(x.get('order', 999999)), str(x.get('label',''))))
+    return {'ok': True, 'templates': templates}
+
+# =========================
+# Templates admin CRUD (보상/벌금/템플릿 탭)
+# =========================
+def _tpl_make_label(base_label: str, group: str) -> str:
+    base_label = str(base_label or "").strip()
+    group = str(group or "").strip()
+    return f"[{group}] {base_label}" if group else base_label
+
+
+def _tpl_parse_label(label: str):
+    """label이 '[구분] 내용' 형태면 분리해서 반환"""
+    label = str(label or "").strip()
+    if label.startswith("[") and "]" in label:
+        try:
+            g = label[1 : label.index("]")].strip()
+            rest = label[label.index("]") + 1 :].strip()
+            if rest.startswith(" "):
+                rest = rest.strip()
+            return g, rest
+        except Exception:
+            pass
+    return "", label
+
+
+def api_admin_upsert_template(admin_pin: str, template_id: str, base_label: str, group: str, kind: str, amount: int, order: int):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    base_label = str(base_label or "").strip()
+    group = str(group or "").strip()
+    kind = str(kind or "").strip()
+    amount = int(amount or 0)
+    order = int(order or 1)
+
+    if not base_label:
+        return {"ok": False, "error": "내역 이름이 필요합니다."}
+    if kind not in ("deposit", "withdraw"):
+        return {"ok": False, "error": "종류는 deposit/withdraw만 가능합니다."}
+    if amount <= 0:
+        return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
+    if order <= 0:
+        return {"ok": False, "error": "순서는 1 이상이어야 합니다."}
+
+    label = _tpl_make_label(base_label, group)
+
+    payload = {
+        "label": label,
+        "base_label": base_label,
+        "group": group,
+        "kind": kind,
+        "amount": amount,
+        "order": order,
+    }
+    if template_id:
+        db.collection("templates").document(str(template_id)).set(payload, merge=True)
+    else:
+        db.collection("templates").document().set(payload)
+
+    api_list_templates_cached.clear()
+    return {"ok": True}
+
+
+def api_admin_delete_template(admin_pin: str, template_id: str):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+    template_id = str(template_id or "").strip()
+    if not template_id:
+        return {"ok": False, "error": "template_id가 필요합니다."}
+    db.collection("templates").document(template_id).delete()
+    api_list_templates_cached.clear()
+    return {"ok": True}
+
+
+def api_admin_backfill_template_order(admin_pin: str):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    docs = list(db.collection("templates").stream())
+    items = []
+    for d in docs:
+        t = d.to_dict() or {}
+        if t.get("label"):
+            items.append((d.id, t))
+    # label 기준으로 정렬 후, order 없는 것만 채움
+    items.sort(key=lambda x: str((x[1] or {}).get("label", "")))
+
+    batch = db.batch()
+    for idx, (doc_id, t) in enumerate(items, start=1):
+        if (t or {}).get("order", None) is None:
+            ref = db.collection("templates").document(doc_id)
+            batch.set(ref, {"order": idx}, merge=True)
+    batch.commit()
+
+    api_list_templates_cached.clear()
+    return {"ok": True, "count": len(items)}
+
+
+def api_admin_normalize_template_order(admin_pin: str):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    docs = list(db.collection("templates").stream())
+    items = []
+    for d in docs:
+        t = d.to_dict() or {}
+        if t.get("label"):
+            items.append((d.id, t))
+
+    items.sort(
+        key=lambda x: (
+            int((x[1] or {}).get("order", 999999) or 999999),
+            str((x[1] or {}).get("label", "")),
+        )
+    )
+
+    batch = db.batch()
+    for idx, (doc_id, _) in enumerate(items, start=1):
+        ref = db.collection("templates").document(doc_id)
+        batch.set(ref, {"order": idx}, merge=True)
+    batch.commit()
+
+    api_list_templates_cached.clear()
+    return {"ok": True, "count": len(items)}
+
+
+def api_admin_save_template_orders(admin_pin: str, ordered_template_ids: list[str]):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+    if not ordered_template_ids:
+        return {"ok": False, "error": "저장할 순서가 없습니다."}
+    try:
+        batch = db.batch()
+        for idx, tid in enumerate(ordered_template_ids, start=1):
+            ref = db.collection("templates").document(str(tid))
+            batch.set(ref, {"order": idx}, merge=True)
+        batch.commit()
+
+        api_list_templates_cached.clear()
+        return {"ok": True, "count": len(ordered_template_ids)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# =========================
+# Admin bulk 지급/벌금
+# =========================
+def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+    amount = int(amount or 0)
+    memo = (memo or "").strip() or "일괄 지급"
+    if amount <= 0:
+        return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
+
+    docs = list(db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream())
+    count = 0
+    for d in docs:
+        student_id = d.id
+        student_ref = db.collection("students").document(student_id)
+        tx_ref = db.collection("transactions").document()
+
+        @firestore.transactional
+        def _do(transaction):
+            snap = student_ref.get(transaction=transaction)
+            bal = int((snap.to_dict() or {}).get("balance", 0))
+            new_bal = bal + amount
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.set(
+                tx_ref,
+                {
+                    "student_id": student_id,
+                    "type": "deposit",
+                    "amount": amount,
+                    "balance_after": new_bal,
+                    "memo": memo,
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                },
+            )
+
+        _do(db.transaction())
+        count += 1
+
+    api_list_accounts_cached.clear()
+    return {"ok": True, "count": count}
+
+
+def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
+    """✅ 잔액 부족이어도 적용(음수 허용)"""
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+    amount = int(amount or 0)
+    memo = (memo or "").strip() or "일괄 벌금"
+    if amount <= 0:
+        return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
+
+    docs = list(db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream())
+    count = 0
+    for d in docs:
+        student_id = d.id
+        student_ref = db.collection("students").document(student_id)
+        tx_ref = db.collection("transactions").document()
+
+        @firestore.transactional
+        def _do(transaction):
+            snap = student_ref.get(transaction=transaction)
+            bal = int((snap.to_dict() or {}).get("balance", 0))
+            new_bal = bal - amount
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.set(
+                tx_ref,
+                {
+                    "student_id": student_id,
+                    "type": "withdraw",
+                    "amount": -amount,
+                    "balance_after": new_bal,
+                    "memo": memo,
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                },
+            )
+
+        _do(db.transaction())
+        count += 1
+
+    api_list_accounts_cached.clear()
+    return {"ok": True, "count": count}
+
 
 
 # =========================
@@ -1527,6 +1756,8 @@ def api_list_treasury_templates_cached():
                     "kind": str(t.get("kind", "income") or "income"),  # income/expense
                     "amount": int(t.get("amount", 0) or 0),
                     "order": int(t.get("order", 999999) or 999999),
+                    "group": str(t.get("group", "") or ""),
+                    "base_label": str(t.get("base_label", "") or ""),
                 }
             )
     templates.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
@@ -2401,7 +2632,7 @@ my_perms = get_my_permissions(my_student_id, is_admin=is_admin)
 # (관리자) 학급 시스템 탭 + (학생) 접근 가능한 탭만
 # =========================
 ALL_TABS = [
-    "🏦 내 통장",
+    "🎁 보상/벌금/템플릿",
     "💼 직업/월급",
     "🏛️ 국세청(국고)",
     "📊 통계청",
@@ -2627,158 +2858,82 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
 # 🏦 내 통장 탭
 # =========================
 if "🏦 내 통장" in tabs:
-    with tab_map["🏦 내 통장"]:
-        if is_admin:
-            st.info("관리자는 ‘내 통장’ 대신 아래 탭에서 학급 전체를 관리합니다.")
-        else:
-            refresh_account_data_light(login_name, login_pin, force=True)
-            slot = st.session_state.data.get(login_name, {})
-            if slot.get("error"):
-                st.error(slot["error"])
-                st.stop()
+    with tab_map["🎁 보상/벌금/템플릿"]:
+        st.subheader("🎁 보상/벌금/템플릿")
 
-            df_tx = slot["df_tx"]
-            balance = int(slot.get("balance", 0) or 0)
-            student_id = slot.get("student_id")
+        admin_pin = ADMIN_PIN
 
-            # ✅ student_id 없으면 여기서 중단(이게 None이면 적금/직업/신용도 전부 못 가져옴)
-            if not student_id:
-                st.error("학생 ID를 불러오지 못했어요. (로그인/잔액 조회 확인 필요)")
-                st.stop()
+        # -------------------------------------------------
+        # 1) ✅ 전체 일괄 지급/벌금 (하우스포인트뱅크 '설정' 탭 형태)
+        # -------------------------------------------------
+        st.markdown("### 🎁 전체 일괄 지급/벌금")
 
-            # ===== 통장 요약 정보 (실데이터 기준) =====
+        tpl_res3 = api_list_templates_cached()
+        templates3 = tpl_res3.get("templates", []) if tpl_res3.get("ok") else []
+        tpl_by_display3 = {template_display_for_trade(t): t for t in templates3}
 
-            # 1) 적금 총 원금: running + matured 전부 합(원하신 “총 적금 원금 합계”)
-            total_savings_principal = 0
-            try:
-                sdocs = (
-                    db.collection("savings")  # ✅ SAV_COL 변수 스코프 문제 방지: 문자열로 고정
-                    .where(filter=FieldFilter("student_id", "==", str(student_id)))
-                    .stream()
-                )
-                for d in sdocs:
-                    s = d.to_dict() or {}
-                    total_savings_principal += int(s.get("principal", 0) or 0)
-            except Exception:
-                total_savings_principal = 0
+        memo_bulk, dep_bulk, wd_bulk = render_admin_trade_ui(
+            prefix="admin_reward_bulk",
+            templates_list=templates3,
+            template_by_display=tpl_by_display3,
+        )
 
-            # 2) 직업: 관리자 '직업/월급 목록'에서 배정한 값(job_salary.assigned_ids)으로 표시
-            job_name = "없음"
-            try:
-                sid = str(student_id)
-
-                # (1) 혹시 students에 저장된 값이 있으면 우선 사용(호환)
-                stu_doc = db.collection("students").document(sid).get()
-                stu = stu_doc.to_dict() if stu_doc.exists else {}
-                job_name = str(stu.get("job_name") or stu.get("job") or stu.get("role_id") or "").strip()
-
-                # (2) 없으면 job_salary 컬렉션에서 assigned_ids에 sid가 들어있는 직업들을 모두 모아서 표시
-                if not job_name:
-                    jobs = []
-                    for jdoc in db.collection("job_salary").stream():
-                        jd = jdoc.to_dict() or {}
-                        assigned = [str(x) for x in (jd.get("assigned_ids", []) or [])]
-                        if sid in assigned:
-                            jname = str(jd.get("job") or "").strip()
-                            if jname:
-                                jobs.append(jname)
-
-                    # 중복 제거(순서 유지) + ", "로 연결
-                    if jobs:
-                        uniq = []
-                        seen = set()
-                        for j in jobs:
-                            if j not in seen:
-                                uniq.append(j)
-                                seen.add(j)
-                        job_name = ", ".join(uniq)
-
-                if not job_name:
-                    job_name = "없음"
-            except Exception:
-                job_name = "없음"
-
-            # 3) 신용도: 공용 계산 함수 사용 (내 통장에서 0으로 뜨는 문제 방지)
-            credit_score, credit_grade = 0, 10
-            try:
-                credit_score, credit_grade = _calc_credit_score_for_student(str(student_id))
-            except Exception:
-                credit_score, credit_grade = 0, 10
-
-            st.markdown(f"## 🧾 {login_name} 통장")
-
-            # ✅ 총자산만 따로 출력 (글자 살짝 크게)
-            st.markdown(
-                f'<div class="total-asset">총자산: {balance + total_savings_principal}드림</div>',
-                unsafe_allow_html=True
-            )
-
-            # 기존 요약 정보 (총자산 제외)
-            st.markdown(
-                f"""
-**통장 잔액:** {balance}드림  
-**적금 금액:** {total_savings_principal}드림  
-**직업:** {job_name}  
-**신용도:** {credit_grade}등급({credit_score}점)
-"""
-            )
-
-            # ✅ 거래 기록 (DuplicateElementKey 방지: prefix를 탭 전용으로 변경)
-            st.subheader("📝 거래 기록(통장에 찍기)")
-            memo_u, dep_u, wd_u = render_admin_trade_ui(
-                prefix=f"bank_trade_{login_name}",
-                templates_list=TEMPLATES,
-                template_by_display=TEMPLATE_BY_DISPLAY,
-            )
-
-            col_btn1, col_btn2 = st.columns([1, 1])
-
-            with col_btn1:
-                if st.button("저장", key=f"save_{login_name}", use_container_width=True):
-                    memo = str(memo_u or "").strip()
-                    deposit = int(dep_u or 0)
-                    withdraw = int(wd_u or 0)
-
-                    if not memo:
-                        st.error("내역을 입력해 주세요.")
-                    elif (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
-                        st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
-                    else:
-                        res = api_add_tx(login_name, login_pin, memo, deposit, withdraw)
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("저장", key="reward_bulk_save", use_container_width=True):
+                if (dep_bulk > 0 and wd_bulk > 0) or (dep_bulk == 0 and wd_bulk == 0):
+                    st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
+                elif not memo_bulk:
+                    st.error("내역(메모)을 입력해 주세요.")
+                else:
+                    if dep_bulk > 0:
+                        res = api_admin_bulk_deposit(admin_pin, dep_bulk, memo_bulk)
                         if res.get("ok"):
-                            toast("저장 완료!", icon="✅")
-
-                            new_bal = int(res.get("balance", balance) or balance)
-                            st.session_state.data.setdefault(login_name, {})
-                            st.session_state.data[login_name]["balance"] = new_bal
-
-                            if student_id:
-                                tx_res = api_get_txs_by_student_id(student_id, limit=120)
-                                if tx_res.get("ok"):
-                                    df_new = pd.DataFrame(tx_res.get("rows", []))
-                                    if not df_new.empty:
-                                        df_new = df_new.sort_values("created_at_utc", ascending=False)
-                                    st.session_state.data[login_name]["df_tx"] = df_new
-
-                            pfx = f"user_trade_{login_name}"
-                            st.session_state[f"{pfx}_reset_request"] = True
+                            toast(f"일괄 지급 완료! ({res.get('count')}명)", icon="🎉")
                             st.rerun()
                         else:
-                            st.error(res.get("error", "저장 실패"))
+                            st.error(res.get("error", "일괄 지급 실패"))
+                    else:
+                        res = api_admin_bulk_withdraw(admin_pin, wd_bulk, memo_bulk)
+                        if res.get("ok"):
+                            toast(f"벌금 완료! (적용 {res.get('count')}명)", icon="⚠️")
+                            st.rerun()
+                        else:
+                            st.error(res.get("error", "일괄 벌금 실패"))
 
-            with col_btn2:
-                if st.button("되돌리기(관리자)", key=f"undo_btn_{login_name}", use_container_width=True):
-                    st.session_state.undo_mode = not st.session_state.undo_mode
+        with b2:
+            if st.button("되돌리기(관리자)", key="reward_bulk_undo_toggle", use_container_width=True):
+                st.session_state["reward_bulk_undo_mode"] = not st.session_state.get("reward_bulk_undo_mode", False)
 
-            if st.session_state.undo_mode:
-                st.divider()
-                st.subheader("↩️ 선택 되돌리기(관리자 전용)")
-                admin_pin2 = st.text_input("관리자 PIN 입력", type="password", key=f"undo_admin_pin_{login_name}").strip()
+        # -------------------------
+        # ✅ 선택 되돌리기(관리자)
+        # -------------------------
+        if st.session_state.get("reward_bulk_undo_mode", False):
+            st.divider()
+            st.subheader("↩️ 선택 되돌리기(관리자)")
 
-                if df_tx is None or df_tx.empty:
-                    st.info("거래 내역이 없어요.")
-                else:
-                    view_df = df_tx.head(50).copy()
+            admin_pin_rb = st.text_input(
+                "관리자 PIN 입력",
+                type="password",
+                key="reward_bulk_undo_admin_pin",
+            ).strip()
+
+            accounts_for_rb = api_list_accounts_cached().get("accounts", [])
+            name_map = {a["name"]: a["student_id"] for a in accounts_for_rb}
+
+            pick_name = st.selectbox(
+                "되돌릴 학생 선택",
+                ["(선택)"] + list(name_map.keys()),
+                key="reward_bulk_undo_pick_name",
+            )
+
+            if pick_name != "(선택)":
+                sid_rb = name_map.get(pick_name, "")
+                txr_rb = api_get_txs_by_student_id(sid_rb, limit=120)
+                df_rb = pd.DataFrame(txr_rb.get("rows", [])) if txr_rb.get("ok") else pd.DataFrame()
+
+                if not df_rb.empty:
+                    view_df = df_rb.head(50).copy()
 
                     def _can_rollback_row(row):
                         if str(row.get("type", "")) == "rollback":
@@ -2788,52 +2943,369 @@ if "🏦 내 통장" in tabs:
                         return True
 
                     view_df["가능"] = view_df.apply(_can_rollback_row, axis=1)
-                    st.caption("✅ 체크한 항목만 되돌립니다. (이미 되돌림/적금은 제외)")
 
                     selected_ids = []
                     for _, r in view_df.iterrows():
                         tx_id = r["tx_id"]
                         label = f"{r['created_at_kr']} | {r['memo']} | +{int(r['deposit'])} / -{int(r['withdraw'])}"
-                        ck = st.checkbox(label, key=f"rb_ck_{login_name}_{tx_id}", disabled=(not bool(r["가능"])))
-                        if ck and bool(r["가능"]):
+                        ck = st.checkbox(label, key=f"reward_bulk_rb_ck_{sid_rb}_{tx_id}", disabled=(not r["가능"]))
+                        if ck and r["가능"]:
                             selected_ids.append(tx_id)
 
-                    if st.button("선택 항목 되돌리기", key=f"do_rb_{login_name}", use_container_width=True):
-                        if not is_admin_pin(admin_pin2):
+                    if st.button("선택 항목 되돌리기", key="reward_bulk_do_rb", use_container_width=True):
+                        if not is_admin_pin(admin_pin_rb):
                             st.error("관리자 PIN이 틀립니다.")
                         elif not selected_ids:
                             st.warning("체크된 항목이 없어요.")
                         else:
-                            res2 = api_admin_rollback_selected(admin_pin2, student_id, selected_ids)
+                            res2 = api_admin_rollback_selected(admin_pin_rb, sid_rb, selected_ids)
                             if res2.get("ok"):
                                 toast(f"선택 {res2.get('undone')}건 되돌림 완료", icon="↩️")
-                                tx_res2 = api_get_txs_by_student_id(student_id, limit=120)
-                                if tx_res2.get("ok"):
-                                    df_new2 = pd.DataFrame(tx_res2.get("rows", []))
-                                    if not df_new2.empty:
-                                        df_new2 = df_new2.sort_values("created_at_utc", ascending=False)
-                                    st.session_state.data[login_name]["df_tx"] = df_new2
-
-                                bal_res2 = api_get_balance(login_name, login_pin)
-                                if bal_res2.get("ok"):
-                                    st.session_state.data[login_name]["balance"] = int(bal_res2.get("balance", 0) or 0)
-
-                                st.session_state.undo_mode = False
+                                api_list_accounts_cached.clear()
                                 st.rerun()
                             else:
                                 st.error(res2.get("error", "되돌리기 실패"))
 
-            st.divider()
-            st.subheader("📒 통장 내역(최신순)")
-            render_tx_table(df_tx)
+        st.divider()
 
+        # -------------------------------------------------
+        # 2) ✅ 내역 템플릿 순서 정렬 (접기/펼치기)
+        # -------------------------------------------------
+        h1, h2 = st.columns([0.35, 9.65], vertical_alignment="center")
+        with h1:
+            if st.button(
+                "▸" if not st.session_state.tpl_sort_panel_open else "▾",
+                key="reward_tpl_sort_panel_toggle",
+                use_container_width=True,
+            ):
+                st.session_state.tpl_sort_panel_open = not st.session_state.tpl_sort_panel_open
+                st.rerun()
+        with h2:
+            st.markdown("### 🧩 내역 템플릿 순서 정렬")
 
+        if not st.session_state.tpl_sort_panel_open:
+            st.caption("펼치려면 왼쪽 화살표(▸)를 눌러주세요.")
+        else:
+            tpl_res2 = api_list_templates_cached()
+            templates = tpl_res2.get("templates", []) if tpl_res2.get("ok") else []
+            templates = sorted(
+                templates,
+                key=lambda t: (int(t.get("order", 999999) or 999999), str(t.get("label", ""))),
+            )
+            tpl_by_id = {t["template_id"]: t for t in templates}
 
-# =========================
-# 📈 투자
-# =========================
-if "📈 투자" in tabs:
-    with tab_map["📈 투자"]:
+            if not st.session_state.tpl_sort_mode:
+                st.session_state.tpl_work_ids = [t["template_id"] for t in templates]
+            else:
+                cur_ids = [t["template_id"] for t in templates]
+                if (not st.session_state.tpl_work_ids) or (set(st.session_state.tpl_work_ids) != set(cur_ids)):
+                    st.session_state.tpl_work_ids = cur_ids
+
+            topA, topB, topC, topD = st.columns([1.1, 1.1, 1.4, 1.6])
+            with topA:
+                if st.button(
+                    "정렬모드 ON" if not st.session_state.tpl_sort_mode else "정렬모드 OFF",
+                    key="reward_tpl_sort_toggle",
+                    use_container_width=True,
+                ):
+                    st.session_state.tpl_sort_mode = not st.session_state.tpl_sort_mode
+                    if not st.session_state.tpl_sort_mode:
+                        st.session_state.tpl_work_ids = [t["template_id"] for t in templates]
+                    st.rerun()
+            with topB:
+                if st.button("order 채우기(1회)", key="reward_tpl_backfill_btn", use_container_width=True):
+                    res = api_admin_backfill_template_order(admin_pin)
+                    if res.get("ok"):
+                        toast("order 초기화 완료!", icon="🧷")
+                        api_list_templates_cached.clear()
+                        st.session_state.tpl_work_ids = []
+                        st.rerun()
+                    else:
+                        st.error(res.get("error", "실패"))
+            with topC:
+                if st.button("order 전체 재정렬", key="reward_tpl_normalize_btn", use_container_width=True):
+                    res = api_admin_normalize_template_order(admin_pin)
+                    if res.get("ok"):
+                        toast("order 재정렬 완료!", icon="🧹")
+                        api_list_templates_cached.clear()
+                        st.session_state.tpl_work_ids = []
+                        st.rerun()
+                    else:
+                        st.error(res.get("error", "실패"))
+            with topD:
+                st.session_state.tpl_mobile_sort_ui = st.checkbox(
+                    "간단 모드(모바일용)",
+                    value=bool(st.session_state.tpl_mobile_sort_ui),
+                    key="reward_tpl_mobile_sort_ui_chk",
+                    help="모바일에서 표가 세로로 쌓여 보이는 문제를 피하기 위한 정렬 UI입니다.",
+                )
+
+            if st.session_state.tpl_sort_mode:
+                st.caption("✅ 이동은 화면에서만 즉시 반영 → 마지막에 ‘저장(한 번에)’ 1번 누르면 DB 반영")
+
+            work_ids = st.session_state.tpl_work_ids
+            if not work_ids:
+                st.info("템플릿이 아직 없어요.")
+            else:
+                if st.session_state.tpl_mobile_sort_ui:
+                    options = list(range(len(work_ids)))
+
+                    def _opt_label(i: int):
+                        tid = work_ids[i]
+                        t = tpl_by_id.get(tid, {})
+                        kind_kr = "입금" if t.get("kind") == "deposit" else "출금"
+                        amt = int(t.get("amount", 0) or 0)
+                        return f"{i+1}. {t.get('label','')} ({kind_kr} {amt})"
+
+                    pick_i = st.selectbox(
+                        "이동할 항목 선택",
+                        options,
+                        format_func=_opt_label,
+                        key="reward_tpl_simple_pick",
+                    )
+
+                    b1, b2, b3 = st.columns([1, 1, 2])
+                    with b1:
+                        if st.button(
+                            "위로 ▲",
+                            key="reward_tpl_simple_up",
+                            disabled=(not st.session_state.tpl_sort_mode) or pick_i == 0,
+                            use_container_width=True,
+                        ):
+                            work_ids[pick_i - 1], work_ids[pick_i] = work_ids[pick_i], work_ids[pick_i - 1]
+                            st.session_state.tpl_work_ids = work_ids
+                            st.session_state["reward_tpl_simple_pick"] = max(0, pick_i - 1)
+                            st.rerun()
+                    with b2:
+                        if st.button(
+                            "아래로 ▼",
+                            key="reward_tpl_simple_dn",
+                            disabled=(not st.session_state.tpl_sort_mode) or pick_i == (len(work_ids) - 1),
+                            use_container_width=True,
+                        ):
+                            work_ids[pick_i + 1], work_ids[pick_i] = work_ids[pick_i], work_ids[pick_i + 1]
+                            st.session_state.tpl_work_ids = work_ids
+                            st.session_state["reward_tpl_simple_pick"] = min(len(work_ids) - 1, pick_i + 1)
+                            st.rerun()
+                    with b3:
+                        st.caption("정렬모드 ON일 때만 이동 가능")
+
+                    html = ["<div class='tpl-simple'>"]
+                    for idx, tid in enumerate(work_ids, start=1):
+                        t = tpl_by_id.get(tid, {})
+                        kind_kr = "입금" if t.get("kind") == "deposit" else "출금"
+                        amt = int(t.get("amount", 0) or 0)
+                        lab = str(t.get("label", "") or "")
+                        html.append(
+                            f"<div class='item'>"
+                            f"<span class='idx'>{idx}</span>"
+                            f"<span class='lab'>{lab}</span>"
+                            f"<div class='meta'>{kind_kr} · {amt}</div>"
+                            f"</div>"
+                        )
+                    html.append("</div>")
+                    st.markdown("\n".join(html), unsafe_allow_html=True)
+
+                    if st.session_state.tpl_sort_mode:
+                        s1, s2 = st.columns([1.2, 1.2])
+                        with s1:
+                            if st.button("저장(한 번에)", key="reward_tpl_save_orders_btn_simple", use_container_width=True):
+                                res = api_admin_save_template_orders(admin_pin, st.session_state.tpl_work_ids)
+                                if res.get("ok"):
+                                    toast(f"순서 저장 완료! ({res.get('count', 0)}개)", icon="💾")
+                                    st.session_state.tpl_sort_mode = False
+                                    api_list_templates_cached.clear()
+                                    st.session_state.tpl_work_ids = []
+                                    st.rerun()
+                                else:
+                                    st.error(res.get("error", "저장 실패"))
+                        with s2:
+                            if st.button("취소(원복)", key="reward_tpl_cancel_orders_btn_simple", use_container_width=True):
+                                st.session_state.tpl_sort_mode = False
+                                st.session_state.tpl_work_ids = [t["template_id"] for t in templates]
+                                toast("변경 취소(원복)!", icon="↩️")
+                                st.rerun()
+
+                else:
+                    head = st.columns([0.7, 5.2, 2.2, 1.4], vertical_alignment="center")
+                    head[0].markdown("<div class='tpl-head'>순서</div>", unsafe_allow_html=True)
+                    head[1].markdown("<div class='tpl-head'>내역</div>", unsafe_allow_html=True)
+                    head[2].markdown("<div class='tpl-head'>종류·금액</div>", unsafe_allow_html=True)
+                    head[3].markdown("<div class='tpl-head'>이동</div>", unsafe_allow_html=True)
+
+                    for idx, tid in enumerate(work_ids):
+                        t = tpl_by_id.get(tid, {})
+                        label = t.get("label", "")
+                        kind_kr = "입금" if t.get("kind") == "deposit" else "출금"
+                        amt = int(t.get("amount", 0) or 0)
+
+                        row = st.columns([0.7, 5.2, 2.2, 0.7, 0.7], vertical_alignment="center")
+                        row[0].markdown(f"<div class='tpl-cell'>{idx+1}</div>", unsafe_allow_html=True)
+                        row[1].markdown(
+                            f"<div class='tpl-cell'><div class='tpl-label'>{label}</div></div>",
+                            unsafe_allow_html=True,
+                        )
+                        row[2].markdown(
+                            f"<div class='tpl-cell'><div class='tpl-sub'>{kind_kr} · {amt}</div></div>",
+                            unsafe_allow_html=True,
+                        )
+
+                        if st.session_state.tpl_sort_mode:
+                            up_disabled = (idx == 0)
+                            down_disabled = (idx == len(work_ids) - 1)
+
+                            if row[3].button("⬆", key=f"reward_tpl_up_fast_{tid}", disabled=up_disabled, use_container_width=True):
+                                work_ids[idx - 1], work_ids[idx] = work_ids[idx], work_ids[idx - 1]
+                                st.session_state.tpl_work_ids = work_ids
+                                st.rerun()
+
+                            if row[4].button("⬇", key=f"reward_tpl_dn_fast_{tid}", disabled=down_disabled, use_container_width=True):
+                                work_ids[idx + 1], work_ids[idx] = work_ids[idx], work_ids[idx + 1]
+                                st.session_state.tpl_work_ids = work_ids
+                                st.rerun()
+                        else:
+                            row[3].markdown("<div class='tpl-cell'></div>", unsafe_allow_html=True)
+                            row[4].markdown("<div class='tpl-cell'></div>", unsafe_allow_html=True)
+
+                    if st.session_state.tpl_sort_mode:
+                        s1, s2 = st.columns([1.2, 1.2])
+                        with s1:
+                            if st.button("저장(한 번에)", key="reward_tpl_save_orders_btn", use_container_width=True):
+                                res = api_admin_save_template_orders(admin_pin, st.session_state.tpl_work_ids)
+                                if res.get("ok"):
+                                    toast(f"순서 저장 완료! ({res.get('count', 0)}개)", icon="💾")
+                                    st.session_state.tpl_sort_mode = False
+                                    api_list_templates_cached.clear()
+                                    st.session_state.tpl_work_ids = []
+                                    st.rerun()
+                                else:
+                                    st.error(res.get("error", "저장 실패"))
+                        with s2:
+                            if st.button("취소(원복)", key="reward_tpl_cancel_orders_btn", use_container_width=True):
+                                st.session_state.tpl_sort_mode = False
+                                st.session_state.tpl_work_ids = [t["template_id"] for t in templates]
+                                toast("변경 취소(원복)!", icon="↩️")
+                                st.rerun()
+
+        st.divider()
+
+        # -------------------------------------------------
+        # 3) 템플릿 추가/수정/삭제 (+ 구분)
+        # -------------------------------------------------
+        st.markdown("### 🧩 템플릿 추가/수정/삭제")
+
+        KIND_TO_KR = {"deposit": "입금", "withdraw": "출금"}
+        KR_TO_KIND = {"입금": "deposit", "출금": "withdraw"}
+
+        templates_now = api_list_templates_cached().get("templates", [])
+        mode = st.radio("작업", ["추가", "수정"], horizontal=True, key="reward_tpl_mode")
+
+        st.session_state.setdefault("reward_tpl_edit_id", "")
+        st.session_state.setdefault("reward_tpl_pick_prev", None)
+        st.session_state.setdefault("reward_tpl_base_label", "")
+        st.session_state.setdefault("reward_tpl_group", "")
+        st.session_state.setdefault("reward_tpl_kind_kr", "입금")
+        st.session_state.setdefault("reward_tpl_amount", 10)
+        st.session_state.setdefault("reward_tpl_order", 1)
+
+        def _tpl_display(t):
+            kind_kr = "입금" if t.get("kind") == "deposit" else "출금"
+            return f"{t.get('label','')}[{kind_kr} {int(t.get('amount',0) or 0)}]"
+
+        def _fill_tpl_form(t):
+            st.session_state["reward_tpl_edit_id"] = t["template_id"]
+
+            base = str(t.get("base_label", "") or "").strip()
+            grp = str(t.get("group", "") or "").strip()
+
+            if not base:
+                g2, b2 = _tpl_parse_label(t.get("label", ""))
+                grp = grp or g2
+                base = b2
+
+            st.session_state["reward_tpl_base_label"] = base
+            st.session_state["reward_tpl_group"] = grp
+            st.session_state["reward_tpl_kind_kr"] = KIND_TO_KR.get(t.get("kind", "deposit"), "입금")
+            st.session_state["reward_tpl_amount"] = int(t.get("amount", 10) or 10)
+            st.session_state["reward_tpl_order"] = int(t.get("order", 1) or 1)
+
+        if mode == "수정" and templates_now:
+            labels = [_tpl_display(t) for t in templates_now]
+            pick = st.selectbox(
+                "수정할 템플릿 선택",
+                list(range(len(templates_now))),
+                format_func=lambda idx: labels[idx],
+                key="reward_tpl_pick",
+            )
+            if st.session_state["reward_tpl_pick_prev"] != pick:
+                st.session_state["reward_tpl_pick_prev"] = pick
+                _fill_tpl_form(templates_now[pick])
+        elif mode == "추가":
+            st.session_state["reward_tpl_edit_id"] = ""
+            st.session_state["reward_tpl_pick_prev"] = None
+
+        # ✅ 요청: 내역이름 | 구분 | 종류 | 금액
+        tcol1, tcol2, tcol3, tcol4 = st.columns([2, 1, 1, 1])
+        with tcol1:
+            base_label = st.text_input("내역 이름", key="reward_tpl_base_label").strip()
+        with tcol2:
+            group = st.text_input("구분", key="reward_tpl_group").strip()
+        with tcol3:
+            kind_kr = st.selectbox("종류", ["입금", "출금"], key="reward_tpl_kind_kr")
+        with tcol4:
+            amount = st.number_input("금액", min_value=1, step=1, key="reward_tpl_amount")
+
+        order = st.number_input("순서(order)", min_value=1, step=1, key="reward_tpl_order")
+
+        preview_label = _tpl_make_label(base_label, group)
+        st.caption(f"저장될 템플릿: **{preview_label}**")
+
+        if st.button("저장(추가/수정)", key="reward_tpl_save", use_container_width=True):
+            if not base_label:
+                st.error("내역 이름이 필요합니다.")
+            else:
+                kind_eng = KR_TO_KIND[kind_kr]
+                tid = st.session_state.get("reward_tpl_edit_id", "") if mode == "수정" else ""
+                res = api_admin_upsert_template(admin_pin, tid, base_label, group, kind_eng, int(amount), int(order))
+                if res.get("ok"):
+                    toast("템플릿 저장 완료!", icon="🧩")
+                    api_list_templates_cached.clear()
+                    st.rerun()
+                else:
+                    st.error(res.get("error", "템플릿 저장 실패"))
+
+        st.caption("삭제")
+        if templates_now:
+            del_labels = [_tpl_display(t) for t in templates_now]
+            del_pick = st.selectbox(
+                "삭제할 템플릿 선택",
+                list(range(len(templates_now))),
+                format_func=lambda idx: del_labels[idx],
+                key="reward_tpl_del_pick",
+            )
+            del_id = templates_now[del_pick]["template_id"]
+
+            if st.button("삭제", key="reward_tpl_del_btn", use_container_width=True):
+                st.session_state["reward_tpl_del_confirm"] = True
+
+            if st.session_state.get("reward_tpl_del_confirm", False):
+                st.warning("정말로 삭제하시겠습니까?")
+                y, n = st.columns(2)
+                with y:
+                    if st.button("예", key="reward_tpl_del_yes", use_container_width=True):
+                        res = api_admin_delete_template(admin_pin, del_id)
+                        if res.get("ok"):
+                            toast("삭제 완료!", icon="🗑️")
+                            st.session_state["reward_tpl_del_confirm"] = False
+                            api_list_templates_cached.clear()
+                            st.rerun()
+                        else:
+                            st.error(res.get("error", "삭제 실패"))
+                with n:
+                    if st.button("아니오", key="reward_tpl_del_no", use_container_width=True):
+                        st.session_state["reward_tpl_del_confirm"] = False
+                        st.rerun()
+with tab_map["📈 투자"]:
 
         INV_PROD_COL = "invest_products"
         INV_HIST_COL = "invest_price_history"
