@@ -3072,7 +3072,6 @@ ALL_TABS = [
     "💳 신용등급",
     "🏦 은행(적금)",
     "📈 투자",
-    "👥 계정 정보/활성화",
 ]
 
 def tab_visible(tab_name: str):
