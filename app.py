@@ -3164,13 +3164,20 @@ if "📈 투자" in tabs:
                             # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
                             left, right = st.columns([1.7, 1.9], gap="large")
 
+                            # ✅ 표 폭 100% + 헤더 중앙정렬 (CSS는 따로 먼저 주입)
                             st.markdown(
                                 """
                                 <style>
-                                table { width: 100% !important; }
-                                th { text-align: center !important; }
+                                .inv_hist_table table { width: 100% !important; }
+                                .inv_hist_table th { text-align: center !important; }
                                 </style>
-                                """ + df.to_html(escape=False, index=False),
+                                """,
+                                unsafe_allow_html=True,
+                            )
+
+                            # ✅ 표 출력 (HTML이 텍스트로 깨지지 않게 div로 감싸기)
+                            st.markdown(
+                                f"<div class='inv_hist_table'>{df.to_html(escape=False, index=False)}</div>",
                                 unsafe_allow_html=True,
                             )
 
