@@ -5213,6 +5213,8 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
             st.divider()
 
+
+        
         # -------------------------------------------------
         # (B) 학생: 적금 가입 UI + 내 적금 목록 + 신용등급 미리보기
         # -------------------------------------------------
@@ -5235,7 +5237,8 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 sc, gr = _calc_credit_score_for_student(my_student_id)
                 st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
 
-            st.markdown(f"#### 현재 잔액: **{balance} 포인트**")
+st.markdown(f"#### 현재 잔액: **{balance}드림**")
+st.markdown(f"#### 적금 총액: **{total_savings_principal}드림**")
 
             st.markdown("### 📝 적금 가입")
             st.caption("• 적금 가입 시 통장에서 해당 금액이 출금됩니다. • 만기면 원금+이자가 자동 지급됩니다. • 중도해지는 원금만 지급됩니다.")
@@ -5504,7 +5507,7 @@ if "🎯 목표" in tabs and (not is_admin):
                 interest = int(s.get("interest", 0) or 0)
                 principal_all_running += principal
 
-                mdt = _to_utc_datetime(s.get("maturity_date"))
+                mdt = _to_utc_datetime(s.get("maturity_date") or s.get("maturity_utc"))
                 if isinstance(mdt, datetime):
                     m_date = mdt.astimezone(KST).date()
                     if m_date <= g_date:
@@ -5519,7 +5522,6 @@ if "🎯 목표" in tabs and (not is_admin):
         now_ratio = clamp01(bal_now / goal_amount if goal_amount > 0 else 0)
         exp_ratio = clamp01(expected_amount / goal_amount if goal_amount > 0 else 0)
 
-        st.write(f"통장 잔액 기준: **{now_ratio*100:.1f}%** (현재 {bal_now} / 목표 {goal_amount})")
         st.progress(exp_ratio)
         st.write(f"총 자산 기준 예상 달성률: **{exp_ratio*100:.1f}%** (예상 {expected_amount} / 목표 {goal_amount})")
 
