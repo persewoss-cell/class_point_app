@@ -5134,7 +5134,7 @@ if "👥 계정 정보/활성화" in tabs:
                 st.rerun()
 
         with r2c3:
-            if st.button("📈 투자 켜기", width="stretch", key="inv_all_on")::
+            if st.button("📈 투자 켜기", width="stretch", key="inv_all_on"):
                 if "투자활성화" in st.session_state.account_df.columns:
                     st.session_state.account_df["투자활성화"] = True
                 st.rerun()
