@@ -5478,26 +5478,27 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
         # -------------------------------------------------
         # (C) 이자율 표(캡쳐 표 위치): 장부 아래 / 학생 화면 맨 아래
+        #   ✅ 항상 보이게 하지 말고, 필요할 때만 펼치기
         # -------------------------------------------------
-        st.markdown("### 📌 신용등급 × 적금기간 이자율(%) 표")
+        with st.expander("📌 신용등급 × 적금기간 이자율(%) 표 보기", expanded=False):
 
-        weeks = list(bank_rate_cfg.get("weeks", []) or [])
-        rates = dict(bank_rate_cfg.get("rates", {}) or {})
+            weeks = list(bank_rate_cfg.get("weeks", []) or [])
+            rates = dict(bank_rate_cfg.get("rates", {}) or {})
 
-        table_rows = []
-        for g in range(1, 11):
-            row = {"신용등급": f"{g}등급"}
-            gmap = dict(rates.get(str(g), {}) or {})
-            for w in weeks:
-                try:
-                    row[f"{int(w)}주"] = int(float(gmap.get(str(int(w)), 0) or 0))
-                except Exception:
-                    row[f"{w}주"] = 0
-            table_rows.append(row)
+            table_rows = []
+            for g in range(1, 11):
+                row = {"신용등급": f"{g}등급"}
+                gmap = dict(rates.get(str(g), {}) or {})
+                for w in weeks:
+                    try:
+                        row[f"{int(w)}주"] = int(float(gmap.get(str(int(w)), 0) or 0))
+                    except Exception:
+                        row[f"{w}주"] = 0
+                table_rows.append(row)
 
-        df_rate = pd.DataFrame(table_rows)
-        st.dataframe(df_rate, use_container_width=True, hide_index=True)
-        st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다.")
+            df_rate = pd.DataFrame(table_rows)
+            st.dataframe(df_rate, use_container_width=True, hide_index=True)
+            st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다.")
 
 # =========================
 # 10) 🗓️ 일정 (권한별 수정)
