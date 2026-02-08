@@ -2466,7 +2466,7 @@ if "🏦 내 통장" in tabs:
 
             # ===== 통장 요약 정보 (실데이터 기준) =====
 
-            # 1️⃣ 적금 총 원금 (running + matured 전부)
+            # 1) 적금 총 원금 (running + matured + canceled 전부 합계)
             total_savings_principal = 0
             try:
                 sdocs = (
@@ -2480,35 +2480,48 @@ if "🏦 내 통장" in tabs:
             except Exception:
                 pass
 
-            # 2️⃣ 학생 문서 직접 로드
-            stu = {}
+            # 2) 직업(roles 템플릿 기준으로 표시)
+            job_name = "없음"
             try:
-                if student_id:
-                    stu_doc = db.collection("students").document(student_id).get()
-                    stu = stu_doc.to_dict() if stu_doc.exists else {}
+                stu_snap = db.collection("students").document(student_id).get()
+                stu = stu_snap.to_dict() if stu_snap.exists else {}
+                role_id = str(stu.get("role_id") or "").strip()
+                if role_id:
+                    role_snap = db.collection("roles").document(role_id).get()
+                    if role_snap.exists:
+                        role = role_snap.to_dict() or {}
+                        job_name = str(role.get("name") or role.get("job_name") or "없음")
             except Exception:
-                stu = {}
+                pass
 
-            # 직업
-            job_name = stu.get("job_name") or stu.get("job") or stu.get("job_title") or "없음"
-
-            # 3️⃣ 신용도 (관리자 신용등급 계산 로직 재사용)
-            credit_score, credit_grade = 0, 0
+            # 3) 신용도(점수/등급)
+            credit_score = 0
+            credit_grade = 0
             try:
-                if student_id:
-                    credit_score, credit_grade = _calc_credit_score_for_student(student_id)
+                credit_score, credit_grade = _calc_credit_score_for_student(student_id)
             except Exception:
-                credit_score, credit_grade = 0, 0
+                # 계산 함수가 어떤 이유로든 실패하면, 그래도 화면은 유지
+                credit_score = 0
+                credit_grade = int(slot.get("credit_grade", 0) or 0)
 
             st.markdown(f"## 🧾 {login_name} 통장")
             st.markdown(
                 f"""
-**내 자산:** {balance + total_savings_principal}드림  
+**내 자산:** {balance + total_savings_principal}드림  *(통장 잔액+적금원금)*  
 **통장 잔액:** {balance}드림  
 **적금 금액:** {total_savings_principal}드림  
 **직업:** {job_name}  
 **신용도:** {credit_grade}등급 ({credit_score}점)
 """
+            )
+
+            # ✅ 거래 기록
+            st.subheader("📝 거래 기록(통장에 찍기)")
+
+            memo_u, dep_u, wd_u = render_admin_trade_ui(
+                prefix=f"user_trade_{login_name}",
+                templates_list=TEMPLATES,
+                template_by_display=TEMPLATE_BY_DISPLAY,
             )
 
             # ✅ 거래 기록
