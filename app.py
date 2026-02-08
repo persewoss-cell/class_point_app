@@ -4964,9 +4964,10 @@ if "👥 계정 정보/활성화" in tabs:
             data=bio.getvalue(),
             file_name="accounts_sample.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
+            width="stretch",
             key="acc_bulk_sample_down",
         )
+
 
         up = st.file_uploader("📤 엑셀 업로드(xlsx)", type=["xlsx"], key="acc_bulk_upl")
 
@@ -5121,25 +5122,25 @@ if "👥 계정 정보/활성화" in tabs:
         r2c1, r2c2, r2c3, r2c4 = st.columns(4)
 
         with r2c1:
-            if st.button("🔌 입출금 켜기", use_container_width=True, key="io_all_on"):
+            if st.button("🔌 입출금 켜기", width="stretch", key="io_all_on"):
                 if "입출금활성화" in st.session_state.account_df.columns:
                     st.session_state.account_df["입출금활성화"] = True
                 st.rerun()
 
         with r2c2:
-            if st.button("⛔ 입출금 끄기", use_container_width=True, key="io_all_off"):
+            if st.button("⛔ 입출금 끄기", width="stretch", key="io_all_off"):
                 if "입출금활성화" in st.session_state.account_df.columns:
                     st.session_state.account_df["입출금활성화"] = False
                 st.rerun()
 
         with r2c3:
-            if st.button("📈 투자 켜기", use_container_width=True, key="inv_all_on"):
+            if st.button("📈 투자 켜기", width="stretch", key="inv_all_on")::
                 if "투자활성화" in st.session_state.account_df.columns:
                     st.session_state.account_df["투자활성화"] = True
                 st.rerun()
 
         with r2c4:
-            if st.button("📉 투자 끄기", use_container_width=True, key="inv_all_off"):
+            if st.button("📉 투자 끄기", width="stretch", key="inv_all_off"):
                 if "투자활성화" in st.session_state.account_df.columns:
                     st.session_state.account_df["투자활성화"] = False
                 st.rerun()
