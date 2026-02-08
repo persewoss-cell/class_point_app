@@ -3181,9 +3181,24 @@ if "📈 투자" in tabs:
                                     .inv_hist_table th{
                                       text-align: center !important;
                                     }
-                                    .inv_hist_table td, .inv_hist_table th{
-                                      white-space: nowrap;
-                                    }
+                                .inv_hist_table td,
+                                .inv_hist_table th{
+                                  padding: 10px 12px !important;   /* ✅ 행간 여유 */
+                                  line-height: 1.35 !important;    /* ✅ 글자 간격 */
+                                  vertical-align: middle !important;
+                                  font-size: 0.95rem !important;
+                                }
+
+                                /* 기본은 한 줄 유지 */
+                                .inv_hist_table td{
+                                  white-space: nowrap;
+                                }
+
+                                /* ✅ 변동사유(2번째 열)만 줄바꿈 허용 */
+                                .inv_hist_table td:nth-child(2){
+                                  white-space: normal !important;
+                                  word-break: keep-all !important;
+                                
                                     </style>
                                     """,
                                     unsafe_allow_html=True,
