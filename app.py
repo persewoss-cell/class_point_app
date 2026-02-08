@@ -3325,7 +3325,11 @@ if "🏦 내 통장" in tabs:
                                     a = chunk[j]
                                     nm = str(a.get("name", "") or "")
                                     sid = str(a.get("student_id", "") or "")
-                                    label = f"{base + j + 1}번 {nm}"
+                                    import re
+                                    m = re.search(r"\d+", nm)
+                                    num = m.group() if m else "?"
+
+                                    label = f"{num}번 {nm}"
                                     ck = st.checkbox(label, key=f"admin_personal_pick_{sid}")
                                     if ck:
                                         selected_ids.append(sid)
