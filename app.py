@@ -4022,8 +4022,8 @@ if "🔎 개별조회" in tabs:
                 savings = sres.get("savings", []) if sres.get("ok") else []
                 sv_total = savings_active_total(savings)
 
-                # 투자(보유) 요약
-                inv_cnt, inv_total = _get_invest_summary_by_student_id(sid)
+                # 투자(보유) 요약  ✅ (text, total) 로 받기
+                inv_text, inv_total = _get_invest_summary_by_student_id(sid)
 
                 # 직업(roles)
                 role_name = _get_role_name_by_student_id(sid)
@@ -4040,7 +4040,7 @@ if "🔎 개별조회" in tabs:
                     asset_total=asset_total,
                     bal_now=bal_now,
                     sv_total=sv_total,
-                    inv_cnt=inv_cnt,
+                    inv_text=inv_text,      # ✅ 여기!
                     inv_total=inv_total,
                     role_name=role_name,
                     credit_score=credit_score,
@@ -4048,17 +4048,16 @@ if "🔎 개별조회" in tabs:
                 )
 
                 with st.expander(collapsed, expanded=False):
-                    # ✅ 펼침: 한 줄 크게
-                    st.markdown(f"#### {collapsed}")
+                    # ✅ 펼침: (원하던) 캡쳐 스타일로 큰 숫자 표시
+                    r1 = st.columns(4)
+                    r1[0].metric("총자산", f"{int(asset_total)}드림")
+                    r1[1].metric("통장잔액", f"{int(bal_now)}드림")
+                    r1[2].metric("적금총액", f"{int(sv_total)}드림")
+                    r1[3].metric("투자총액", "없음" if (not inv_text or inv_text == "없음") else inv_text)
 
-                    # (기존 스타일) 통장/적금 요약
-                    render_asset_summary(bal_now, savings)
-
-                    # 투자 요약
-                    if inv_cnt <= 0:
-                        st.caption("📈 투자: 없음")
-                    else:
-                        st.info(f"📈 투자총액(보유): {inv_cnt}종목 · {int(inv_total)}드림")
+                    r2 = st.columns(2)
+                    r2[0].metric("직업", role_name if role_name else "없음")
+                    r2[1].metric("신용등급", f"{int(credit_grade)}등급({int(credit_score)}점)")
 
                     # 통장내역(최신 120)
                     st.markdown("### 📒 통장내역")
