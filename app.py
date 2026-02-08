@@ -549,6 +549,13 @@ div[data-testid="stExpander"] > div{
     border: none !important;
 }
 
+/* ✅ 총자산 강조 */
+.total-asset{
+    font-size: 1.15rem;
+    font-weight: 900;
+    margin-bottom: 0.35rem;
+}
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -2604,9 +2611,16 @@ if "🏦 내 통장" in tabs:
                 credit_score, credit_grade = 0, 10
 
             st.markdown(f"## 🧾 {login_name} 통장")
+
+            # ✅ 총자산만 따로 출력 (글자 살짝 크게)
+            st.markdown(
+                f'<div class="total-asset">총자산: {balance + total_savings_principal}드림</div>',
+                unsafe_allow_html=True
+            )
+
+            # 기존 요약 정보 (총자산 제외)
             st.markdown(
                 f"""
-**총 자산:** {balance + total_savings_principal}드림  
 **통장 잔액:** {balance}드림  
 **적금 금액:** {total_savings_principal}드림  
 **직업:** {job_name}  
