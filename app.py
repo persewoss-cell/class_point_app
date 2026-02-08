@@ -819,10 +819,6 @@ def _fmt_admin_one_line(
     credit_score: int,
     credit_grade: int,
 ) -> str:
-    """
-    ✅ 개별조회/전체통장 expander 제목(접힘 상태) 한 줄
-    - 투자: "없음" 또는 "국어 100드림, 수학 50드림" 같은 inv_text 그대로 사용
-    """
     inv_text = str(inv_text or "").strip()
     inv_part = "투자총액: 없음" if (not inv_text or inv_text == "없음") else f"투자총액: {inv_text}"
 
