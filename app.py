@@ -2460,8 +2460,38 @@ if "🏦 내 통장" in tabs:
             balance = int(slot["balance"])
             student_id = slot.get("student_id")
 
-            st.markdown(f"## 🧾 {login_name} 통장")
-            st.markdown(f"#### 통장 잔액: **{balance} 포인트**")
+# ===== 통장 요약 정보 =====
+total_savings_principal = 0
+try:
+    sdocs = (
+        db.collection(SAV_COL)
+        .where(filter=FieldFilter("student_id", "==", student_id))
+        .where(filter=FieldFilter("status", "==", "running"))
+        .stream()
+    )
+    for d in sdocs:
+        s = d.to_dict() or {}
+        total_savings_principal += int(s.get("principal", 0) or 0)
+except Exception:
+    pass
+
+# 직업
+job_name = slot.get("job_name") or "없음"
+
+# 신용도
+credit_score = slot.get("credit_score", 0)
+credit_grade = slot.get("credit_grade", 0)
+
+st.markdown(f"## 🧾 {login_name} 통장")
+st.markdown(
+    f"""
+**내 자산:** {balance + total_savings_principal}드림  
+**통장 잔액:** {balance}드림  
+**적금 금액:** {total_savings_principal}드림  
+**직업:** {job_name}  
+**신용도:** {credit_grade}등급 ({credit_score}점)
+"""
+)
 
             # ✅ 서브탭 제거: 한 화면에 거래 → 되돌리기 → 내역 순서로 표시(하우스 포인트뱅크 스타일)
             st.subheader("📝 거래 기록(통장에 찍기)")
