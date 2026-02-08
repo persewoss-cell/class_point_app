@@ -3198,7 +3198,29 @@ if "📈 투자" in tabs:
                                 .inv_hist_table td:nth-child(2){
                                   white-space: normal !important;
                                   word-break: keep-all !important;
-                                
+                                /* ✅ 열 폭 직접 지정 */
+                                .inv_hist_table th:nth-child(1),
+                                .inv_hist_table td:nth-child(1){
+                                  width: 34%;
+                                }
+
+                                .inv_hist_table th:nth-child(2),
+                                .inv_hist_table td:nth-child(2){
+                                  width: 28%;
+                                }
+
+                                .inv_hist_table th:nth-child(3),
+                                .inv_hist_table td:nth-child(3){
+                                  width: 18%;
+                                  text-align: center;
+                                }
+
+                                .inv_hist_table th:nth-child(4),
+                                .inv_hist_table td:nth-child(4){
+                                  width: 20%;
+                                  text-align: center;
+                                }
+
                                     </style>
                                     """,
                                     unsafe_allow_html=True,
