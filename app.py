@@ -3164,42 +3164,42 @@ if "📈 투자" in tabs:
                             # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
                             left, right = st.columns([1.7, 1.9], gap="large")
 
-                            # ✅ 표 폭 100% + 헤더 중앙정렬 (CSS는 따로 먼저 주입)
-                            st.markdown(
-                                """
-                                <style>
-                                /* ✅ 표가 컬럼 밖으로 튀어나가지 않게 "가두기" */
-                                .inv_hist_wrap{
-                                  width: 100%;
-                                  overflow-x: auto;        /* 좁으면 가로 스크롤 */
-                                  overflow-y: hidden;
-                                }
-                                .inv_hist_table table{
-                                  width: 100% !important;
-                                  table-layout: fixed;     /* 칼럼 폭 안정화 */
-                                }
-                                .inv_hist_table th{
-                                  text-align: center !important;
-                                }
-                                .inv_hist_table td, .inv_hist_table th{
-                                  white-space: nowrap;     /* 줄바꿈 방지(원하면 제거 가능) */
-                                }
-                                </style>
-                                """,
-                                unsafe_allow_html=True,
-                            )
+                            with left:
+                                # ✅ 표 폭 100% + 헤더 중앙정렬 (CSS는 표 영역에서만)
+                                st.markdown(
+                                    """
+                                    <style>
+                                    .inv_hist_wrap{
+                                      width: 100%;
+                                      overflow-x: auto;
+                                      overflow-y: hidden;
+                                    }
+                                    .inv_hist_table table{
+                                      width: 100% !important;
+                                      table-layout: fixed;
+                                    }
+                                    .inv_hist_table th{
+                                      text-align: center !important;
+                                    }
+                                    .inv_hist_table td, .inv_hist_table th{
+                                      white-space: nowrap;
+                                    }
+                                    </style>
+                                    """,
+                                    unsafe_allow_html=True,
+                                )
 
-                            # ✅ 표 출력 (HTML이 텍스트로 깨지지 않게 div로 감싸기)
-                            st.markdown(
-                                f"""
-                                <div class="inv_hist_wrap">
-                                  <div class="inv_hist_table">
-                                    {df.to_html(escape=False, index=False)}
-                                  </div>
-                                </div>
-                                """,
-                                unsafe_allow_html=True,
-                            )
+                                # ✅ 표 출력 (왼쪽 컬럼 안에 "가둠")
+                                st.markdown(
+                                    f"""
+                                    <div class="inv_hist_wrap">
+                                      <div class="inv_hist_table">
+                                        {df.to_html(escape=False, index=False)}
+                                      </div>
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True,
+                                )
 
                             with right:
                                 # 가로: 변동사유 / 세로: 변동 후(주가)
