@@ -3162,81 +3162,24 @@ if "📈 투자" in tabs:
                             df = pd.DataFrame(rows)
 
                             # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                            left, right = st.columns([1.7, 1.9], gap="large")
+                            left, right = st.columns([1.3, 1.9], gap="large")
 
-                            with left:
-                                # ✅ 표 폭 100% + 헤더 중앙정렬 (CSS는 표 영역에서만)
-                                st.markdown(
-                                    """
-                                    <style>
-                                    .inv_hist_wrap{
-                                      width: 100%;
-                                      overflow-x: auto;
-                                      overflow-y: hidden;
-                                    }
-                                    .inv_hist_table table{
-                                      width: 100% !important;
-                                      table-layout: fixed;
-                                    }
-                                    .inv_hist_table th{
-                                      text-align: center !important;
-                                    }
-                                .inv_hist_table td,
-                                .inv_hist_table th{
-                                  padding: 10px 12px !important;   /* ✅ 행간 여유 */
-                                  line-height: 1.35 !important;    /* ✅ 글자 간격 */
-                                  vertical-align: middle !important;
-                                  font-size: 0.95rem !important;
-                                }
+                            # ✅ 표 폭 100% + 헤더 중앙정렬 (CSS는 따로 먼저 주입)
+                            st.markdown(
+                                """
+                                <style>
+                                .inv_hist_table table { width: 100% !important; }
+                                .inv_hist_table th { text-align: center !important; }
+                                </style>
+                                """,
+                                unsafe_allow_html=True,
+                            )
 
-                                /* 기본은 한 줄 유지 */
-                                .inv_hist_table td{
-                                  white-space: nowrap;
-                                }
-
-                                /* ✅ 변동사유(2번째 열)만 줄바꿈 허용 */
-                                .inv_hist_table td:nth-child(2){
-                                  white-space: normal !important;
-                                  word-break: keep-all !important;
-                                /* ✅ 열 폭 직접 지정 */
-                                .inv_hist_table th:nth-child(1),
-                                .inv_hist_table td:nth-child(1){
-                                  width: 34%;
-                                }
-
-                                .inv_hist_table th:nth-child(2),
-                                .inv_hist_table td:nth-child(2){
-                                  width: 28%;
-                                }
-
-                                .inv_hist_table th:nth-child(3),
-                                .inv_hist_table td:nth-child(3){
-                                  width: 18%;
-                                  text-align: center;
-                                }
-
-                                .inv_hist_table th:nth-child(4),
-                                .inv_hist_table td:nth-child(4){
-                                  width: 20%;
-                                  text-align: center;
-                                }
-
-                                    </style>
-                                    """,
-                                    unsafe_allow_html=True,
-                                )
-
-                                # ✅ 표 출력 (왼쪽 컬럼 안에 "가둠")
-                                st.markdown(
-                                    f"""
-                                    <div class="inv_hist_wrap">
-                                      <div class="inv_hist_table">
-                                        {df.to_html(escape=False, index=False)}
-                                      </div>
-                                    </div>
-                                    """,
-                                    unsafe_allow_html=True,
-                                )
+                            # ✅ 표 출력 (HTML이 텍스트로 깨지지 않게 div로 감싸기)
+                            st.markdown(
+                                f"<div class='inv_hist_table'>{df.to_html(escape=False, index=False)}</div>",
+                                unsafe_allow_html=True,
+                            )
 
                             with right:
                                 # 가로: 변동사유 / 세로: 변동 후(주가)
