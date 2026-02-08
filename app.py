@@ -852,8 +852,8 @@ def _fmt_admin_one_line(
 
     return (
         f"👤 {int(no)}번 {name} | "
-        f"총자산 {int(asset_total)}드림 · 통장잔액 {int(bal_now)}드림 · 적금총액 {int(sv_total)}드림 · "
-        f"{inv_part} · {role_part} · {credit_part}"
+        f"총자산 {int(asset_total)}드림 | 통장잔액 {int(bal_now)}드림 | 적금총액 {int(sv_total)}드림 | "
+        f"{inv_part} | {role_part} | {credit_part}"
     )
 
 # =========================
