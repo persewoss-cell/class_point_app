@@ -6730,12 +6730,11 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
 
             st.markdown(f"#### 현재 잔액: **{balance}드림**")
-             sv_total = sum(
-                int(s.get("principal", 0) or 0)
-                for s in savings_list
-                if str(s.get("status", "")).lower() == "active"
-            )
-
+sv_total = sum(
+    int(s.get("principal", 0) or 0)
+    for s in savings_list
+    if str(s.get("status", "")).lower() == "active"
+)
             st.markdown(f"#### 적금 총액: **{sv_total}드림**")
 
             st.markdown("### 📝 적금 가입")
