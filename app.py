@@ -976,30 +976,16 @@ def api_list_accounts_cached():
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def api_list_templates_cached():
-    """템플릿 목록을 Firestore에서 읽어옵니다.
-
-    ✅ 쿼터 초과(429) 시 기본 Firestore retry가 300초까지 붙잡는 문제가 있어
-    - retry=None
-    - timeout=10
-    - 최근 쿼터 초과 시 잠깐 차단(로컬)
-    로 빠르게 실패/복구할 수 있게 처리합니다.
-    """
-    import time
-    from google.api_core.exceptions import ResourceExhausted, DeadlineExceeded
-
-    # ✅ 쿼터 초과가 한 번 나면 잠깐 조회를 막아서 폭주 방지
-    now = time.time()
-    block_until = float(st.session_state.get("_tpl_quota_block_until", 0) or 0)
-    if block_until and now < block_until:
-        return {
-            "ok": False,
-            "templates": [],
-            "error": "Firestore 쿼터 초과(429)로 잠시 대기 중입니다. 잠시 후 다시 시도하세요.",
-        }
-
+    # ✅ Firestore 쿼터(429) / 지연 상황에서 300초 retry 루프에 걸리지 않도록
+    # - retry=None : 기본 재시도 비활성화
+    # - timeout=10 : 오래 붙잡히지 않게
+    # - limit(500) : templates가 많아져도 폭주 방지 (필요시 숫자 조절)
     try:
-        # ✅ 전체 stream은 비용이 큼 → 안전하게 limit + 짧은 timeout + retry 끔
-        docs = db.collection("templates").limit(300).stream(retry=None, timeout=10)
+        from google.api_core.exceptions import ResourceExhausted, DeadlineExceeded
+
+        q = db.collection("templates").limit(500)
+        docs = q.stream(retry=None, timeout=10)
+
         templates = []
         for d in docs:
             t = d.to_dict() or {}
@@ -1007,8 +993,12 @@ def api_list_templates_cached():
                 templates.append(
                     {
                         "template_id": d.id,
+                        # label에는 화면에 보여줄 문자열(※ 구분이 있으면 "[구분] ..." 형태 포함)
                         "label": t.get("label"),
-                        "kind": str(t.get("kind", "deposit") or "deposit"),
+                        # 선택적으로 별도 저장해둔 값(없으면 label에서 파싱해서 사용)
+                        "category": str(t.get("category", "") or ""),
+                        "base_label": str(t.get("base_label", "") or ""),
+                        "kind": t.get("kind"),
                         "amount": int(t.get("amount", 0) or 0),
                         "order": int(t.get("order", 999999) or 999999),
                     }
@@ -1017,17 +1007,24 @@ def api_list_templates_cached():
         templates.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
         return {"ok": True, "templates": templates}
 
-    except ResourceExhausted as e:
-        # ✅ 429면 2분간 조회 차단(계속 재시도/무한로딩 방지)
-        st.session_state["_tpl_quota_block_until"] = now + 120
-        return {"ok": False, "templates": [], "error": f"Firestore 쿼터 초과(429): {e}"}
-
-    except DeadlineExceeded as e:
-        return {"ok": False, "templates": [], "error": f"Firestore 응답 지연(Timeout): {e}"}
-
     except Exception as e:
+        # ResourceExhausted(429) 포함: 앱이 죽지 않게 빈 템플릿으로 반환
         return {"ok": False, "templates": [], "error": str(e)}
-
+# =========================
+# ✅ (관리자) 보상/벌금/템플릿용 helpers
+# - templates 컬렉션: {label, category?, base_label?, kind, amount, order}
+# =========================
+def _parse_template_label(label: str):
+    """label이 '[구분] 내용' 형태면 (구분, 내용) 반환"""
+    s = str(label or "").strip()
+    if s.startswith("[") and "]" in s:
+        end = s.find("]")
+        cat = s[1:end].strip()
+        rest = s[end + 1 :].strip()
+        if rest.startswith("-"):
+            rest = rest[1:].strip()
+        return cat, rest
+    return "", s
 
 
 def _compose_template_label(base_label: str, category: str):
@@ -2313,17 +2310,15 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
         prefix=prefix,                # ✅ 여기 중요: "treasury_trade" 그대로 연동됨
         plus_label="세입(+)",
         minus_label="세출(-)",
-        amounts=[0, 10, 20, 50, 100, 200, 500, 100# =========================
-# Templates (공용) - 너 코드 유지
-# =========================
-# ✅ 앱 부팅 시점에 Firestore 쿼터가 터져도(429) 앱이 죽지 않게 보호
-try:
-    tpl_res = api_list_templates_cached()
-except Exception as _e:
-    tpl_res = {"ok": False, "templates": [], "error": str(_e)}
+        amounts=[0, 10, 20, 50, 100, 200, 500, 1000],
+    )
 
-TEMPLATES = tpl_res.get("templates", []) if tpl_res.get("ok") else []
-_input("세출", min_value=0, step=1, key=exp_key)
+    # 숫자 입력(세입/세출)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.number_input("세입", min_value=0, step=1, key=inc_key)
+    with c2:
+        st.number_input("세출", min_value=0, step=1, key=exp_key)
 
     # ✅ 함수 안에서 return (return outside function 방지)
     memo = str(st.session_state.get(memo_key, "") or "").strip()
@@ -2334,7 +2329,16 @@ _input("세출", min_value=0, step=1, key=exp_key)
 # =========================
 # Templates (공용) - 너 코드 유지
 # =========================
-tpl_res = api_list_templates_cached()
+# ✅ 앱 부팅 시점에 Firestore 쿼터(429)로 templates 조회가 실패해도
+#    300초 retry 루프에 걸려 앱이 멈추지 않도록 보호
+try:
+    tpl_res = api_list_templates_cached()
+except Exception as _e:
+    tpl_res = {"ok": False, "templates": [], "error": str(_e)}
+
+if not tpl_res.get("ok"):
+    st.warning(f"템플릿을 불러오지 못했어요: {tpl_res.get('error', '알 수 없는 오류')}", icon="⚠️")
+
 TEMPLATES = tpl_res.get("templates", []) if tpl_res.get("ok") else []
 
 def template_display_for_trade(t):
