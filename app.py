@@ -3177,7 +3177,13 @@ if "📈 투자" in tabs:
 
                             # ✅ 표 출력 (HTML이 텍스트로 깨지지 않게 div로 감싸기)
                             st.markdown(
-                                f"<div class='inv_hist_table'>{df.to_html(escape=False, index=False)}</div>",
+                                f"""
+                                <div class="inv_hist_wrap">
+                                  <div class="inv_hist_table">
+                                    {df.to_html(escape=False, index=False)}
+                                  </div>
+                                </div>
+                                """,
                                 unsafe_allow_html=True,
                             )
 
