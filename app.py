@@ -1816,46 +1816,18 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
 # Savings (적금)
 # =========================
 def api_savings_list_by_student_id(student_id: str):
-    """✅ student_id 기준 적금 목록 조회 (문자/숫자 타입 모두 대응)"""
+    """✅ student_id 기준 적금 목록 조회
+    - DB에 start_date 필드가 없을 수도 있어서 order_by 제거(쿼리 실패 방지)
+    - maturity_date / maturity_utc, start_date / start_utc 등 스키마 차이도 흡수
+    """
     try:
         col = SAV_COL if "SAV_COL" in globals() else "savings"
 
         sid_str = str(student_id)
         out = []
 
-        # 1) student_id가 문자열로 저장된 경우
-        docs1 = (
-            db.collection(col)
-            .where(filter=FieldFilter("student_id", "==", sid_str))
-            .order_by("start_date", direction=firestore.Query.DESCENDING)
-            .limit(50)
-            .stream()
-        )
-
-        for d in docs1:
-            s = d.to_dict() or {}
-            out.append(
-                {
-                    "savings_id": d.id,
-                    "principal": int(s.get("principal", 0) or 0),
-                    "weeks": int(s.get("weeks", 0) or 0),
-                    "interest": int(s.get("interest", 0) or 0),
-                    "maturity_date": _to_utc_datetime(s.get("maturity_date")),
-                    "status": s.get("status", "active"),
-                }
-            )
-
-        # 2) 결과가 없고, 숫자로 저장된 경우까지 추가 탐색
-        if (not out) and sid_str.isdigit():
-            sid_int = int(sid_str)
-            docs2 = (
-                db.collection(col)
-                .where(filter=FieldFilter("student_id", "==", sid_int))
-                .order_by("start_date", direction=firestore.Query.DESCENDING)
-                .limit(50)
-                .stream()
-            )
-            for d in docs2:
+        def _push_docs(docs_iter):
+            for d in docs_iter:
                 s = d.to_dict() or {}
                 out.append(
                     {
@@ -1863,10 +1835,38 @@ def api_savings_list_by_student_id(student_id: str):
                         "principal": int(s.get("principal", 0) or 0),
                         "weeks": int(s.get("weeks", 0) or 0),
                         "interest": int(s.get("interest", 0) or 0),
-                        "maturity_date": _to_utc_datetime(s.get("maturity_date")),
-                        "status": s.get("status", "active"),
+
+                        # ✅ 둘 중 뭐가 와도 처리
+                        "start_date": _to_utc_datetime(s.get("start_date") or s.get("start_utc") or s.get("created_at")),
+                        "maturity_date": _to_utc_datetime(s.get("maturity_date") or s.get("maturity_utc")),
+
+                        # ✅ 상태도 스키마 차이 흡수
+                        "status": str(s.get("status", "active") or "active"),
                     }
                 )
+
+        # 1) student_id가 문자열로 저장된 경우
+        docs1 = (
+            db.collection(col)
+            .where(filter=FieldFilter("student_id", "==", sid_str))
+            .limit(50)
+            .stream()
+        )
+        _push_docs(docs1)
+
+        # 2) 결과가 없고, 숫자로 저장된 경우까지 추가 탐색
+        if (not out) and sid_str.isdigit():
+            sid_int = int(sid_str)
+            docs2 = (
+                db.collection(col)
+                .where(filter=FieldFilter("student_id", "==", sid_int))
+                .limit(50)
+                .stream()
+            )
+            _push_docs(docs2)
+
+        # (옵션) 화면용 정렬: start_date 최신순(없으면 맨 뒤)
+        out.sort(key=lambda x: (x.get("start_date") is not None, x.get("start_date")), reverse=True)
 
         return {"ok": True, "savings": out}
 
