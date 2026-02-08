@@ -2335,7 +2335,6 @@ ALL_TABS = [
     "🏦 은행(적금)",
     "📈 투자",
     "🛒 구입/벌금",
-    "🗓️ 일정",
     "👥 계정 정보/활성화",
 ]
 
@@ -2345,8 +2344,6 @@ def tab_visible(tab_name: str):
 
     # 학생은 기본 "내 통장" + 일정(읽기)
     if tab_name == "🏦 내 통장":
-        return True
-    if tab_name == "🗓️ 일정":
         return True
 
     # 권한별 탭 표시
@@ -5638,25 +5635,3 @@ if "🎯 목표" in tabs and (not is_admin):
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 현재 잔액과 같아요.")
 
-if "🗓️ 일정" in tabs:
-    
-        area = st.selectbox("영역", ["bank", "treasury", "env", "etc"], key="sch_area")
-        d = st.date_input("날짜", value=date.today(), key="sch_date")
-        title = st.text_input("일정 내용", key="sch_title").strip()
-
-        writable = is_admin or can_edit_schedule(area, my_perms)
-
-        if st.button("일정 추가", use_container_width=True, disabled=(not writable)):
-            if not title:
-                st.error("일정 내용을 입력하세요.")
-            else:
-                add_schedule(area, d, title, owner_roles=[], created_by=("admin" if is_admin else login_name))
-                toast("일정 추가 완료", icon="🗓️")
-                st.rerun()
-
-        st.divider()
-        rows = list_schedule(200)
-        if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        else:
-            st.info("일정이 없습니다.")
