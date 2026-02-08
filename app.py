@@ -3466,6 +3466,25 @@ if "📈 투자" in tabs:
                     if not nm:
                         st.warning("종목명을 입력해 주세요.")
                     else:
+                        # ✅ 중복 종목명 방지(공백/대소문자 무시)
+                        nm_key = nm.replace(" ", "").lower()
+                        dup = None
+                        for p in prod_all:
+                            pnm = str(p.get("name", "") or "").strip()
+                            if pnm and pnm.replace(" ", "").lower() == nm_key:
+                                dup = p
+                                break
+
+                        # (신규 추가)인데 이미 존재하면 막기
+                        if cur_obj is None and dup is not None:
+                            st.error("이미 같은 종목명이 있어요. (중복 추가 불가)")
+                            st.stop()
+
+                        # (수정)인데 다른 문서와 이름이 겹치면 막기
+                        if cur_obj is not None and dup is not None and str(dup.get("product_id")) != str(cur_obj.get("product_id")):
+                            st.error("이미 같은 종목명이 있어요. (중복 이름 불가)")
+                            st.stop()
+
                         try:
                             if cur_obj is None:
                                 db.collection(INV_PROD_COL).document().set(
