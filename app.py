@@ -3174,7 +3174,20 @@ if "📈 투자" in tabs:
                             with right:
                                 # 가로: 변동사유 / 세로: 변동 후(주가)
                                 chart_rows = []
-                                # hist는 보통 최신순 → 그래프는 오래된→최신으로
+
+                                # ✅ 초기주가 1점 추가
+                                # - 변동 기록이 있으면: 가장 오래된 기록의 price_before가 '초기주가'
+                                # - 변동 기록이 없으면: 현재주가를 초기로 표시
+                                init_price = None
+                                if hist:
+                                    oldest = hist[-1]  # hist는 최신순이라 마지막이 가장 오래됨
+                                    init_price = float(oldest.get("price_before", 0.0) or 0.0)
+                                if init_price is None:
+                                    init_price = float(p.get("current_price", 0.0) or 0.0)
+
+                                chart_rows.append({"변동사유": "초기주가", "변동 후": round(init_price, 1)})
+
+                                # ✅ 이후 변동(오래된→최신)
                                 for h2 in reversed(hist):
                                     reason2 = str(h2.get("reason", "") or "").strip() or "-"
                                     pa2 = float(h2.get("price_after", 0.0) or 0.0)
@@ -3184,12 +3197,22 @@ if "📈 투자" in tabs:
 
                                 if not cdf.empty:
                                     order = cdf["변동사유"].tolist()
+
                                     chart = (
                                         alt.Chart(cdf)
                                         .mark_line(point=True)
                                         .encode(
-                                            x=alt.X("변동사유:N", sort=order, title=None),
-                                            y=alt.Y("변동 후:Q", title=None),
+                                            x=alt.X(
+                                                "변동사유:N",
+                                                sort=order,
+                                                title=None,
+                                                axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
+                                            ),
+                                            y=alt.Y(
+                                                "변동 후:Q",
+                                                title=None,
+                                                scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
+                                            ),
                                             tooltip=["변동사유", "변동 후"],
                                         )
                                         .properties(height=260)
