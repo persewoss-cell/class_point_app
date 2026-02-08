@@ -3162,14 +3162,28 @@ if "📈 투자" in tabs:
                             df = pd.DataFrame(rows)
 
                             # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                            left, right = st.columns([1.3, 1.9], gap="large")
+                            left, right = st.columns([1.7, 1.9], gap="large")
 
                             # ✅ 표 폭 100% + 헤더 중앙정렬 (CSS는 따로 먼저 주입)
                             st.markdown(
                                 """
                                 <style>
-                                .inv_hist_table table { width: 100% !important; }
-                                .inv_hist_table th { text-align: center !important; }
+                                /* ✅ 표가 컬럼 밖으로 튀어나가지 않게 "가두기" */
+                                .inv_hist_wrap{
+                                  width: 100%;
+                                  overflow-x: auto;        /* 좁으면 가로 스크롤 */
+                                  overflow-y: hidden;
+                                }
+                                .inv_hist_table table{
+                                  width: 100% !important;
+                                  table-layout: fixed;     /* 칼럼 폭 안정화 */
+                                }
+                                .inv_hist_table th{
+                                  text-align: center !important;
+                                }
+                                .inv_hist_table td, .inv_hist_table th{
+                                  white-space: nowrap;     /* 줄바꿈 방지(원하면 제거 가능) */
+                                }
                                 </style>
                                 """,
                                 unsafe_allow_html=True,
