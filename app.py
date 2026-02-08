@@ -6735,7 +6735,7 @@ sv_total = sum(
     for s in savings_list
     if str(s.get("status", "")).lower() == "active"
 )
-            st.markdown(f"#### 적금 총액: **{sv_total}드림**")
+st.markdown(f"#### 적금 총액: **{sv_total}드림**")
 
             st.markdown("### 📝 적금 가입")
             st.caption("• 적금 가입 시 통장에서 해당 금액이 출금됩니다. • 만기면 원금+이자가 자동 지급됩니다. • 중도해지는 원금만 지급됩니다.")
