@@ -660,13 +660,12 @@ def render_asset_summary(balance_now: int, savings_list: list[dict]):
         st.metric("적금 총액", f"{int(sv_total)}")
 
 def savings_active_total(savings_list: list[dict]) -> int:
+    # ✅ running/active 모두 "진행중"으로 인정
     return sum(
         int(s.get("principal", 0) or 0)
-        for s in savings_list
-        if str(s.get("status", "")).lower() == "active"
+        for s in (savings_list or [])
+        if str(s.get("status", "")).lower().strip() in ("active", "running")
     )
-
-
 
 # =========================
 # (관리자 개별조회용) 요약 정보 helpers
@@ -681,75 +680,105 @@ def _get_role_name_by_student_id(student_id: str) -> str:
         snap = db.collection("students").document(str(student_id)).get()
         if not snap.exists:
             return "없음"
-        role_id = str((snap.to_dict() or {}).get("role_id", "") or "").strip()
+
+        sdata = snap.to_dict() or {}
+
+        # ✅ 학생 문서에 role_id / job_role_id / job_id 등으로 들어오는 경우까지 흡수
+        role_id = str(
+            (sdata.get("role_id") or sdata.get("job_role_id") or sdata.get("job_id") or "") 
+        ).strip()
         if not role_id:
             return "없음"
+
         rdoc = db.collection("roles").document(role_id).get()
         if not rdoc.exists:
             return "없음"
-        return str((rdoc.to_dict() or {}).get("role_name", "") or "").strip() or "없음"
+
+        r = rdoc.to_dict() or {}
+
+        # ✅ roles 문서 필드명이 role_name이 아닐 수도 있어서 다 대응
+        nm = (
+            str(r.get("role_name", "") or "").strip()
+            or str(r.get("name", "") or "").strip()
+            or str(r.get("job_name", "") or "").strip()
+            or str(r.get("title", "") or "").strip()
+        )
+        return nm if nm else "없음"
     except Exception:
         return "없음"
 
 @st.cache_data(ttl=30, show_spinner=False)
-def _get_invest_summary_by_student_id(student_id: str) -> tuple[int, int]:
-    """return (종목수, 투자총액_현재가치추정)
+def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
+    """
+    ✅ return (표시문구, 투자총액_현재가치추정)
+    - 표시문구 예: "국어 100드림" / 여러개면 "국어 100드림, 수학 50드림"
     - invest_ledger: redeemed=False 항목을 보유로 간주
-    - invest_products: current_price 사용
+    - invest_products: current_price 사용 + 종목명(name/label/title/subject) 대응
     """
     try:
         sid = str(student_id)
-        # 1) 종목 현재가 맵
-        prod_map = {}
-        try:
-            for d in db.collection(INV_PROD_COL).where(filter=FieldFilter("is_active", "==", True)).stream():
-                x = d.to_dict() or {}
-                pid = str(x.get("product_id", d.id))
-                prod_map[pid] = float(x.get("current_price", 0.0) or 0.0)
-        except Exception:
-            # 인덱스/권한 등 문제시 그냥 전체 로드
-            for d in db.collection(INV_PROD_COL).stream():
-                x = d.to_dict() or {}
-                pid = str(x.get("product_id", d.id))
-                prod_map[pid] = float(x.get("current_price", 0.0) or 0.0)
 
-        # 2) 보유 장부(미환매)
+        # 1) 종목 정보 맵 (id -> (name, current_price))
+        prod_map = {}
+        for d in db.collection(INV_PROD_COL).stream():
+            x = d.to_dict() or {}
+            pid = str(x.get("product_id", d.id) or d.id)
+
+            pname = (
+                str(x.get("name", "") or "").strip()
+                or str(x.get("label", "") or "").strip()
+                or str(x.get("title", "") or "").strip()
+                or str(x.get("subject", "") or "").strip()
+                or pid
+            )
+            cur_price = float(x.get("current_price", 0.0) or 0.0)
+            prod_map[pid] = (pname, cur_price)
+
+        # 2) 보유 장부(미환매) → 종목별 현재가치 합산
         q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
-        holdings = []
+        per_prod_val = {}  # pid -> value
+
         for d in q:
             x = d.to_dict() or {}
             if bool(x.get("redeemed", False)):
                 continue
+
             pid = str(x.get("product_id", "") or "")
+            if not pid:
+                continue
+
             buy_price = float(x.get("buy_price", 0.0) or 0.0)
             invest_amount = int(x.get("invest_amount", 0) or 0)
-            cur_price = float(prod_map.get(pid, 0.0) or 0.0)
+
+            pname, cur_price = prod_map.get(pid, (pid, 0.0))
+
             # 현재가치(대략): 투자금 * (현재가/매수가)
             if buy_price > 0 and cur_price > 0:
                 cur_val = invest_amount * (cur_price / buy_price)
             else:
                 cur_val = invest_amount
-            holdings.append((pid, cur_val))
 
-        if not holdings:
-            return (0, 0)
+            per_prod_val[pid] = per_prod_val.get(pid, 0) + cur_val
 
-        prod_cnt = len({pid for pid, _ in holdings if pid})
-        total_val = int(round(sum(v for _, v in holdings)))
-        return (prod_cnt, total_val)
+        if not per_prod_val:
+            return ("없음", 0)
+
+        # 총합
+        total_val = int(round(sum(v for v in per_prod_val.values())))
+
+        # 표시: 종목별(내림차순) 상위 3개만
+        items = sorted(per_prod_val.items(), key=lambda kv: kv[1], reverse=True)
+        shown = []
+        for pid, v in items[:3]:
+            pname = prod_map.get(pid, (pid, 0.0))[0]
+            shown.append(f"{pname} {int(round(v))}드림")
+        text = ", ".join(shown)
+        if len(items) > 3:
+            text += f" 외 {len(items)-3}개"
+
+        return (text, total_val)
     except Exception:
-        return (0, 0)
-
-def _safe_credit(student_id: str) -> tuple[int, int]:
-    """return (score, grade). _calc_credit_score_for_student가 없으면 0,0"""
-    f = globals().get("_calc_credit_score_for_student")
-    if callable(f):
-        try:
-            sc, gr = f(str(student_id))
-            return int(sc or 0), int(gr or 0)
-        except Exception:
-            return (0, 0)
-    return (0, 0)
+        return ("없음", 0)
 
 def _fmt_admin_one_line(no: int, name: str, asset_total: int, bal_now: int, sv_total: int, inv_cnt: int, inv_total: int, role_name: str, credit_score: int, credit_grade: int) -> str:
     inv_part = "투자총액: 없음" if inv_cnt <= 0 else f"투자총액: {inv_cnt}종목 {int(inv_total)}드림"
