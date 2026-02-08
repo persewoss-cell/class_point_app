@@ -3475,10 +3475,30 @@ if "📈 투자" in tabs:
                                 dup = p
                                 break
 
-                        # (신규 추가)인데 이미 존재하면 막기
+                        # (신규 추가)인데 이미 존재하면:
+                        # - 활성 종목이면: 중복 추가 막기
+                        # - 비활성(삭제된) 종목이면: 새로 만들지 말고 "복구(재활성화)" 처리
                         if cur_obj is None and dup is not None:
-                            st.error("이미 같은 종목명이 있어요. (중복 추가 불가)")
-                            st.stop()
+                            if bool(dup.get("is_active", True)):
+                                st.error("이미 같은 종목명이 있어요. (중복 추가 불가)")
+                                st.stop()
+                            else:
+                                # ✅ 비활성 종목 복구
+                                try:
+                                    db.collection(INV_PROD_COL).document(dup["product_id"]).set(
+                                        {
+                                            "name": nm,
+                                            "current_price": _as_price1(new_price),
+                                            "is_active": True,
+                                            "updated_at": firestore.SERVER_TIMESTAMP,
+                                        },
+                                        merge=True,
+                                    )
+                                    toast("삭제된 종목을 복구했습니다.", icon="♻️")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"복구 실패: {e}")
+                                    st.stop()
 
                         # (수정)인데 다른 문서와 이름이 겹치면 막기
                         if cur_obj is not None and dup is not None and str(dup.get("product_id")) != str(cur_obj.get("product_id")):
