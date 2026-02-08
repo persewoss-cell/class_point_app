@@ -961,18 +961,24 @@ def fs_auth_student(name: str, pin: str):
 # =========================
 # Cached lists
 # =========================
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=30)
 def api_list_accounts_cached():
-    docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-    items = []
-    for d in docs:
-        s = d.to_dict() or {}
-        nm = s.get("name", "")
-        if nm:
-            items.append({"student_id": d.id, "no": int(s.get("no", 0) or 0), "name": nm, "balance": int(s.get("balance", 0) or 0)})
-    items.sort(key=lambda x: x["name"])
-    return {"ok": True, "accounts": items}
+    # ✅ Firestore quota(429) / timeout 시에도 앱이 죽지 않게 보호
+    accounts = []
+    try:
+        # retry=None / timeout 지정 → 300초 대기(무한로딩) 방지
+        docs = db.collection("accounts").stream(retry=None, timeout=10)
+        for d in docs:
+            a = d.to_dict() or {}
+            a["id"] = d.id
+            if a.get("name"):
+                accounts.append(a)
 
+        # (기존 로직 유지) 이름 기준 정렬
+        accounts = sorted(accounts, key=lambda x: str(x.get("name", "")))
+        return {"ok": True, "accounts": accounts}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}", "accounts": []}
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def api_list_templates_cached():
@@ -3762,7 +3768,9 @@ if "🏦 내 통장" in tabs:
             # =================================================
             with sub_tab_personal:
                 st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
-                accounts_now = api_list_accounts_cached().get("accounts", [])
+                accounts_now = acc_res.get("accounts", []) if acc_res.get("ok") else []
+                if not acc_res.get("ok"):
+                    st.warning(f"계정 목록을 불러오지 못했어요: {acc_res.get('error','')}")
                 import re
 
                 def _num_key(acc):
