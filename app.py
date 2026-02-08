@@ -688,7 +688,7 @@ def api_get_goal_by_student_id(student_id: str):
 
 def api_get_goal(name: str, pin: str):
     """사용자 인증 후 목표 조회"""
-    student_doc = fs_auth_student(name, pin)
+    student_doc = fs_auth_student(login_name, login_pin)
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
     return api_get_goal_by_student_id(student_doc.id)
@@ -699,7 +699,7 @@ def api_set_goal(name: str, pin: str, goal_amount: int, goal_date_str: str):
     goal_amount = int(goal_amount or 0)
     goal_date_str = str(goal_date_str or "").strip()
 
-    student_doc = fs_auth_student(name, pin)
+    student_doc = fs_auth_student(login_name, login_pin)
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
     if goal_amount <= 0:
@@ -990,7 +990,7 @@ def api_create_account(name, pin):
     return {"ok": True}
 
 def api_delete_account(name, pin):
-    doc = fs_auth_student(name, pin)
+    doc = fs_auth_student(login_name, login_pin)
     if not doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
     db.collection("students").document(doc.id).update({"is_active": False})
@@ -1042,7 +1042,7 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
     if (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
         return {"ok": False, "error": "입금/출금 중 하나만 입력하세요."}
 
-    student_doc = fs_auth_student(name, pin)
+    student_doc = fs_auth_student(login_name, login_pin)
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
 
@@ -1169,8 +1169,8 @@ def api_get_txs_by_student_id(student_id: str, limit=200):
         )
     return {"ok": True, "rows": rows}
 
-def api_get_balance(name, pin):
-    student_doc = fs_auth_student(name, pin)
+def api_get_balance(login_name, login_pin):
+    student_doc = fs_auth_student(login_name, login_pin)
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
     data = student_doc.to_dict() or {}
@@ -2403,7 +2403,7 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
     if (not force) and last_ts and (now - last_ts).total_seconds() < 2:
         return
 
-    bal_res = api_get_balance(name, pin)
+    bal_res = api_get_balance(login_name, login_pin)
     if not bal_res.get("ok"):
         st.session_state.data[name] = {"error": bal_res.get("error", "잔액 로드 실패"), "ts": now}
         return
@@ -5145,12 +5145,10 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
         # (B) 학생: 적금 가입 UI + 내 적금 목록 + 신용등급 미리보기
         # -------------------------------------------------
         if not is_admin:
-            can_write = can(my_perms, "bank_write")
-            can_read = can(my_perms, "bank_read") or can_write
-
-            if not can_read:
-                st.error("은행(적금) 탭 권한이 없습니다.")
-                st.stop()
+            # ✅ 학생 화면에서는 하우스포인트뱅크처럼 '적금' 기능을 기본 허용합니다.
+            # (추후 직업/역할별로 제한하려면 여기서 can_write/can_read를 role 기반으로 다시 연결하세요.)
+            can_write = True
+            can_read = True
 
             refresh_account_data_light(login_name, login_pin, force=True)
             slot = st.session_state.data.get(login_name, {})
@@ -5371,7 +5369,7 @@ if "🎯 목표" in tabs and (not is_admin):
         st.subheader("🎯 목표 저금")
 
         # 1) 현재 목표 불러오기
-        gres = api_get_goal(name, pin)
+        gres = api_get_goal(login_name, login_pin)
         if not gres.get("ok"):
             st.error(gres.get("error", "목표 정보를 불러오지 못했어요."))
             st.stop()
@@ -5387,19 +5385,19 @@ if "🎯 목표" in tabs and (not is_admin):
                 min_value=1,
                 step=1,
                 value=cur_goal_amt if cur_goal_amt > 0 else 1000,
-                key=f"goal_amt_{name}",
+                key=f"goal_amt_{login_name}",
             )
         with c2:
             default_date = date.today() + timedelta(days=30)
             if cur_goal_date:
                 try:
-                    default_date = datetime.fromisoformat(cur_goal_date).date()
+                    default_date = datetime.fromisoformat(cur_goal_date).date().date()
                 except Exception:
                     pass
-            g_date = st.date_input("목표 날짜", value=default_date, key=f"goal_date_{name}")
+            g_date = st.date_input("목표 날짜", value=default_date, key=f"goal_date_{login_name}")
 
-        if st.button("목표 저장", key=f"goal_save_{name}", use_container_width=True):
-            res = api_set_goal(name, pin, int(g_amt), g_date.isoformat())
+        if st.button("목표 저장", key=f"goal_save_{login_name}", use_container_width=True):
+            res = api_set_goal(login_name, login_pin, int(g_amt), g_date.isoformat())
             if res.get("ok"):
                 toast("목표 저장 완료!", icon="🎯")
                 st.rerun()
@@ -5409,7 +5407,7 @@ if "🎯 목표" in tabs and (not is_admin):
         # 3) 달성률 계산
         # - 진행 중(=running) 적금 원금은 항상 자산이므로 포함
         # - 목표 날짜 이전 만기되는 적금만 이자까지 포함
-        student_doc = fs_auth_student(name, pin)
+        student_doc = fs_auth_student(login_name, login_pin)
         if not student_doc:
             st.error("이름 또는 비밀번호가 틀립니다.")
             st.stop()
