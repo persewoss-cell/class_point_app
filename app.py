@@ -3142,9 +3142,9 @@ if "📈 투자" in tabs:
 
                                 # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
                                 if diff > 0:
-                                    diff_view = f"🔺 <span style='color:red'>+{diff:.1f}</span>"
+                                    diff_view = f"<span style='color:red'>▲ +{diff:.1f}</span>"
                                 elif diff < 0:
-                                    diff_view = f"🔽 <span style='color:blue'>{diff:.1f}</span>"
+                                    diff_view = f"<span style='color:blue'>▲ {diff:.1f}</span>"
                                 else:
                                     diff_view = "-"
 
