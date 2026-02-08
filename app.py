@@ -2456,58 +2456,51 @@ if "🏦 내 통장" in tabs:
                 st.error(slot["error"])
                 st.stop()
 
-            df_tx = slot.get("df_tx", pd.DataFrame())
-            balance = int(slot.get("balance", 0))
+            df_tx = slot["df_tx"]
+            balance = int(slot.get("balance", 0) or 0)
             student_id = slot.get("student_id")
 
-            df_tx = slot.get("df_tx", pd.DataFrame())
-            balance = int(slot.get("balance", 0))
-            student_id = slot.get("student_id")
+            # ✅ student_id 없으면 여기서 중단(이게 None이면 적금/직업/신용도 전부 못 가져옴)
+            if not student_id:
+                st.error("학생 ID를 불러오지 못했어요. (로그인/잔액 조회 확인 필요)")
+                st.stop()
 
             # ===== 통장 요약 정보 (실데이터 기준) =====
 
-            # 1) 적금 총 원금 (running + matured + canceled 전부 합계)
+            # 1) 적금 총 원금: running + matured 전부 합(원하신 “총 적금 원금 합계”)
             total_savings_principal = 0
             try:
                 sdocs = (
-                    db.collection(SAV_COL)
-                    .where(filter=FieldFilter("student_id", "==", student_id))
+                    db.collection("savings")  # ✅ SAV_COL 변수 스코프 문제 방지: 문자열로 고정
+                    .where(filter=FieldFilter("student_id", "==", str(student_id)))
                     .stream()
                 )
                 for d in sdocs:
                     s = d.to_dict() or {}
                     total_savings_principal += int(s.get("principal", 0) or 0)
             except Exception:
-                pass
+                total_savings_principal = 0
 
-            # 2) 직업(roles 템플릿 기준으로 표시)
+            # 2) 직업: students 문서에서 직접 읽기 (관리자 직업/월급에서 저장한 값 반영)
             job_name = "없음"
             try:
-                stu_snap = db.collection("students").document(student_id).get()
-                stu = stu_snap.to_dict() if stu_snap.exists else {}
-                role_id = str(stu.get("role_id") or "").strip()
-                if role_id:
-                    role_snap = db.collection("roles").document(role_id).get()
-                    if role_snap.exists:
-                        role = role_snap.to_dict() or {}
-                        job_name = str(role.get("name") or role.get("job_name") or "없음")
+                stu_doc = db.collection("students").document(str(student_id)).get()
+                stu = stu_doc.to_dict() if stu_doc.exists else {}
+                job_name = stu.get("job_name") or stu.get("job") or "없음"
             except Exception:
-                pass
+                job_name = "없음"
 
-            # 3) 신용도(점수/등급)
-            credit_score = 0
-            credit_grade = 0
+            # 3) 신용도: 관리자 탭에서 쓰는 계산 함수 재사용
+            credit_score, credit_grade = 0, 0
             try:
-                credit_score, credit_grade = _calc_credit_score_for_student(student_id)
+                credit_score, credit_grade = _calc_credit_score_for_student(str(student_id))
             except Exception:
-                # 계산 함수가 어떤 이유로든 실패하면, 그래도 화면은 유지
-                credit_score = 0
-                credit_grade = int(slot.get("credit_grade", 0) or 0)
+                credit_score, credit_grade = 0, 0
 
             st.markdown(f"## 🧾 {login_name} 통장")
             st.markdown(
                 f"""
-**내 자산:** {balance + total_savings_principal}드림  *(통장 잔액+적금원금)*  
+**내 자산:** {balance + total_savings_principal}드림  
 **통장 잔액:** {balance}드림  
 **적금 금액:** {total_savings_principal}드림  
 **직업:** {job_name}  
@@ -2515,20 +2508,10 @@ if "🏦 내 통장" in tabs:
 """
             )
 
-            # ✅ 거래 기록
+            # ✅ 거래 기록 (DuplicateElementKey 방지: prefix를 탭 전용으로 변경)
             st.subheader("📝 거래 기록(통장에 찍기)")
-
             memo_u, dep_u, wd_u = render_admin_trade_ui(
-                prefix=f"user_trade_{login_name}",
-                templates_list=TEMPLATES,
-                template_by_display=TEMPLATE_BY_DISPLAY,
-            )
-
-            # ✅ 거래 기록
-            st.subheader("📝 거래 기록(통장에 찍기)")
-
-            memo_u, dep_u, wd_u = render_admin_trade_ui(
-                prefix=f"user_trade_{login_name}",
+                prefix=f"bank_trade_{login_name}",
                 templates_list=TEMPLATES,
                 template_by_display=TEMPLATE_BY_DISPLAY,
             )
