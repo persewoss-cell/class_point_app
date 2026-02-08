@@ -5035,17 +5035,13 @@ if "🏦 은행(적금)" in tabs:
             sub_res = api_list_stat_submissions_cached(limit_cols=200)
             sub_rows_all = sub_res.get("rows", []) if sub_res.get("ok") else []
 
-            # ✅ 오래된→최신 누적
-            def _k(d):
-                t = _parse_iso_to_dt(d.get("created_at_utc", "") or "")
-                return t.timestamp() if t else 0
-
-            sub_rows_all = sorted(sub_rows_all, key=_k)
+            # ✅ 오래된→최신 누적 (api_list_stat_submissions_cached는 최신→과거로 오므로 reversed)
+            sub_rows_all = list(sub_rows_all or [])
 
             score = int(base)
             sid = str(student_id)
 
-            for sub in sub_rows_all:
+            for sub in reversed(sub_rows_all):
                 statuses = dict(sub.get("statuses", {}) or {})
                 v = statuses.get(sid, "X")
                 score = int(score + _delta(v))
