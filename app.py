@@ -4772,50 +4772,37 @@ if "📈 투자" in tabs:
                     if int(amt) <= 0:
                         st.warning("투자 금액을 입력해 주세요.")
                     else:
-                        st.session_state["inv_user_confirm"] = True
+                        memo = f"투자 매입({sel_prod['name']})"
+                        res = api_add_tx(login_name, login_pin, memo=memo, deposit=0, withdraw=int(amt))
+                        if res.get("ok"):
+                            try:
+                                sd = fs_auth_student(login_name, login_pin)
+                                sdata = sd.to_dict() or {}
+                                no = int(sdata.get("no", 0) or 0)
 
-                if st.session_state.get("inv_user_confirm", False):
-                    st.warning("정말로 투자할까요?")
-                    y, n = st.columns(2)
-                    with y:
-                        if st.button("예", use_container_width=True, key="inv_user_yes"):
-                            st.session_state["inv_user_confirm"] = False
+                                buy_dt = datetime.now(tz=KST)
+                                buy_label = _fmt_kor_date_md(buy_dt)
 
-                            memo = f"투자 매입({sel_prod['name']})"
-                            res = api_add_tx(login_name, login_pin, memo=memo, deposit=0, withdraw=int(amt))
-                            if res.get("ok"):
-                                try:
-                                    sd = fs_auth_student(login_name, login_pin)
-                                    sdata = sd.to_dict() or {}
-                                    no = int(sdata.get("no", 0) or 0)
-
-                                    buy_dt = datetime.now(tz=KST)
-                                    buy_label = _fmt_kor_date_md(buy_dt)
-
-                                    db.collection(INV_LEDGER_COL).document().set(
-                                        {
-                                            "student_id": sd.id,
-                                            "no": no,
-                                            "name": str(sdata.get("name", "") or ""),
-                                            "product_id": sel_prod["product_id"],
-                                            "product_name": sel_prod["name"],
-                                            "buy_at": firestore.SERVER_TIMESTAMP,
-                                            "buy_date_label": buy_label,
-                                            "buy_price": _as_price1(sel_prod["current_price"]),
-                                            "invest_amount": int(amt),
-                                            "redeemed": False,
-                                        }
-                                    )
-                                    toast("투자 완료! (장부에 반영됨)", icon="✅")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"장부 저장 실패: {e}")
-                            else:
-                                st.error(res.get("error", "투자 실패"))
-                    with n:
-                        if st.button("아니오", use_container_width=True, key="inv_user_no"):
-                            st.session_state["inv_user_confirm"] = False
-                            st.rerun()
+                                db.collection(INV_LEDGER_COL).document().set(
+                                    {
+                                        "student_id": sd.id,
+                                        "no": no,
+                                        "name": str(sdata.get("name", "") or ""),
+                                        "product_id": sel_prod["product_id"],
+                                        "product_name": sel_prod["name"],
+                                        "buy_at": firestore.SERVER_TIMESTAMP,
+                                        "buy_date_label": buy_label,
+                                        "buy_price": _as_price1(sel_prod["current_price"]),
+                                        "invest_amount": int(amt),
+                                        "redeemed": False,
+                                    }
+                                )
+                                toast("투자 완료! (장부에 반영됨)", icon="✅")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"장부 저장 실패: {e}")
+                        else:
+                            st.error(res.get("error", "투자 실패"))
 
         # -------------------------------------------------
         # 4) (관리자) 투자 종목 추가/수정/삭제
