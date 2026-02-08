@@ -5237,8 +5237,8 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 sc, gr = _calc_credit_score_for_student(my_student_id)
                 st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
 
-st.markdown(f"#### 현재 잔액: **{balance}드림**")
-st.markdown(f"#### 적금 총액: **{total_savings_principal}드림**")
+            st.markdown(f"#### 현재 잔액: **{balance}드림**")
+            st.markdown(f"#### 적금 총액: **{total_savings_principal}드림**")
 
             st.markdown("### 📝 적금 가입")
             st.caption("• 적금 가입 시 통장에서 해당 금액이 출금됩니다. • 만기면 원금+이자가 자동 지급됩니다. • 중도해지는 원금만 지급됩니다.")
