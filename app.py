@@ -2822,7 +2822,7 @@ with st.sidebar:
     new_pin1 = st.text_input("새 비밀번호(4자리)", type="password", key="stu_pw_new1").strip()
     new_pin2 = st.text_input("새 비밀번호(확인)", type="password", key="stu_pw_new2").strip()
 
-    if st.button("비밀번호 변경(학생)", key="stu_pw_change_btn", use_container_width=True):
+    if st.button("비밀번호 변경(학생)", key="stu_pw_change_btn", width="stretch"):
         if not stu_name:
             st.error("이름(계정)을 입력해 주세요.")
         elif not pin_ok(old_pin):
@@ -2888,7 +2888,7 @@ with st.sidebar:
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        if st.button("계정 생성", key="btn_create", use_container_width=True):
+        if st.button("계정 생성", key="btn_create", width="stretch"):
             if not _admin_guard():
                 st.stop()
             if not manage_name:
@@ -2935,7 +2935,7 @@ with st.sidebar:
                     st.rerun()
 
     with c2:
-        if st.button("PIN 변경", key="btn_pin_change", use_container_width=True):
+        if st.button("PIN 변경", key="btn_pin_change", width="stretch"):
             if not _admin_guard():
                 st.stop()
             if not manage_name:
@@ -2954,7 +2954,7 @@ with st.sidebar:
 
 
     with c3:
-        if st.button("삭제", key="btn_delete", use_container_width=True):
+        if st.button("삭제", key="btn_delete", width="stretch"):
             # ✅ 삭제는 확인창 띄우기
             st.session_state.delete_confirm = True
 
@@ -2963,7 +2963,7 @@ with st.sidebar:
         st.warning("정말로 삭제하시겠습니까?")
         y, n = st.columns(2)
         with y:
-            if st.button("예", key="delete_yes", use_container_width=True):
+            if st.button("예", key="delete_yes", width="stretch"):
                 if not _admin_guard():
                     st.stop()
                 if not manage_name:
@@ -2987,7 +2987,7 @@ with st.sidebar:
                         st.session_state.pop("manage_pin", None)
                         st.rerun()
         with n:
-            if st.button("아니오", key="delete_no", use_container_width=True):
+            if st.button("아니오", key="delete_no", width="stretch"):
                 st.session_state.delete_confirm = False
                 st.rerun()
 
@@ -3006,7 +3006,7 @@ if not st.session_state.logged_in:
         with login_c2:
             login_pin = st.text_input("비밀번호(4자리)", type="password", key="login_pin_input").strip()
         with login_c3:
-            login_btn = st.form_submit_button("로그인", use_container_width=True)
+            login_btn = st.form_submit_button("로그인", width="stretch")
 
     if login_btn:
         if not login_name:
@@ -3034,7 +3034,7 @@ if not st.session_state.logged_in:
                     st.rerun()
 
 else:
-    if st.button("로그아웃", key="logout_btn", use_container_width=True):
+    if st.button("로그아웃", key="logout_btn", width="stretch"):
         st.session_state.logged_in = False
         st.session_state.admin_ok = False
         st.session_state.login_name = ""
@@ -3249,7 +3249,7 @@ def render_tx_table(df_tx: pd.DataFrame):
     )
     st.dataframe(
         view[["내역", "입금", "출금", "총액", "날짜-시간"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -3319,7 +3319,7 @@ if "🏦 내 통장" in tabs:
 
                 b1, b2 = st.columns(2)
                 with b1:
-                    if st.button("저장", key="admin_bulk_reward_save", use_container_width=True):
+                    if st.button("저장", key="admin_bulk_reward_save", width="stretch"):
                         if (dep_bulk > 0 and wd_bulk > 0) or (dep_bulk == 0 and wd_bulk == 0):
                             st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
                         elif not memo_bulk:
@@ -3341,7 +3341,7 @@ if "🏦 내 통장" in tabs:
                                     st.error(res.get("error", "일괄 벌금 실패"))
 
                 with b2:
-                    if st.button("되돌리기(관리자)", key="admin_bulk_reward_undo_toggle", use_container_width=True):
+                    if st.button("되돌리기(관리자)", key="admin_bulk_reward_undo_toggle", width="stretch"):
                         st.session_state["admin_bulk_reward_undo_mode"] = not st.session_state.get(
                             "admin_bulk_reward_undo_mode", False
                         )
@@ -3394,7 +3394,7 @@ if "🏦 내 통장" in tabs:
                                 if ck and r["가능"]:
                                     selected_ids.append(tx_id)
 
-                            if st.button("선택 항목 되돌리기", key="admin_bulk_reward_do_rb", use_container_width=True):
+                            if st.button("선택 항목 되돌리기", key="admin_bulk_reward_do_rb", width="stretch"):
                                 if not is_admin_pin(admin_pin_rb):
                                     st.error("관리자 PIN이 틀립니다.")
                                 elif not selected_ids:
@@ -3418,7 +3418,7 @@ if "🏦 내 통장" in tabs:
                     if st.button(
                         "▸" if not st.session_state.get("bank_tpl_sort_panel_open", False) else "▾",
                         key="bank_tpl_sort_panel_toggle",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         st.session_state["bank_tpl_sort_panel_open"] = not st.session_state.get("bank_tpl_sort_panel_open", False)
                         st.rerun()
@@ -3452,14 +3452,14 @@ if "🏦 내 통장" in tabs:
                         if st.button(
                             "정렬모드 ON" if not st.session_state["bank_tpl_sort_mode"] else "정렬모드 OFF",
                             key="bank_tpl_sort_toggle",
-                            use_container_width=True,
+                            width="stretch",
                         ):
                             st.session_state["bank_tpl_sort_mode"] = not st.session_state["bank_tpl_sort_mode"]
                             if not st.session_state["bank_tpl_sort_mode"]:
                                 st.session_state["bank_tpl_work_ids"] = [t["template_id"] for t in templates]
                             st.rerun()
                     with topB:
-                        if st.button("order 채우기(1회)", key="bank_tpl_backfill_btn", use_container_width=True):
+                        if st.button("order 채우기(1회)", key="bank_tpl_backfill_btn", width="stretch"):
                             res = api_admin_backfill_template_order(ADMIN_PIN)
                             if res.get("ok"):
                                 toast("order 초기화 완료!", icon="🧷")
@@ -3469,7 +3469,7 @@ if "🏦 내 통장" in tabs:
                             else:
                                 st.error(res.get("error", "실패"))
                     with topC:
-                        if st.button("order 전체 재정렬", key="bank_tpl_normalize_btn", use_container_width=True):
+                        if st.button("order 전체 재정렬", key="bank_tpl_normalize_btn", width="stretch"):
                             res = api_admin_normalize_template_order(ADMIN_PIN)
                             if res.get("ok"):
                                 toast("order 재정렬 완료!", icon="🧹")
@@ -3516,7 +3516,7 @@ if "🏦 내 통장" in tabs:
                                     "위로 ▲",
                                     key="bank_tpl_simple_up",
                                     disabled=(not st.session_state["bank_tpl_sort_mode"]) or pick_i == 0,
-                                    use_container_width=True,
+                                    width="stretch",
                                 ):
                                     work_ids[pick_i - 1], work_ids[pick_i] = work_ids[pick_i], work_ids[pick_i - 1]
                                     st.session_state["bank_tpl_work_ids"] = work_ids
@@ -3527,7 +3527,7 @@ if "🏦 내 통장" in tabs:
                                     "아래로 ▼",
                                     key="bank_tpl_simple_dn",
                                     disabled=(not st.session_state["bank_tpl_sort_mode"]) or pick_i == (len(work_ids) - 1),
-                                    use_container_width=True,
+                                    width="stretch",
                                 ):
                                     work_ids[pick_i + 1], work_ids[pick_i] = work_ids[pick_i], work_ids[pick_i + 1]
                                     st.session_state["bank_tpl_work_ids"] = work_ids
@@ -3555,7 +3555,7 @@ if "🏦 내 통장" in tabs:
                             if st.session_state["bank_tpl_sort_mode"]:
                                 s1, s2 = st.columns([1.2, 1.2])
                                 with s1:
-                                    if st.button("저장(한 번에)", key="bank_tpl_save_orders_btn_simple", use_container_width=True):
+                                    if st.button("저장(한 번에)", key="bank_tpl_save_orders_btn_simple", width="stretch"):
                                         res = api_admin_save_template_orders(ADMIN_PIN, st.session_state["bank_tpl_work_ids"])
                                         if res.get("ok"):
                                             toast(f"순서 저장 완료! ({res.get('count', 0)}개)", icon="💾")
@@ -3566,7 +3566,7 @@ if "🏦 내 통장" in tabs:
                                         else:
                                             st.error(res.get("error", "저장 실패"))
                                 with s2:
-                                    if st.button("취소(원복)", key="bank_tpl_cancel_orders_btn_simple", use_container_width=True):
+                                    if st.button("취소(원복)", key="bank_tpl_cancel_orders_btn_simple", width="stretch"):
                                         st.session_state["bank_tpl_sort_mode"] = False
                                         st.session_state["bank_tpl_work_ids"] = [t["template_id"] for t in templates]
                                         toast("변경 취소(원복)!", icon="↩️")
@@ -3599,12 +3599,12 @@ if "🏦 내 통장" in tabs:
                                     up_disabled = (idx == 0)
                                     down_disabled = (idx == len(work_ids) - 1)
 
-                                    if row[3].button("⬆", key=f"bank_tpl_up_fast_{tid}", disabled=up_disabled, use_container_width=True):
+                                    if row[3].button("⬆", key=f"bank_tpl_up_fast_{tid}", disabled=up_disabled, width="stretch"):
                                         work_ids[idx - 1], work_ids[idx] = work_ids[idx], work_ids[idx - 1]
                                         st.session_state["bank_tpl_work_ids"] = work_ids
                                         st.rerun()
 
-                                    if row[4].button("⬇", key=f"bank_tpl_dn_fast_{tid}", disabled=down_disabled, use_container_width=True):
+                                    if row[4].button("⬇", key=f"bank_tpl_dn_fast_{tid}", disabled=down_disabled, width="stretch"):
                                         work_ids[idx + 1], work_ids[idx] = work_ids[idx], work_ids[idx + 1]
                                         st.session_state["bank_tpl_work_ids"] = work_ids
                                         st.rerun()
@@ -3615,7 +3615,7 @@ if "🏦 내 통장" in tabs:
                             if st.session_state["bank_tpl_sort_mode"]:
                                 s1, s2 = st.columns([1.2, 1.2])
                                 with s1:
-                                    if st.button("저장(한 번에)", key="bank_tpl_save_orders_btn", use_container_width=True):
+                                    if st.button("저장(한 번에)", key="bank_tpl_save_orders_btn", width="stretch"):
                                         res = api_admin_save_template_orders(ADMIN_PIN, st.session_state["bank_tpl_work_ids"])
                                         if res.get("ok"):
                                             toast(f"순서 저장 완료! ({res.get('count', 0)}개)", icon="💾")
@@ -3626,7 +3626,7 @@ if "🏦 내 통장" in tabs:
                                         else:
                                             st.error(res.get("error", "저장 실패"))
                                 with s2:
-                                    if st.button("취소(원복)", key="bank_tpl_cancel_orders_btn", use_container_width=True):
+                                    if st.button("취소(원복)", key="bank_tpl_cancel_orders_btn", width="stretch"):
                                         st.session_state["bank_tpl_sort_mode"] = False
                                         st.session_state["bank_tpl_work_ids"] = [t["template_id"] for t in templates]
                                         toast("변경 취소(원복)!", icon="↩️")
@@ -3688,7 +3688,7 @@ if "🏦 내 통장" in tabs:
 
                 tpl_order = st.number_input("순서(order)", min_value=1, step=1, key="bank_tpl_order")
 
-                if st.button("저장(추가/수정)", key="bank_tpl_save", use_container_width=True):
+                if st.button("저장(추가/수정)", key="bank_tpl_save", width="stretch"):
                     if not tpl_label:
                         st.error("내역 이름이 필요합니다.")
                     else:
@@ -3713,14 +3713,14 @@ if "🏦 내 통장" in tabs:
                     )
                     del_id = templates_now[del_pick]["template_id"]
 
-                    if st.button("삭제", key="bank_tpl_del_btn", use_container_width=True):
+                    if st.button("삭제", key="bank_tpl_del_btn", width="stretch"):
                         st.session_state["bank_tpl_del_confirm"] = True
 
                     if st.session_state.get("bank_tpl_del_confirm", False):
                         st.warning("정말로 삭제하시겠습니까?")
                         y, n = st.columns(2)
                         with y:
-                            if st.button("예", key="bank_tpl_del_yes", use_container_width=True):
+                            if st.button("예", key="bank_tpl_del_yes", width="stretch"):
                                 res = api_admin_delete_template(ADMIN_PIN, del_id)
                                 if res.get("ok"):
                                     toast("삭제 완료!", icon="🗑️")
@@ -3730,7 +3730,7 @@ if "🏦 내 통장" in tabs:
                                 else:
                                     st.error(res.get("error", "삭제 실패"))
                         with n:
-                            if st.button("아니오", key="bank_tpl_del_no", use_container_width=True):
+                            if st.button("아니오", key="bank_tpl_del_no", width="stretch"):
                                 st.session_state["bank_tpl_del_confirm"] = False
                                 st.rerun()
 
@@ -3795,7 +3795,7 @@ if "🏦 내 통장" in tabs:
                         template_by_display=tpl_by_display_p,
                     )
 
-                    if st.button("저장", key="admin_personal_reward_save", use_container_width=True):
+                    if st.button("저장", key="admin_personal_reward_save", width="stretch"):
                         if not selected_ids:
                             st.warning("먼저 적용할 학생을 체크해 주세요.")
                         elif (dep_p > 0 and wd_p > 0) or (dep_p == 0 and wd_p == 0):
@@ -3925,7 +3925,7 @@ if "🏦 내 통장" in tabs:
             col_btn1, col_btn2 = st.columns([1, 1])
 
             with col_btn1:
-                if st.button("저장", key=f"save_{login_name}", use_container_width=True):
+                if st.button("저장", key=f"save_{login_name}", width="stretch"):
                     memo = str(memo_u or "").strip()
                     deposit = int(dep_u or 0)
                     withdraw = int(wd_u or 0)
@@ -3958,7 +3958,7 @@ if "🏦 내 통장" in tabs:
                             st.error(res.get("error", "저장 실패"))
 
             with col_btn2:
-                if st.button("되돌리기(관리자)", key=f"undo_btn_{login_name}", use_container_width=True):
+                if st.button("되돌리기(관리자)", key=f"undo_btn_{login_name}", width="stretch"):
                     st.session_state.undo_mode = not st.session_state.undo_mode
 
             if st.session_state.undo_mode:
@@ -3989,7 +3989,7 @@ if "🏦 내 통장" in tabs:
                         if ck and bool(r["가능"]):
                             selected_ids.append(tx_id)
 
-                    if st.button("선택 항목 되돌리기", key=f"do_rb_{login_name}", use_container_width=True):
+                    if st.button("선택 항목 되돌리기", key=f"do_rb_{login_name}", width="stretch"):
                         if not is_admin_pin(admin_pin2):
                             st.error("관리자 PIN이 틀립니다.")
                         elif not selected_ids:
@@ -4383,7 +4383,7 @@ if "📈 투자" in tabs:
                                 key=f"inv_price_{p['product_id']}",
                             )
                         with c3:
-                            save_btn = st.button("저장", use_container_width=True, key=f"inv_save_{p['product_id']}")
+                            save_btn = st.button("저장", width="stretch", key=f"inv_save_{p['product_id']}")
 
                         if save_btn:
                             reason2 = str(reason or "").strip()
@@ -4506,7 +4506,7 @@ if "📈 투자" in tabs:
                                         )
                                         .properties(height=260)
                                     )
-                                    st.altair_chart(chart, use_container_width=True)
+                                    st.altair_chart(chart, width="stretch")
                                 else:
                                     st.caption("그래프 데이터가 없습니다.")
 
@@ -4613,7 +4613,7 @@ if "📈 투자" in tabs:
                                         )
                                         .properties(height=260)
                                     )
-                                    st.altair_chart(chart, use_container_width=True)
+                                    st.altair_chart(chart, width="stretch")
                                 else:
                                     st.caption("그래프 데이터가 없습니다.")
 
@@ -4656,7 +4656,7 @@ if "📈 투자" in tabs:
 
         if view_rows:
             st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
         else:
             st.caption("투자 내역이 없습니다.")
 
@@ -4697,7 +4697,7 @@ if "📈 투자" in tabs:
                         st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
                         st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
                     with c4:
-                        if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
+                        if st.button("지급", width="stretch", key=f"inv_pay_{doc_id}"):
 
                             sell_dt = datetime.now(tz=KST)
                             sell_label = _fmt_kor_date_md(sell_dt)
@@ -4768,7 +4768,7 @@ if "📈 투자" in tabs:
                 sel_prod = by_label.get(sel_lab)
 
                 amt = st.number_input("투자 금액", min_value=0, step=10, value=0, key="inv_user_amt")
-                if st.button("투자", use_container_width=True, key="inv_user_btn"):
+                if st.button("투자", width="stretch", key="inv_user_btn"):
                     if int(amt) <= 0:
                         st.warning("투자 금액을 입력해 주세요.")
                     else:
@@ -4846,7 +4846,7 @@ if "📈 투자" in tabs:
 
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("저장", use_container_width=True, key="inv_admin_save"):
+                if st.button("저장", width="stretch", key="inv_admin_save"):
                     nm = str(new_name or "").strip()
                     if not nm:
                         st.warning("종목명을 입력해 주세요.")
@@ -4917,7 +4917,7 @@ if "📈 투자" in tabs:
                         except Exception as e:
                             st.error(f"저장 실패: {e}")
             with b2:
-                if st.button("삭제", use_container_width=True, key="inv_admin_del", disabled=(cur_obj is None)):
+                if st.button("삭제", width="stretch", key="inv_admin_del", disabled=(cur_obj is None)):
                     if cur_obj is None:
                         st.stop()
                     try:
@@ -4952,8 +4952,8 @@ if "👥 계정 정보/활성화" in tabs:
         import io
         sample_df = pd.DataFrame(
             [
-                {"번호": 1, "이름": "홍길동", "비밀번호": "1234", "입출금활성화": True, "투자활성화": True},
-                {"번호": 2, "이름": "김철수", "비밀번호": "2345", "입출금활성화": True, "투자활성화": False},
+                {"번호": 1, "이름": "홍길동", "비밀번호": "1234", "입출금활성화": True},
+                {"번호": 2, "이름": "김철수", "비밀번호": "2345", "입출금활성화": True},
             ]
         )
         bio = io.BytesIO()
@@ -4971,7 +4971,7 @@ if "👥 계정 정보/활성화" in tabs:
 
         up = st.file_uploader("📤 엑셀 업로드(xlsx)", type=["xlsx"], key="acc_bulk_upl")
 
-        if st.button("엑셀 일괄 등록 실행", use_container_width=True, key="acc_bulk_run"):
+        if st.button("엑셀 일괄 등록 실행", width="stretch", key="acc_bulk_run"):
             if not up:
                 st.warning("엑셀 파일을 업로드하세요.")
             else:
@@ -5080,8 +5080,7 @@ if "👥 계정 정보/활성화" in tabs:
                     "이름": x.get("name", ""),
                     "비밀번호": x.get("pin", ""),
                     "입출금활성화": bool(x.get("io_enabled", True)),
-                    "투자활성화": bool(x.get("invest_enabled", True)),
-                }
+}
             )
 
         df_all = pd.DataFrame(rows)
@@ -5101,25 +5100,25 @@ if "👥 계정 정보/활성화" in tabs:
         r1c1, r1c2, r1c3 = st.columns(3)
 
         with r1c1:
-            if st.button("✅ 전체 선택", use_container_width=True, key="acc_select_all"):
+            if st.button("✅ 전체 선택", width="stretch", key="acc_select_all"):
                 st.session_state.account_df["선택"] = True
                 st.rerun()
 
         with r1c2:
-            if st.button("⬜ 전체 해제", use_container_width=True, key="acc_unselect_all"):
+            if st.button("⬜ 전체 해제", width="stretch", key="acc_unselect_all"):
                 st.session_state.account_df["선택"] = False
                 st.rerun()
 
         with r1c3:
-            if st.button("🗑️ 계정 삭제(선택)", use_container_width=True, key="acc_del_top"):
+            if st.button("🗑️ 계정 삭제(선택)", width="stretch", key="acc_del_top"):
                 sel = st.session_state.account_df[st.session_state.account_df["선택"] == True]
                 if sel.empty:
                     st.warning("삭제할 계정을 체크하세요.")
                 else:
                     st.session_state._delete_targets = sel["_sid"].tolist()
 
-        # 2줄: 입출금/투자 일괄 켜기/끄기
-        r2c1, r2c2, r2c3, r2c4 = st.columns(4)
+        # 2줄: 입출금 일괄 켜기/끄기 (투자 활성화 버튼 제거)
+        r2c1, r2c2 = st.columns(2)
 
         with r2c1:
             if st.button("🔌 입출금 켜기", width="stretch", key="io_all_on"):
@@ -5132,25 +5131,12 @@ if "👥 계정 정보/활성화" in tabs:
                 if "입출금활성화" in st.session_state.account_df.columns:
                     st.session_state.account_df["입출금활성화"] = False
                 st.rerun()
-
-        with r2c3:
-            if st.button("📈 투자 켜기", width="stretch", key="inv_all_on"):
-                if "투자활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["투자활성화"] = True
-                st.rerun()
-
-        with r2c4:
-            if st.button("📉 투자 끄기", width="stretch", key="inv_all_off"):
-                if "투자활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["투자활성화"] = False
-                st.rerun()
-
-        # 삭제 확인
+# 삭제 확인
         if "_delete_targets" in st.session_state:
             st.warning("정말 삭제하시겠습니까?")
             y, n = st.columns(2)
             with y:
-                if st.button("예", key="acc_del_yes2", use_container_width=True):
+                if st.button("예", key="acc_del_yes2", width="stretch"):
                     for sid in st.session_state._delete_targets:
                         db.collection("students").document(sid).update({"is_active": False})
                     st.session_state.pop("_delete_targets")
@@ -5160,7 +5146,7 @@ if "👥 계정 정보/활성화" in tabs:
                     st.session_state.pop("account_df", None)
                     st.rerun()
             with n:
-                if st.button("아니오", key="acc_del_no2", use_container_width=True):
+                if st.button("아니오", key="acc_del_no2", width="stretch"):
                     st.session_state.pop("_delete_targets")
                     st.rerun()
 
@@ -5185,7 +5171,7 @@ if "👥 계정 정보/활성화" in tabs:
 
         edited_view = st.data_editor(
             show_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=desired_h,
             key="account_editor",
@@ -5301,7 +5287,7 @@ if "💼 직업/월급" in tabs:
             with c4:
                 health_fee = st.number_input("건강보험료", min_value=0, step=1, value=int(cfg["health_fee"]), key="sal_cfg_health")
             with c5:
-                if st.button("✅ 공제 설정 저장", use_container_width=True, key="sal_cfg_save"):
+                if st.button("✅ 공제 설정 저장", width="stretch", key="sal_cfg_save"):
                     _save_salary_cfg(
                         {
                             "tax_percent": tax_percent,
@@ -5467,7 +5453,7 @@ if "💼 직업/월급" in tabs:
                 )
 
             with cc3:
-                if st.button("✅ 지급 설정 저장", use_container_width=True, key="payroll_save_cfg"):
+                if st.button("✅ 지급 설정 저장", width="stretch", key="payroll_save_cfg"):
                     _save_payroll_cfg({"pay_day": int(pay_day_in), "auto_enabled": bool(auto_on)})
                     toast("월급 지급 설정 저장 완료!", icon="✅")
                     st.rerun()
@@ -5504,7 +5490,7 @@ if "💼 직업/월급" in tabs:
 
             already_any = any(_already_paid_this_month(cur_mkey, sid) for sid, *_ in targets)
 
-            if st.button("💸 수동지급(이번 달 즉시 지급)", use_container_width=True, key="payroll_manual_btn"):
+            if st.button("💸 수동지급(이번 달 즉시 지급)", width="stretch", key="payroll_manual_btn"):
                 # 이미 지급된 적 있으면 확인창 띄우기
                 if already_any:
                     st.session_state["payroll_manual_confirm"] = True
@@ -5517,12 +5503,12 @@ if "💼 직업/월급" in tabs:
                 st.warning("이번 달에 이미 월급 지급(자동/수동)한 기록이 있습니다. 그래도 지급하시겠습니까?")
                 y1, n1 = st.columns(2)
                 with y1:
-                    if st.button("예", use_container_width=True, key="payroll_manual_yes"):
+                    if st.button("예", width="stretch", key="payroll_manual_yes"):
                         st.session_state["payroll_manual_confirm"] = False
                         st.session_state["payroll_manual_do"] = True
                         st.rerun()
                 with n1:
-                    if st.button("아니오", use_container_width=True, key="payroll_manual_no"):
+                    if st.button("아니오", width="stretch", key="payroll_manual_no"):
                         st.session_state["payroll_manual_confirm"] = False
                         st.session_state["payroll_manual_do"] = False
                         toast("수동지급 취소", icon="🛑")
@@ -5704,15 +5690,15 @@ if "💼 직업/월급" in tabs:
         # -------------------------
         btn1, btn2, btn3 = st.columns(3)
         with btn1:
-            if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
+            if st.button("⬆️", width="stretch", key="job_bulk_up"):
                 _bulk_move("up")
                 st.rerun()
         with btn2:
-            if st.button("⬇️", use_container_width=True, key="job_bulk_dn"):
+            if st.button("⬇️", width="stretch", key="job_bulk_dn"):
                 _bulk_move("down")
                 st.rerun()
         with btn3:
-            if st.button("🗑️", use_container_width=True, key="job_bulk_del"):
+            if st.button("🗑️", width="stretch", key="job_bulk_del"):
                 _bulk_delete_prepare()
                 st.rerun()
 
@@ -5723,7 +5709,7 @@ if "💼 직업/월급" in tabs:
             st.warning("체크된 직업을 삭제하시겠습니까?")
             y, n = st.columns(2)
             with y:
-                if st.button("예", key="job_bulk_del_yes", use_container_width=True):
+                if st.button("예", key="job_bulk_del_yes", width="stretch"):
                     del_ids = list(st.session_state.get("_job_bulk_delete_ids", []))
                     for rid0 in del_ids:
                         db.collection("job_salary").document(rid0).delete()
@@ -5732,7 +5718,7 @@ if "💼 직업/월급" in tabs:
                     toast("삭제 완료", icon="🗑️")
                     st.rerun()
             with n:
-                if st.button("아니오", key="job_bulk_del_no", use_container_width=True):
+                if st.button("아니오", key="job_bulk_del_no", width="stretch"):
                     st.session_state.pop("_job_bulk_delete_ids", None)
                     st.rerun()
 
@@ -5903,7 +5889,7 @@ if "💼 직업/월급" in tabs:
 
         b1, b2, b3 = st.columns([1, 1, 1])
         with b1:
-            if st.button("✅ 저장", use_container_width=True, key="job_save_btn"):
+            if st.button("✅ 저장", width="stretch", key="job_save_btn"):
                 if not job_in:
                     st.error("직업을 입력해 주세요.")
                     st.stop()
@@ -5947,7 +5933,7 @@ if "💼 직업/월급" in tabs:
                     st.rerun()
 
         with b2:
-            if st.button("🧹 입력 초기화", use_container_width=True, key="job_clear_btn"):
+            if st.button("🧹 입력 초기화", width="stretch", key="job_clear_btn"):
                 st.session_state.pop("job_in_job", None)
                 st.session_state.pop("job_in_salary", None)
                 st.session_state.pop("job_in_count", None)
@@ -5955,7 +5941,7 @@ if "💼 직업/월급" in tabs:
                 st.rerun()
 
         with b3:
-            if st.button("🗑️ 삭제", use_container_width=True, key="job_delete_btn", disabled=(edit_row is None)):
+            if st.button("🗑️ 삭제", width="stretch", key="job_delete_btn", disabled=(edit_row is None)):
                 if not edit_row:
                     st.stop()
                 st.session_state._job_delete_id = edit_row["_id"]
@@ -5964,13 +5950,13 @@ if "💼 직업/월급" in tabs:
             st.warning("정말 삭제하시겠습니까?")
             y, n = st.columns(2)
             with y:
-                if st.button("예", use_container_width=True, key="job_del_yes"):
+                if st.button("예", width="stretch", key="job_del_yes"):
                     db.collection("job_salary").document(st.session_state._job_delete_id).delete()
                     st.session_state.pop("_job_delete_id", None)
                     toast("삭제 완료", icon="🗑️")
                     st.rerun()
             with n:
-                if st.button("아니오", use_container_width=True, key="job_del_no"):
+                if st.button("아니오", width="stretch", key="job_del_no"):
                     st.session_state.pop("_job_delete_id", None)
                     st.rerun()
 
@@ -6009,7 +5995,7 @@ if "🏛️ 국세청(국고)" in tabs:
             )
             st.dataframe(
                 view[["내역", "세입", "세출", "총액", "날짜-시간"]],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -6027,7 +6013,7 @@ if "🏛️ 국세청(국고)" in tabs:
 
         btnc1, btnc2 = st.columns([1.2, 1.0])
         with btnc1:
-            if st.button("저장 (관리자, 국세청)", use_container_width=True, key="treasury_save_btn", disabled=(not writable)):
+            if st.button("저장 (관리자, 국세청)", width="stretch", key="treasury_save_btn", disabled=(not writable)):
                 if not writable:
                     st.error("관리자 전용입니다.")
                 else:
@@ -6092,7 +6078,7 @@ if "🏛️ 국세청(국고)" in tabs:
 
         b1, b2, b3 = st.columns(3)
         with b1:
-            if st.button("✅ 저장", use_container_width=True, key="tre_tpl_save", disabled=(not writable)):
+            if st.button("✅ 저장", width="stretch", key="tre_tpl_save", disabled=(not writable)):
                 if not writable:
                     st.error("관리자 전용입니다.")
                 else:
@@ -6111,7 +6097,7 @@ if "🏛️ 국세청(국고)" in tabs:
                         st.error(res.get("error", "저장 실패"))
 
         with b2:
-            if st.button("🧹 입력 초기화", use_container_width=True, key="tre_tpl_clear"):
+            if st.button("🧹 입력 초기화", width="stretch", key="tre_tpl_clear"):
                 st.session_state.pop("tre_tpl_label", None)
                 st.session_state.pop("tre_tpl_amount", None)
                 st.session_state.pop("tre_tpl_order", None)
@@ -6119,7 +6105,7 @@ if "🏛️ 국세청(국고)" in tabs:
                 st.rerun()
 
         with b3:
-            if st.button("🗑️ 삭제", use_container_width=True, key="tre_tpl_del", disabled=(not writable or edit_tpl is None)):
+            if st.button("🗑️ 삭제", width="stretch", key="tre_tpl_del", disabled=(not writable or edit_tpl is None)):
                 if not writable:
                     st.error("관리자 전용입니다.")
                 elif not edit_tpl:
@@ -6200,7 +6186,7 @@ if "📊 통계청" in tabs:
         with add_c1:
             add_label = st.text_input("내역", key="stat_add_label").strip()
         with add_c2:
-            if st.button("저장", use_container_width=True, key="stat_add_save"):
+            if st.button("저장", width="stretch", key="stat_add_save"):
                 if not add_label:
                     st.error("내역을 입력해 주세요.")
                 else:
@@ -6286,7 +6272,7 @@ if "📊 통계청" in tabs:
 
             # ◀ : 최신(1페이지)면 비활성
             with nav_cols[0]:
-                if st.button("◀", key="stat_nav_left", use_container_width=True, disabled=(cur_page <= 1)):
+                if st.button("◀", key="stat_nav_left", width="stretch", disabled=(cur_page <= 1)):
                     _goto_page(cur_page - 1)
 
             # 페이지 버튼
@@ -6296,7 +6282,7 @@ if "📊 통계청" in tabs:
                         st.markdown("<div style='text-align:center; opacity:0.55;'>…</div>", unsafe_allow_html=True)
                     else:
                         p = int(it)
-                        if st.button(f"{p}", key=f"stat_nav_p_{p}", use_container_width=True, disabled=(p == cur_page)):
+                        if st.button(f"{p}", key=f"stat_nav_p_{p}", width="stretch", disabled=(p == cur_page)):
                             _goto_page(p)
 
             # "/전체페이지 N" : 텍스트만
@@ -6308,17 +6294,17 @@ if "📊 통계청" in tabs:
 
             # ▶ : 마지막 페이지면 비활성
             with nav_cols[len(items) + 2]:
-                if st.button("▶", key="stat_nav_right", use_container_width=True, disabled=(cur_page >= total_pages)):
+                if st.button("▶", key="stat_nav_right", width="stretch", disabled=(cur_page >= total_pages)):
                     _goto_page(cur_page + 1)
 
         with row[1]:
             bsave, breset, bdel = st.columns([1, 1, 1], gap="small")
             with bsave:
-                save_clicked = st.button("✅ 저장", use_container_width=True, key="stat_table_save")
+                save_clicked = st.button("✅ 저장", width="stretch", key="stat_table_save")
             with breset:
-                reset_clicked = st.button("🧹 초기화", use_container_width=True, key="stat_table_reset")
+                reset_clicked = st.button("🧹 초기화", width="stretch", key="stat_table_reset")
             with bdel:
-                del_clicked = st.button("🗑️ 삭제", use_container_width=True, key="stat_table_del")
+                del_clicked = st.button("🗑️ 삭제", width="stretch", key="stat_table_del")
 
         # (PATCH) 초기화(전체 내역 삭제) 확인 플래그
         if reset_clicked:
@@ -6367,7 +6353,7 @@ if "📊 통계청" in tabs:
 
                 yy2, nn2 = st.columns(2)
                 with yy2:
-                    if st.button("예(전체 삭제)", use_container_width=True, key="stat_reset_yes"):
+                    if st.button("예(전체 삭제)", width="stretch", key="stat_reset_yes"):
                         ok_cnt = 0
                         fail_msgs = []
 
@@ -6396,7 +6382,7 @@ if "📊 통계청" in tabs:
                         st.rerun()
 
                 with nn2:
-                    if st.button("아니오", use_container_width=True, key="stat_reset_no"):
+                    if st.button("아니오", width="stretch", key="stat_reset_no"):
                         st.session_state["stat_reset_confirm"] = False
                         st.rerun()
 
@@ -6421,7 +6407,7 @@ if "📊 통계청" in tabs:
 
                 yy, nn = st.columns(2)
                 with yy:
-                    if st.button("예", use_container_width=True, key="stat_del_yes"):
+                    if st.button("예", width="stretch", key="stat_del_yes"):
                         if not del_targets:
                             st.error("삭제할 항목을 하나 이상 체크해 주세요.")
                         else:
@@ -6446,7 +6432,7 @@ if "📊 통계청" in tabs:
                             st.session_state["stat_edit"] = {}
                             st.rerun()
                 with nn:
-                    if st.button("아니오", use_container_width=True, key="stat_del_no"):
+                    if st.button("아니오", width="stretch", key="stat_del_no"):
                         st.session_state["stat_delete_confirm"] = False
                         st.rerun()
 
@@ -6659,7 +6645,7 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
 
         bb1, bb2, bb3 = st.columns(3)
         with bb1:
-            if st.button("✅ 저장", use_container_width=True, key="stat_tpl_save_btn"):
+            if st.button("✅ 저장", width="stretch", key="stat_tpl_save_btn"):
                 resu = api_admin_upsert_stat_template(
                     admin_pin=ADMIN_PIN,
                     template_id=(edit_tpl.get("template_id") if edit_tpl else ""),
@@ -6674,14 +6660,14 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                     st.error(resu.get("error", "저장 실패"))
 
         with bb2:
-            if st.button("🧹 입력 초기화", use_container_width=True, key="stat_tpl_clear_btn"):
+            if st.button("🧹 입력 초기화", width="stretch", key="stat_tpl_clear_btn"):
                 st.session_state.pop("stat_tpl_label", None)
                 st.session_state.pop("stat_tpl_order", None)
                 st.session_state["stat_tpl_pick"] = "(새로 추가)"
                 st.rerun()
 
         with bb3:
-            if st.button("🗑️ 삭제", use_container_width=True, key="stat_tpl_del_btn", disabled=(edit_tpl is None)):
+            if st.button("🗑️ 삭제", width="stretch", key="stat_tpl_del_btn", disabled=(edit_tpl is None)):
                 if not edit_tpl:
                     st.stop()
                 resd2 = api_admin_delete_stat_template(ADMIN_PIN, str(edit_tpl.get("template_id")))
@@ -6828,7 +6814,7 @@ if "💳 신용등급" in tabs:
             with c4:
                 tri_in = st.number_input("△ 일 때", step=1, value=int(credit_cfg["tri"]), key="cred_tri")
             with c5:
-                if st.button("✅ 설정 저장", use_container_width=True, key="cred_cfg_save"):
+                if st.button("✅ 설정 저장", width="stretch", key="cred_cfg_save"):
                     _save_credit_cfg({"base": base_in, "o": o_in, "x": x_in, "tri": tri_in})
                     toast("설정 저장 완료!", icon="✅")
                     st.rerun()
@@ -6955,7 +6941,7 @@ if "💳 신용등급" in tabs:
                 if st.button(
                     "◀",
                     key="credit_nav_left",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=(cur_page <= 1),
                 ):
                     _credit_goto_page(cur_page - 1)
@@ -6973,7 +6959,7 @@ if "💳 신용등급" in tabs:
                         if st.button(
                             f"{p}",
                             key=f"credit_nav_p_{p}",
-                            use_container_width=True,
+                            width="stretch",
                             disabled=(p == cur_page),
                         ):
                             _credit_goto_page(p)
@@ -6992,7 +6978,7 @@ if "💳 신용등급" in tabs:
                 if st.button(
                     "▶",
                     key="credit_nav_right",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=(cur_page >= total_pages),
                 ):
                     _credit_goto_page(cur_page + 1)
@@ -7482,7 +7468,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     "번호","이름","적금기간","신용등급","이자율","적금 금액","이자","만기 금액",
                     "적금 날짜","만기 날짜","처리 결과","지급 금액"
                 ]
-                st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(df[show_cols], width="stretch", hide_index=True)
 
                 st.markdown("#### 🧯 중도해지 처리(관리자)")
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
@@ -7500,7 +7486,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
                     pick = st.selectbox("중도해지할 적금 선택", options, key="bank_cancel_pick")
                     if pick != "(선택 없음)":
-                        if st.button("중도해지 처리(원금 지급)", use_container_width=True, key="bank_cancel_do"):
+                        if st.button("중도해지 처리(원금 지급)", width="stretch", key="bank_cancel_do"):
                             doc_id = str(label_to_id.get(pick))
                             res = _cancel_savings(doc_id)
                             if res.get("ok"):
@@ -7560,7 +7546,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     mat = int(int(principal_in or 0) + int(it))
                     st.metric("미리보기(이자율/만기)", f"{rate:.0f}% / {mat}P")
 
-            if st.button("🏦 적금 가입(저장)", use_container_width=True, key="stu_bank_join", disabled=(not can_write)):
+            if st.button("🏦 적금 가입(저장)", width="stretch", key="stu_bank_join", disabled=(not can_write)):
                 if not can_write:
                     st.error("적금 가입 권한(bank_write)이 없습니다.")
                 elif not my_student_id:
@@ -7652,7 +7638,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
                 df_my = pd.DataFrame(view)
                 show_cols = ["적금기간","신용등급","이자율","적금 금액","이자","만기 금액","적금 날짜","만기 날짜","처리 결과","지급 금액"]
-                st.dataframe(df_my[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(df_my[show_cols], width="stretch", hide_index=True)
 
                 running_ids = df_my[(df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")].copy()
                 if not running_ids.empty and can_write:
@@ -7664,7 +7650,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     lab_to_id = {opts[i+1]: running_ids.iloc[i]["_id"] for i in range(len(running_ids.head(30)))}
                     pick2 = st.selectbox("중도해지할 적금 선택", opts, key="stu_bank_cancel_pick")
                     if pick2 != "(선택 없음)":
-                        if st.button("중도해지 실행", use_container_width=True, key="stu_bank_cancel_do"):
+                        if st.button("중도해지 실행", width="stretch", key="stu_bank_cancel_do"):
                             rid = str(lab_to_id.get(pick2))
                             res = _cancel_savings(rid)
                             if res.get("ok"):
@@ -7696,7 +7682,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 table_rows.append(row)
 
             df_rate = pd.DataFrame(table_rows)
-            st.dataframe(df_rate, use_container_width=True, hide_index=True)
+            st.dataframe(df_rate, width="stretch", hide_index=True)
             st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다.")
 
 # =========================
@@ -7770,7 +7756,7 @@ if "🎯 목표" in tabs and (not is_admin):
                     pass
             g_date = st.date_input("목표 날짜", value=default_date, key=f"goal_date_{login_name}")
 
-        if st.button("목표 저장", key=f"goal_save_{login_name}", use_container_width=True):
+        if st.button("목표 저장", key=f"goal_save_{login_name}", width="stretch"):
             res = api_set_goal(login_name, login_pin, int(g_amt), g_date.isoformat())
             if res.get("ok"):
                 toast("목표 저장 완료!", icon="🎯")
