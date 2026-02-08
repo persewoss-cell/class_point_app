@@ -6707,8 +6707,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
 
         
-        # -------------------------------------------------
-        # -------------------------------------------------
+# -------------------------------------------------
 # (B) 학생: 적금 가입 UI + 내 적금 목록 + 신용등급 미리보기
 # -------------------------------------------------
 if not is_admin:
@@ -6751,298 +6750,180 @@ if not is_admin:
     st.markdown("### 📝 적금 가입")
     st.caption("• 적금 가입 시 통장에서 출금됩니다. • 만기 시 원금+이자 자동 지급 • 중도해지는 원금만 반환")
 
-            week_opts = list(bank_rate_cfg.get("weeks", []) or [])
-            week_opts = [int(w) for w in week_opts if str(w).isdigit()]
-            week_opts = sorted(list(set(week_opts)))
-            if not week_opts:
-                week_opts = [1,2,3,4,5,6,7,8,9,10]
+    week_opts = list(bank_rate_cfg.get("weeks", []) or [])
+    week_opts = [int(w) for w in week_opts if str(w).isdigit()]
+    week_opts = sorted(list(set(week_opts)))
+    if not week_opts:
+        week_opts = [1,2,3,4,5,6,7,8,9,10]
 
-            c1, c2, c3 = st.columns([1.1, 1.3, 1.6])
-            with c1:
-                weeks_in = st.selectbox("적금기간(주)", week_opts, key="stu_bank_weeks")
-            with c2:
-                principal_in = st.number_input("적금 금액", min_value=0, step=10, value=0, key="stu_bank_principal")
-            with c3:
-                if my_student_id:
-                    sc, gr = _calc_credit_score_for_student(my_student_id)
-                    rate = _get_interest_rate_percent(gr, int(weeks_in))
-                    it = _compute_interest(int(principal_in or 0), float(rate))
-                    mat = int(int(principal_in or 0) + int(it))
-                    st.metric("미리보기(이자율/만기)", f"{rate:.0f}% / {mat}P")
+    c1, c2, c3 = st.columns([1.1, 1.3, 1.6])
+    with c1:
+        weeks_in = st.selectbox("적금기간(주)", week_opts, key="stu_bank_weeks")
+    with c2:
+        principal_in = st.number_input(
+            "적금 금액", min_value=0, step=10, value=0, key="stu_bank_principal"
+        )
+    with c3:
+        if my_student_id:
+            sc, gr = _calc_credit_score_for_student(my_student_id)
+            rate = _get_interest_rate_percent(gr, int(weeks_in))
+            it = _compute_interest(int(principal_in or 0), float(rate))
+            mat = int(int(principal_in or 0) + int(it))
+            st.metric("미리보기(이자율/만기)", f"{rate:.0f}% / {mat}P")
 
-            if st.button("🏦 적금 가입(저장)", use_container_width=True, key="stu_bank_join", disabled=(not can_write)):
-                if not can_write:
-                    st.error("적금 가입 권한(bank_write)이 없습니다.")
-                elif not my_student_id:
-                    st.error("학생 ID를 찾지 못했어요(로그인 정보를 확인).")
-                else:
-                    if int(principal_in or 0) > balance:
-                        st.error("잔액이 부족해요.")
-                    else:
-                        me_no = 999999
-                        try:
-                            snap_me = db.collection("students").document(my_student_id).get()
-                            if snap_me.exists:
-                                me_no = int((snap_me.to_dict() or {}).get("no", 999999) or 999999)
-                        except Exception:
-                            me_no = 999999
-
-                        res = _make_savings(
-                            student_id=my_student_id,
-                            no=int(me_no),
-                            name=str(login_name),
-                            weeks=int(weeks_in),
-                            principal=int(principal_in),
-                        )
-                        if res.get("ok"):
-                            toast("적금 가입 완료!", icon="✅")
-                            st.session_state.pop("stu_bank_principal", None)
-                            st.rerun()
-                        else:
-                            st.error(res.get("error", "적금 가입 실패"))
-
-            st.divider()
-
-            st.markdown("### 📒 내 적금")
-            my_rows = []
-            if my_student_id:
-                q = db.collection(SAV_COL).where(filter=FieldFilter("student_id", "==", str(my_student_id))).stream()
-                for d in q:
-                    x = d.to_dict() or {}
-                    x["_id"] = d.id
-                    my_rows.append(x)
-
-            def _k2(x):
-                dt = _parse_iso_to_dt(x.get("start_utc", "") or "")
-                return -(dt.timestamp() if dt else 0)
-
-            my_rows = sorted(my_rows, key=_k2)
-
-            if not my_rows:
-                st.info("내 적금 내역이 없어요.")
+    if st.button(
+        "🏦 적금 가입(저장)",
+        use_container_width=True,
+        key="stu_bank_join",
+        disabled=(not can_write),
+    ):
+        if not can_write:
+            st.error("적금 가입 권한(bank_write)이 없습니다.")
+        elif not my_student_id:
+            st.error("학생 ID를 찾지 못했어요(로그인 정보를 확인).")
+        else:
+            if int(principal_in or 0) > balance:
+                st.error("잔액이 부족해요.")
             else:
-                now_utc = datetime.now(timezone.utc)
-                view = []
-                for r in my_rows:
-                    start_dt = _parse_iso_to_dt(r.get("start_utc", "") or "")
-                    mat_dt = _parse_iso_to_dt(r.get("maturity_utc", "") or "")
-
-                    status = str(r.get("status", "running") or "running")
-                    if status == "canceled":
-                        result = "중도해지"
-                    else:
-                        if mat_dt and mat_dt <= now_utc:
-                            result = "만기"
-                        else:
-                            result = "진행중"
-
-                    if result == "진행중":
-                        payout_disp = "-"
-                    elif result == "중도해지":
-                        payout_disp = int(r.get("payout_amount") or r.get("principal", 0) or 0)
-                    else:
-                        payout_disp = int(r.get("payout_amount") or r.get("maturity_amount", 0) or 0)
-
-                    view.append(
-                        {
-                            "적금기간": f"{int(r.get('weeks', 0) or 0)}주",
-                            "신용등급": f"{int(r.get('credit_grade', 10) or 10)}등급",
-                            "이자율": f"{float(r.get('rate_percent', 0.0) or 0.0)}%",
-                            "적금 금액": int(r.get("principal", 0) or 0),
-                            "이자": int(r.get("interest", 0) or 0),
-                            "만기 금액": int(r.get("maturity_amount", 0) or 0),
-                            "적금 날짜": _fmt_kor_date_short_from_dt(start_dt.astimezone(KST)) if start_dt else "",
-                            "만기 날짜": _fmt_kor_date_short_from_dt(mat_dt.astimezone(KST)) if mat_dt else "",
-                            "처리 결과": result,
-                            "지급 금액": payout_disp,
-                            "_id": r.get("_id"),
-                            "_status": status,
-                        }
-                    )
-
-                df_my = pd.DataFrame(view)
-                show_cols = ["적금기간","신용등급","이자율","적금 금액","이자","만기 금액","적금 날짜","만기 날짜","처리 결과","지급 금액"]
-                st.dataframe(df_my[show_cols], use_container_width=True, hide_index=True)
-
-                running_ids = df_my[(df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")].copy()
-                if not running_ids.empty and can_write:
-                    st.markdown("#### 🧯 중도해지(원금만 지급)")
-                    opts = ["(선택 없음)"] + [
-                        f"{r['적금기간']} | {r['적금 날짜']} | {int(r['적금 금액'])}P"
-                        for _, r in running_ids.head(30).iterrows()
-                    ]
-                    lab_to_id = {opts[i+1]: running_ids.iloc[i]["_id"] for i in range(len(running_ids.head(30)))}
-                    pick2 = st.selectbox("중도해지할 적금 선택", opts, key="stu_bank_cancel_pick")
-                    if pick2 != "(선택 없음)":
-                        if st.button("중도해지 실행", use_container_width=True, key="stu_bank_cancel_do"):
-                            rid = str(lab_to_id.get(pick2))
-                            res = _cancel_savings(rid)
-                            if res.get("ok"):
-                                toast("중도해지 완료", icon="✅")
-                                st.rerun()
-                            else:
-                                st.error(res.get("error", "중도해지 실패"))
-
-            st.divider()
-
-        # -------------------------------------------------
-        # (C) 이자율 표(캡쳐 표 위치): 장부 아래 / 학생 화면 맨 아래
-        #   ✅ 항상 보이게 하지 말고, 필요할 때만 펼치기
-        # -------------------------------------------------
-        with st.expander("📌 신용등급 × 적금기간 이자율(%) 표 보기", expanded=False):
-
-            weeks = list(bank_rate_cfg.get("weeks", []) or [])
-            rates = dict(bank_rate_cfg.get("rates", {}) or {})
-
-            table_rows = []
-            for g in range(1, 11):
-                row = {"신용등급": f"{g}등급"}
-                gmap = dict(rates.get(str(g), {}) or {})
-                for w in weeks:
-                    try:
-                        row[f"{int(w)}주"] = int(float(gmap.get(str(int(w)), 0) or 0))
-                    except Exception:
-                        row[f"{w}주"] = 0
-                table_rows.append(row)
-
-            df_rate = pd.DataFrame(table_rows)
-            st.dataframe(df_rate, use_container_width=True, hide_index=True)
-            st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다.")
-
-# =========================
-# 10) 🗓️ 일정 (권한별 수정)
-# =========================
-def add_schedule(area: str, d: date, title: str, owner_roles: list[str], created_by: str):
-    db.collection("schedule_items").document().set(
-        {
-            "area": area,
-            "date": d.isoformat(),
-            "title": title,
-            "owner_role_ids": owner_roles,
-            "created_by": created_by,
-            "created_at": firestore.SERVER_TIMESTAMP,
-        }
-    )
-    return {"ok": True}
-
-def list_schedule(limit=200):
-    q = db.collection("schedule_items").order_by("date", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
-    rows = []
-    for d in q:
-        x = d.to_dict() or {}
-        rows.append(x)
-    return rows
-
-def can_edit_schedule(area: str, perms: set) -> bool:
-    if "admin_all" in perms:
-        return True
-    if area == "bank":
-        return "schedule_bank_write" in perms
-    if area == "treasury":
-        return "schedule_treasury_write" in perms
-    if area == "env":
-        return "schedule_env_write" in perms
-    return False
-
-
-# -------------------------
-# 🎯 목표 저금 (학생 개별로그인 전용 탭)
-# -------------------------
-if "🎯 목표" in tabs and (not is_admin):
-    with tab_map["🎯 목표"]:
-        st.subheader("🎯 목표 저금")
-
-        # 1) 현재 목표 불러오기
-        gres = api_get_goal(login_name, login_pin)
-        if not gres.get("ok"):
-            st.error(gres.get("error", "목표 정보를 불러오지 못했어요."))
-            st.stop()
-
-        cur_goal_amt = int(gres.get("goal_amount", 0) or 0)
-        cur_goal_date = str(gres.get("goal_date", "") or "")
-
-        # 2) 입력 UI
-        c1, c2 = st.columns(2)
-        with c1:
-            g_amt = st.number_input(
-                "목표 금액",
-                min_value=1,
-                step=1,
-                value=cur_goal_amt if cur_goal_amt > 0 else 1000,
-                key=f"goal_amt_{login_name}",
-            )
-        with c2:
-            default_date = date.today() + timedelta(days=30)
-            if cur_goal_date:
+                me_no = 999999
                 try:
-                    default_date = datetime.fromisoformat(cur_goal_date).date().date()
+                    snap_me = db.collection("students").document(my_student_id).get()
+                    if snap_me.exists:
+                        me_no = int(
+                            (snap_me.to_dict() or {}).get("no", 999999) or 999999
+                        )
                 except Exception:
-                    pass
-            g_date = st.date_input("목표 날짜", value=default_date, key=f"goal_date_{login_name}")
+                    me_no = 999999
 
-        if st.button("목표 저장", key=f"goal_save_{login_name}", use_container_width=True):
-            res = api_set_goal(login_name, login_pin, int(g_amt), g_date.isoformat())
-            if res.get("ok"):
-                toast("목표 저장 완료!", icon="🎯")
-                st.rerun()
+                res = _make_savings(
+                    student_id=my_student_id,
+                    no=int(me_no),
+                    name=str(login_name),
+                    weeks=int(weeks_in),
+                    principal=int(principal_in),
+                )
+                if res.get("ok"):
+                    toast("적금 가입 완료!", icon="✅")
+                    st.session_state.pop("stu_bank_principal", None)
+                    st.rerun()
+                else:
+                    st.error(res.get("error", "적금 가입 실패"))
+
+    st.divider()
+
+    st.markdown("### 📒 내 적금")
+    my_rows = []
+    if my_student_id:
+        q = (
+            db.collection(SAV_COL)
+            .where(filter=FieldFilter("student_id", "==", str(my_student_id)))
+            .stream()
+        )
+        for d in q:
+            x = d.to_dict() or {}
+            x["_id"] = d.id
+            my_rows.append(x)
+
+    def _k2(x):
+        dt = _parse_iso_to_dt(x.get("start_utc", "") or "")
+        return -(dt.timestamp() if dt else 0)
+
+    my_rows = sorted(my_rows, key=_k2)
+
+    if not my_rows:
+        st.info("내 적금 내역이 없어요.")
+    else:
+        now_utc = datetime.now(timezone.utc)
+        view = []
+        for r in my_rows:
+            start_dt = _parse_iso_to_dt(r.get("start_utc", "") or "")
+            mat_dt = _parse_iso_to_dt(r.get("maturity_utc", "") or "")
+
+            status = str(r.get("status", "running") or "running")
+            if status == "canceled":
+                result = "중도해지"
             else:
-                st.error(res.get("error", "목표 저장 실패"))
+                if mat_dt and mat_dt <= now_utc:
+                    result = "만기"
+                else:
+                    result = "진행중"
 
-        # 3) 달성률 계산
-        # - 진행 중(=running) 적금 원금은 항상 자산이므로 포함
-        # - 목표 날짜 이전 만기되는 적금만 이자까지 포함
-        student_doc = fs_auth_student(login_name, login_pin)
-        if not student_doc:
-            st.error("이름 또는 비밀번호가 틀립니다.")
-            st.stop()
+            if result == "진행중":
+                payout_disp = "-"
+            elif result == "중도해지":
+                payout_disp = int(
+                    r.get("payout_amount") or r.get("principal", 0) or 0
+                )
+            else:
+                payout_disp = int(
+                    r.get("payout_amount") or r.get("maturity_amount", 0) or 0
+                )
 
-        sid = student_doc.id
-        bal_now = int((student_doc.to_dict() or {}).get("balance", 0) or 0)
-
-        # running 적금 로드
-        principal_all_running = 0
-        interest_before_goal = 0
-
-        try:
-            sdocs = (
-                db.collection(SAV_COL)
-                .where(filter=FieldFilter("student_id", "==", sid))
-                .where(filter=FieldFilter("status", "==", "running"))
-                .stream()
+            view.append(
+                {
+                    "적금기간": f"{int(r.get('weeks', 0) or 0)}주",
+                    "신용등급": f"{int(r.get('credit_grade', 10) or 10)}등급",
+                    "이자율": f"{float(r.get('rate_percent', 0.0) or 0.0)}%",
+                    "적금 금액": int(r.get("principal", 0) or 0),
+                    "이자": int(r.get("interest", 0) or 0),
+                    "만기 금액": int(r.get("maturity_amount", 0) or 0),
+                    "적금 날짜": _fmt_kor_date_short_from_dt(
+                        start_dt.astimezone(KST)
+                    )
+                    if start_dt
+                    else "",
+                    "만기 날짜": _fmt_kor_date_short_from_dt(
+                        mat_dt.astimezone(KST)
+                    )
+                    if mat_dt
+                    else "",
+                    "처리 결과": result,
+                    "지급 금액": payout_disp,
+                    "_id": r.get("_id"),
+                    "_status": status,
+                }
             )
-            for d in sdocs:
-                s = d.to_dict() or {}
-                principal = int(s.get("principal", 0) or 0)
-                interest = int(s.get("interest", 0) or 0)
-                principal_all_running += principal
 
-                mdt = _to_utc_datetime(s.get("maturity_date") or s.get("maturity_utc"))
-                if isinstance(mdt, datetime):
-                    m_date = mdt.astimezone(KST).date()
-                    if m_date <= g_date:
-                        interest_before_goal += interest
-        except Exception:
-            # 로드 실패해도 목표 UI는 동작
-            pass
+        df_my = pd.DataFrame(view)
+        show_cols = [
+            "적금기간",
+            "신용등급",
+            "이자율",
+            "적금 금액",
+            "이자",
+            "만기 금액",
+            "적금 날짜",
+            "만기 날짜",
+            "처리 결과",
+            "지급 금액",
+        ]
+        st.dataframe(df_my[show_cols], use_container_width=True, hide_index=True)
 
-        goal_amount = int(g_amt)
-        expected_amount = bal_now + principal_all_running + interest_before_goal
+        running_ids = df_my[
+            (df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")
+        ].copy()
+        if not running_ids.empty and can_write:
+            st.markdown("#### 🧯 중도해지(원금만 지급)")
+            opts = ["(선택 없음)"] + [
+                f"{r['적금기간']} | {r['적금 날짜']} | {int(r['적금 금액'])}P"
+                for _, r in running_ids.head(30).iterrows()
+            ]
+            lab_to_id = {
+                opts[i + 1]: running_ids.iloc[i]["_id"]
+                for i in range(len(running_ids.head(30)))
+            }
+            pick2 = st.selectbox(
+                "중도해지할 적금 선택", opts, key="stu_bank_cancel_pick"
+            )
+            if pick2 != "(선택 없음)":
+                if st.button("중도해지 실행", use_container_width=True, key="stu_bank_cancel_do"):
+                    rid = str(lab_to_id.get(pick2))
+                    res = _cancel_savings(rid)
+                    if res.get("ok"):
+                        toast("중도해지 완료", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error(res.get("error", "중도해지 실패"))
 
-        now_ratio = clamp01(bal_now / goal_amount if goal_amount > 0 else 0)
-        exp_ratio = clamp01(expected_amount / goal_amount if goal_amount > 0 else 0)
+    st.divider()
 
-        st.progress(exp_ratio)
-        st.write(f"총 자산 기준 예상 달성률: **{exp_ratio*100:.1f}%** (예상 {expected_amount} / 목표 {goal_amount})")
-
-        if principal_all_running > 0:
-            msg = f"📌 진행 중 적금 원금 **+{principal_all_running}** 포함"
-
-            if interest_before_goal > 0:
-                msg += f", 목표일({g_date.isoformat()}) 이전 만기 적금 이자 **+{interest_before_goal}** 포함"
-            else:
-                msg += " (목표일 이전 만기 적금은 원금만 반영)"
-
-            st.info(msg)
-
-        if principal_all_running == 0 and interest_before_goal == 0:
-            st.caption("진행 중 적금이 없어 예상 금액은 현재 잔액과 같아요.")
