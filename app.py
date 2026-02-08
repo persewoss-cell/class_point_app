@@ -2954,57 +2954,61 @@ if "📈 투자" in tabs:
                 return out
             except Exception:
                 return []
-def _can_redeem(actor_student_id: str) -> bool:
-            if is_admin:
-                return True
-            # '투자증권' 직업(roles.role_name)만 허용
-            try:
-                if not actor_student_id:
-                    return False
-                snap = db.collection("students").document(str(actor_student_id)).get()
-                if not snap.exists:
-                    return False
-                rid = str((snap.to_dict() or {}).get("role_id", "") or "")
-                if not rid:
-                    return False
-                roles = api_list_roles_cached()
-                for r in roles:
-                    if str(r.get("role_id")) == rid:
-                        return str(r.get("role_name", "") or "") == "투자증권"
-                return False
-            except Exception:
-                return False
+# =========================
+# 투자 공용 함수들
+# =========================
+def can_redeem(actor_student_id: str, is_admin: bool) -> bool:
+    if is_admin:
+        return True
+    try:
+        if not actor_student_id:
+            return False
+        snap = db.collection("students").document(str(actor_student_id)).get()
+        if not snap.exists:
+            return False
+        rid = str((snap.to_dict() or {}).get("role_id", "") or "")
+        if not rid:
+            return False
+        roles = api_list_roles_cached()
+        for r in roles:
+            if str(r.get("role_id")) == rid:
+                return str(r.get("role_name", "") or "") == "투자증권"
+        return False
+    except Exception:
+        return False
 
-        def _load_ledger(for_student_id: str | None):
-            try:
-                q = db.collection(INV_LEDGER_COL).order_by("buy_at", direction=firestore.Query.DESCENDING).limit(300)
-                docs = list(q.stream())
-                rows = []
-                for d in docs:
-                    x = d.to_dict() or {}
-                    if for_student_id and str(x.get("student_id")) != str(for_student_id):
-                        continue
-                    rows.append({**x, "_doc_id": d.id})
-                return rows
-            except Exception:
-                return []
 
-        def _calc_redeem_amount(invest_amount: int, buy_price: float, sell_price: float):
-            invest_amount = int(invest_amount or 0)
-            buy_price = _as_price1(buy_price)
-            sell_price = _as_price1(sell_price)
-            diff = _as_price1(sell_price - buy_price)
+def load_invest_ledger(for_student_id: str | None):
+    try:
+        q = db.collection("invest_ledger").order_by(
+            "buy_at", direction=firestore.Query.DESCENDING
+        ).limit(300)
+        docs = list(q.stream())
+        rows = []
+        for d in docs:
+            x = d.to_dict() or {}
+            if for_student_id and str(x.get("student_id")) != str(for_student_id):
+                continue
+            rows.append({**x, "_doc_id": d.id})
+        return rows
+    except Exception:
+        return []
 
-            # diff가 -100 이하이면 전액 손실
-            if diff <= -100:
-                profit = -invest_amount
-                redeem_amt = 0
-            else:
-                profit = invest_amount * float(diff) / 10.0
-                redeem_amt = invest_amount + profit
-                if redeem_amt < 0:
-                    redeem_amt = 0
-            return diff, profit, int(round(redeem_amt))
+
+def calc_redeem_amount(invest_amount: int, buy_price: float, sell_price: float):
+    invest_amount = int(invest_amount or 0)
+    buy_price = float(buy_price or 0)
+    sell_price = float(sell_price or 0)
+    diff = round(sell_price - buy_price, 1)
+
+    if diff <= -100:
+        profit = -invest_amount
+        redeem_amt = 0
+    else:
+        profit = invest_amount * diff / 10.0
+        redeem_amt = max(0, int(round(invest_amount + profit)))
+
+    return diff, profit, redeem_amt
 
         # -------------------------------------------------
         # 1) (상단) 종목 및 주가 변동
