@@ -3198,7 +3198,7 @@ if "📈 투자" in tabs:
                                 if diff > 0:
                                     diff_view = f"<span style='color:red'>▲ +{diff:.1f}</span>"
                                 elif diff < 0:
-                                    diff_view = f"<span style='color:blue'>▲ {diff:.1f}</span>"
+                                    diff_view = f"<span style='color:blue'>▼ {diff:.1f}</span>"
                                 else:
                                     diff_view = "-"
 
