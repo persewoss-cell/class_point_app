@@ -3126,43 +3126,31 @@ if "📈 투자" in tabs:
                                 pa = float(h.get("price_after", 0.0) or 0.0)
                                 diff = round(pa - pb, 1)
 
-                                # 변동일시 문자열 직접 생성 (함수 사용 ❌)
-                                if dt:
+                                # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
+                                def _fmt_kor_datetime(dt_obj):
+                                    if not dt_obj:
+                                        return "-"
                                     try:
-                                        dt_kst = dt.astimezone(KST)
+                                        dt_kst = dt_obj.astimezone(KST)
                                     except Exception:
-                                        dt_kst = dt
+                                        dt_kst = dt_obj
 
                                     hour = dt_kst.hour
                                     ampm = "오전" if hour < 12 else "오후"
                                     hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
-                                    change_dt = (
-                                        f"{dt_kst.month}월 {dt_kst.day}일"
-                                        f"({days_ko[dt_kst.weekday()]}) "
-                                        f"{ampm} {hh:02d}시 {dt_kst.minute:02d}분"
-                                    )
-                                else:
-                                    change_dt = "-"
+                                    return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
 
-                                # ▲ 아이콘 통일 + 색으로 구분
+                                # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
                                 if diff > 0:
-                                    diff_view = (
-                                        "<span style='color:red; font-weight:600'>"
-                                        f"▲ +{diff:.1f}"
-                                        "</span>"
-                                    )
+                                    diff_view = f"🔺 <span style='color:red'>+{diff:.1f}</span>"
                                 elif diff < 0:
-                                    diff_view = (
-                                        "<span style='color:blue; font-weight:600'>"
-                                        f"▲ {diff:.1f}"
-                                        "</span>"
-                                    )
+                                    diff_view = f"🔽 <span style='color:blue'>{diff:.1f}</span>"
                                 else:
                                     diff_view = "-"
 
                                 rows.append(
                                     {
-                                        "변동일시": change_dt,
+                                        "변동일시": _fmt_kor_datetime(dt),
                                         "변동사유": h.get("reason", "") or "",
                                         "변동 후": f"{pa:.1f}",
                                         "변동 전": f"{pb:.1f}",
@@ -3170,6 +3158,13 @@ if "📈 투자" in tabs:
                                     }
                                 )
 
+                            df = pd.DataFrame(rows)
+
+                            # ✅ HTML 스타일 적용되도록 dataframe 대신 HTML 테이블로 출력
+                            st.markdown(
+                                df.to_html(escape=False, index=False),
+                                unsafe_allow_html=True,
+                            )
                         else:
                             st.caption("아직 주가 변동 기록이 없습니다.")
 
@@ -6411,4 +6406,3 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 현재 잔액과 같아요.")
-
