@@ -3763,22 +3763,20 @@ if "🏦 내 통장" in tabs:
                                 st.session_state["bank_tpl_del_confirm"] = False
                                 st.rerun()
 
-            # =================================================
+               # =================================================
             # [개인] : 체크된 학생만 “일괄 지급/벌금” 적용
             # =================================================
             with sub_tab_personal:
                 st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
-                res.get("accounts", []) if acc_res.get("ok") else []
-                if not acc_res.get("ok"):
-                    st.warning(f"계정 목록을 불러오지 못했어요: {acc_res.get('error','')}")
+
                 import re
 
                 def _num_key(acc):
                     name = str(acc.get("name", ""))
                     m = re.search(r"\d+", name)
                     if m:
-                        return int(m.group())   # 1~9 → 01~09처럼 숫자 기준 정렬
-                    return 9999                # 번호 없으면 맨 뒤
+                        return int(m.group())   # 1~9 → 숫자 기준 정렬
+                    return 9999
 
                 # =========================
                 # Accounts (안전 로딩)
@@ -3794,7 +3792,7 @@ if "🏦 내 통장" in tabs:
 
                 if not acc_res.get("ok") and acc_res.get("error"):
                     st.warning(f"계정 목록을 불러오지 못했어요: {acc_res.get('error')}")
-                
+
                 accounts_now = sorted(accounts_now, key=_num_key)
 
                 if not accounts_now:
