@@ -1718,16 +1718,230 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
     return {"ok": True, "undone": undone, "delta": total_delta, "message": info_msg}
 
 # =========================
-# Savings / Goal
-# (너 코드 그대로이긴 한데, 학급 확장 핵심이 아니라 여기서는 생략하지 않고
-# 기존 코드 쓰던 그대로 붙여 넣어도 됨. 이미 너 코드에 있으니 그대로 유지하면 됨.)
+# Savings (적금)
 # =========================
-# ★★★ 너가 올린 Savings/Goal 코드는 그대로 붙여넣어 사용 ★★★
-# 여기서는 "학급 확장"이 핵심이라, 아래에서 호출되는 함수만 "이미 존재"한다고 가정:
-# - api_savings_list_by_student_id, api_savings_list, api_savings_create, api_savings_cancel, api_process_maturities
-# - api_get_goal, api_get_goal_by_student_id, api_set_goal
-#
-# ✅ 너는 지금 코드에 이미 들어있으니, 그대로 두면 된다.
+def api_savings_list_by_student_id(student_id: str):
+    """✅ student_id 기준 적금 목록 조회"""
+    try:
+        docs = (
+            db.collection(SAV_COL if "SAV_COL" in globals() else "savings")
+            .where(filter=FieldFilter("student_id", "==", str(student_id)))
+            .order_by("start_date", direction=firestore.Query.DESCENDING)
+            .limit(50)
+            .stream()
+        )
+        out = []
+        for d in docs:
+            s = d.to_dict() or {}
+            out.append(
+                {
+                    "savings_id": d.id,
+                    "principal": int(s.get("principal", 0) or 0),
+                    "weeks": int(s.get("weeks", 0) or 0),
+                    "interest": int(s.get("interest", 0) or 0),
+                    "maturity_date": _to_utc_datetime(s.get("maturity_date")),
+                    "status": s.get("status", "active"),
+                }
+            )
+        return {"ok": True, "savings": out}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "savings": []}
+
+
+def api_savings_list(login_name: str, login_pin: str):
+    """✅ (사용자) 로그인 정보로 적금 목록 조회"""
+    student_doc = fs_auth_student(login_name, login_pin)
+    if not student_doc:
+        return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
+    return api_savings_list_by_student_id(student_doc.id)
+
+
+def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: int):
+    """✅ (사용자) 적금 가입"""
+    principal = int(principal or 0)
+    weeks = int(weeks or 0)
+
+    student_doc = fs_auth_student(login_name, login_pin)
+    if not student_doc:
+        return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
+    if principal <= 0:
+        return {"ok": False, "error": "원금은 1 이상이어야 합니다."}
+    if principal % 10 != 0:
+        return {"ok": False, "error": "원금은 10단위만 가능합니다."}
+    if weeks < 1 or weeks > 10:
+        return {"ok": False, "error": "기간은 1~10주만 가능합니다."}
+
+    student_ref = db.collection("students").document(student_doc.id)
+    savings_ref = db.collection(SAV_COL if "SAV_COL" in globals() else "savings").document()
+
+    # 이자율: 1주=5% (기존 하우스포인트뱅크 로직과 동일)
+    rate = float(weeks) * 0.05
+    interest = round(principal * rate)
+    maturity_date = datetime.now(timezone.utc) + timedelta(days=weeks * 7)
+
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
+        bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
+        if principal > bal:
+            raise ValueError("잔액보다 큰 원금은 가입할 수 없습니다.")
+        new_bal = bal - principal
+        transaction.update(student_ref, {"balance": new_bal})
+
+        tx_ref = db.collection("transactions").document()
+        transaction.set(
+            tx_ref,
+            {
+                "student_id": student_doc.id,
+                "type": "withdraw",
+                "amount": -principal,
+                "balance_after": new_bal,
+                "memo": f"적금 가입({weeks}주)",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+        transaction.set(
+            savings_ref,
+            {
+                "student_id": student_doc.id,
+                "principal": principal,
+                "weeks": weeks,
+                "interest": interest,
+                "start_date": firestore.SERVER_TIMESTAMP,
+                "maturity_date": maturity_date,
+                "status": "active",
+            },
+        )
+        return interest, maturity_date
+
+    try:
+        interest2, maturity_dt = _do(db.transaction())
+        return {"ok": True, "interest": int(interest2), "maturity_datetime": maturity_dt}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"적금 가입 실패: {e}"}
+
+
+def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
+    """✅ (사용자) 적금 해지 - 원금만 반환"""
+    student_doc = fs_auth_student(login_name, login_pin)
+    if not student_doc:
+        return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
+
+    savings_id = str(savings_id or "").strip()
+    if not savings_id:
+        return {"ok": False, "error": "savings_id가 필요합니다."}
+
+    student_ref = db.collection("students").document(student_doc.id)
+    savings_ref = db.collection(SAV_COL if "SAV_COL" in globals() else "savings").document(savings_id)
+
+    @firestore.transactional
+    def _do(transaction):
+        s_snap = savings_ref.get(transaction=transaction)
+        if not s_snap.exists:
+            raise ValueError("해당 적금을 찾지 못했습니다.")
+        s = s_snap.to_dict() or {}
+        if str(s.get("student_id", "")) != str(student_doc.id):
+            raise ValueError("권한이 없습니다.")
+        if str(s.get("status", "")) != "active":
+            raise ValueError("이미 처리된 적금입니다.")
+
+        principal = int(s.get("principal", 0) or 0)
+        weeks = int(s.get("weeks", 0) or 0)
+
+        st_snap = student_ref.get(transaction=transaction)
+        bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+        new_bal = bal + principal
+
+        transaction.update(savings_ref, {"status": "canceled"})
+        transaction.update(student_ref, {"balance": new_bal})
+
+        tx_ref = db.collection("transactions").document()
+        transaction.set(
+            tx_ref,
+            {
+                "student_id": student_doc.id,
+                "type": "deposit",
+                "amount": principal,
+                "balance_after": new_bal,
+                "memo": f"적금 해지({weeks}주)",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+        return principal
+
+    try:
+        refunded = _do(db.transaction())
+        return {"ok": True, "refunded": int(refunded)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"해지 실패: {e}"}
+
+
+def api_process_maturities(login_name: str, login_pin: str):
+    """✅ (사용자) 만기 도착한 적금 자동 반환"""
+    student_doc = fs_auth_student(login_name, login_pin)
+    if not student_doc:
+        return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
+
+    student_ref = db.collection("students").document(student_doc.id)
+    now = datetime.now(timezone.utc)
+
+    q = (
+        db.collection(SAV_COL if "SAV_COL" in globals() else "savings")
+        .where(filter=FieldFilter("student_id", "==", student_doc.id))
+        .where(filter=FieldFilter("status", "==", "active"))
+        .stream()
+    )
+
+    matured = []
+    for d in q:
+        s = d.to_dict() or {}
+        m_dt = _to_utc_datetime(s.get("maturity_date"))
+        if m_dt and m_dt <= now:
+            matured.append((d.id, s))
+
+    if not matured:
+        return {"ok": True, "matured_count": 0, "paid_total": 0}
+
+    matured_count, paid_total = 0, 0
+    for sid, s in matured:
+        principal = int(s.get("principal", 0) or 0)
+        interest = int(s.get("interest", 0) or 0)
+        amount = principal + interest
+        weeks = int(s.get("weeks", 0) or 0)
+
+        savings_ref = db.collection(SAV_COL if "SAV_COL" in globals() else "savings").document(sid)
+        tx_ref = db.collection("transactions").document()
+
+        @firestore.transactional
+        def _do_one(transaction):
+            st_snap = student_ref.get(transaction=transaction)
+            bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+            new_bal = bal + amount
+
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.update(savings_ref, {"status": "matured"})
+            transaction.set(
+                tx_ref,
+                {
+                    "student_id": student_doc.id,
+                    "type": "maturity",
+                    "amount": amount,
+                    "balance_after": new_bal,
+                    "memo": f"적금 만기({weeks}주)",
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                },
+            )
+            return new_bal
+
+        _do_one(db.transaction())
+        matured_count += 1
+        paid_total += amount
+
+    return {"ok": True, "matured_count": matured_count, "paid_total": paid_total}
 
 # =========================
 # 🏛️ Treasury(국세청/국고) - helpers + templates + UI
