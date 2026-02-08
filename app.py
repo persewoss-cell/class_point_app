@@ -2798,7 +2798,7 @@ def _calc_credit_score_for_student(student_id: str):
 
 
 # =========================
-# 1) 🏦 내 통장 (기존 사용자 화면 거의 그대로)
+# 1) 🏦 내 통장 (기존  거의 그대로)
 # =========================
 def render_tx_table(df_tx: pd.DataFrame):
     if df_tx is None or df_tx.empty:
@@ -6729,14 +6729,28 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 sc, gr = _calc_credit_score_for_student(my_student_id)
                 st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
 
-            st.markdown(f"#### 현재 잔액: **{balance}드림**")
-sv_total = sum(
-    int(s.get("principal", 0) or 0)
-    for s in savings_list
-    if str(s.get("status", "")).lower() == "active"
-)
-st.markdown(f"#### 적금 총액: **{sv_total}드림**")
+                        st.markdown(f"#### 현재 잔액: **{balance}드림**")
 
+            # ✅ 적금 총액(원금 합계) = 내 적금 목록(my_rows)에서 running(진행중) 원금만 합산
+            # - 아래에서 my_rows를 다시 로드하지만, 여기 요약 표시를 위해 먼저 한 번 로드합니다.
+            sv_total = 0
+            if my_student_id:
+                try:
+                    _rows_tmp = []
+                    q_tmp = db.collection(SAV_COL).where(filter=FieldFilter("student_id", "==", str(my_student_id))).stream()
+                    for d in q_tmp:
+                        x = d.to_dict() or {}
+                        _rows_tmp.append(x)
+
+                    sv_total = sum(
+                        int(r.get("principal", 0) or 0)
+                        for r in _rows_tmp
+                        if str(r.get("status", "running") or "running") == "running"
+                    )
+                except Exception:
+                    sv_total = 0
+
+            st.markdown(f"#### 적금 총액: **{sv_total}드림**")         
             st.markdown("### 📝 적금 가입")
             st.caption("• 적금 가입 시 통장에서 해당 금액이 출금됩니다. • 만기면 원금+이자가 자동 지급됩니다. • 중도해지는 원금만 지급됩니다.")
 
