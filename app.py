@@ -662,21 +662,13 @@ def savings_active_total(savings_list: list[dict]) -> int:
 # Goals
 # =========================
 def api_get_goal_by_student_id(student_id: str):
-    """student_id 기준 목표 조회 (가장 최근 1개)"""
-    if not student_id:
-        return {"ok": False, "error": "student_id가 없습니다."}
+    """학생별 목표(학생 1명당 문서 1개: doc_id = student_id) 조회"""
+    GOAL_COL = "goals"
     try:
-        q = (
-            db.collection(GOAL_COL)
-            .where(filter=FieldFilter("student_id", "==", student_id))
-            .order_by("created_at", direction=firestore.Query.DESCENDING)
-            .limit(1)
-            .stream()
-        )
-        docs = list(q)
-        if not docs:
+        ref = db.collection(GOAL_COL).document(student_id).get()
+        if not ref.exists:
             return {"ok": True, "goal_amount": 0, "goal_date": ""}
-        g = docs[0].to_dict() or {}
+        g = ref.to_dict() or {}
         return {
             "ok": True,
             "goal_amount": int(g.get("target_amount", 0) or 0),
@@ -686,9 +678,28 @@ def api_get_goal_by_student_id(student_id: str):
         return {"ok": False, "error": str(e)}
 
 
+def api_set_goal(student_id: str, target_amount: int, goal_date_str: str):
+    """학생별 목표 저장(학생 1명당 문서 1개: doc_id = student_id)"""
+    GOAL_COL = "goals"
+    try:
+        db.collection(GOAL_COL).document(student_id).set(
+            {
+                "student_id": student_id,
+                "target_amount": int(target_amount or 0),
+                "goal_date": goal_date_str,
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def api_get_goal(name: str, pin: str):
     """사용자 인증 후 목표 조회"""
-    student_doc = fs_auth_student(login_name, login_pin)
+    student_doc = fs_auth_student(name, pin)  # ✅ login_name/login_pin 버그 수정
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
     return api_get_goal_by_student_id(student_doc.id)
