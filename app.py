@@ -6708,51 +6708,48 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
         
         # -------------------------------------------------
-        # (B) 학생: 적금 가입 UI + 내 적금 목록 + 신용등급 미리보기
         # -------------------------------------------------
-        if not is_admin:
-            # ✅ 학생 화면에서는 하우스포인트뱅크처럼 '적금' 기능을 기본 허용합니다.
-            # (추후 직업/역할별로 제한하려면 여기서 can_write/can_read를 role 기반으로 다시 연결하세요.)
-            can_write = True
-            can_read = True
+# (B) 학생: 적금 가입 UI + 내 적금 목록 + 신용등급 미리보기
+# -------------------------------------------------
+if not is_admin:
+    can_write = True
+    can_read = True
 
-            refresh_account_data_light(login_name, login_pin, force=True)
-            slot = st.session_state.data.get(login_name, {})
-            if slot.get("error"):
-                st.error(slot["error"])
-                st.stop()
+    refresh_account_data_light(login_name, login_pin, force=True)
+    slot = st.session_state.data.get(login_name, {})
+    if slot.get("error"):
+        st.error(slot["error"])
+        st.stop()
 
-            balance = int(slot.get("balance", 0) or 0)
-            my_student_id = slot.get("student_id")
+    balance = int(slot.get("balance", 0) or 0)
+    my_student_id = slot.get("student_id")
 
-            if my_student_id:
-                sc, gr = _calc_credit_score_for_student(my_student_id)
-                st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
+    if my_student_id:
+        sc, gr = _calc_credit_score_for_student(my_student_id)
+        st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
 
-                        st.markdown(f"#### 현재 잔액: **{balance}드림**")
+    st.markdown(f"#### 현재 잔액: **{balance}드림**")
 
-            # ✅ 적금 총액(원금 합계) = 내 적금 목록(my_rows)에서 running(진행중) 원금만 합산
-            # - 아래에서 my_rows를 다시 로드하지만, 여기 요약 표시를 위해 먼저 한 번 로드합니다.
+    # ✅ 적금 총액 계산
+    sv_total = 0
+    if my_student_id:
+        try:
+            q_tmp = db.collection(SAV_COL).where(
+                filter=FieldFilter("student_id", "==", str(my_student_id))
+            ).stream()
+
+            sv_total = sum(
+                int((d.to_dict() or {}).get("principal", 0) or 0)
+                for d in q_tmp
+                if str((d.to_dict() or {}).get("status", "running")) == "running"
+            )
+        except Exception:
             sv_total = 0
-            if my_student_id:
-                try:
-                    _rows_tmp = []
-                    q_tmp = db.collection(SAV_COL).where(filter=FieldFilter("student_id", "==", str(my_student_id))).stream()
-                    for d in q_tmp:
-                        x = d.to_dict() or {}
-                        _rows_tmp.append(x)
 
-                    sv_total = sum(
-                        int(r.get("principal", 0) or 0)
-                        for r in _rows_tmp
-                        if str(r.get("status", "running") or "running") == "running"
-                    )
-                except Exception:
-                    sv_total = 0
+    st.markdown(f"#### 적금 총액: **{sv_total}드림**")
 
-            st.markdown(f"#### 적금 총액: **{sv_total}드림**")         
-            st.markdown("### 📝 적금 가입")
-            st.caption("• 적금 가입 시 통장에서 해당 금액이 출금됩니다. • 만기면 원금+이자가 자동 지급됩니다. • 중도해지는 원금만 지급됩니다.")
+    st.markdown("### 📝 적금 가입")
+    st.caption("• 적금 가입 시 통장에서 출금됩니다. • 만기 시 원금+이자 자동 지급 • 중도해지는 원금만 반환")
 
             week_opts = list(bank_rate_cfg.get("weeks", []) or [])
             week_opts = [int(w) for w in week_opts if str(w).isdigit()]
