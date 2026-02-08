@@ -3273,7 +3273,11 @@ if "📈 투자" in tabs:
 
                             with left:
                                 st.markdown(
-                                    df.to_html(escape=False, index=False),
+                                    """
+                                    <style>
+                                    th { text-align: center !important; }
+                                    </style>
+                                    """ + df.to_html(escape=False, index=False),
                                     unsafe_allow_html=True,
                                 )
 
