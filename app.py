@@ -3120,9 +3120,13 @@ if "📈 투자" in tabs:
                         hist = _get_history(p["product_id"], limit=120)
                         if hist:
                             rows = []
-                            for i, h in enumerate(hist, start=1):
+                            for h in hist:
                                 dt = _ts_to_dt(h.get("created_at"))
-                                # 변동일시 포맷: 0월 0일(요일) 오전/오후 00시 00분
+                                pb = float(h.get("price_before", 0.0) or 0.0)
+                                pa = float(h.get("price_after", 0.0) or 0.0)
+                                diff = round(pa - pb, 1)
+
+                                # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
                                 def _fmt_kor_datetime(dt_obj):
                                     if not dt_obj:
                                         return "-"
@@ -3134,22 +3138,13 @@ if "📈 투자" in tabs:
                                     hour = dt_kst.hour
                                     ampm = "오전" if hour < 12 else "오후"
                                     hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
+                                    return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
 
-                                    return (
-                                        f"{dt_kst.month}월 {dt_kst.day}일"
-                                        f"({days_ko[dt_kst.weekday()]}) "
-                                        f"{ampm} {hh:02d}시 {dt_kst.minute:02d}분"
-                                    )
-
-                                pb = float(h.get("price_before", 0.0))
-                                pa = float(h.get("price_after", 0.0))
-                                diff = round(pa - pb, 1)
-
-                                # 주가 등락 표시
+                                # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
                                 if diff > 0:
                                     diff_view = f"🔺 <span style='color:red'>+{diff:.1f}</span>"
                                 elif diff < 0:
-                                    diff_view = f"🔻 <span style='color:blue'>{diff:.1f}</span>"
+                                    diff_view = f"🔽 <span style='color:blue'>{diff:.1f}</span>"
                                 else:
                                     diff_view = "-"
 
@@ -3162,27 +3157,68 @@ if "📈 투자" in tabs:
                                         "주가 등락": diff_view,
                                     }
                                 )
-                            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+                            df = pd.DataFrame(rows)
+
+                            # ✅ HTML 스타일 적용되도록 dataframe 대신 HTML 테이블로 출력
+                            st.markdown(
+                                df.to_html(escape=False, index=False),
+                                unsafe_allow_html=True,
+                            )
                         else:
                             st.caption("아직 주가 변동 기록이 없습니다.")
 
                 else:
                     with st.expander(f"{nm} 주가 변동 내역", expanded=False):
+                        # 변동 내역(표)
                         hist = _get_history(p["product_id"], limit=120)
                         if hist:
                             rows = []
-                            for i, h in enumerate(hist, start=1):
+                            for h in hist:
                                 dt = _ts_to_dt(h.get("created_at"))
+                                pb = float(h.get("price_before", 0.0) or 0.0)
+                                pa = float(h.get("price_after", 0.0) or 0.0)
+                                diff = round(pa - pb, 1)
+
+                                # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
+                                def _fmt_kor_datetime(dt_obj):
+                                    if not dt_obj:
+                                        return "-"
+                                    try:
+                                        dt_kst = dt_obj.astimezone(KST)
+                                    except Exception:
+                                        dt_kst = dt_obj
+
+                                    hour = dt_kst.hour
+                                    ampm = "오전" if hour < 12 else "오후"
+                                    hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
+                                    return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
+
+                                # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
+                                if diff > 0:
+                                    diff_view = f"🔺 <span style='color:red'>+{diff:.1f}</span>"
+                                elif diff < 0:
+                                    diff_view = f"🔽 <span style='color:blue'>{diff:.1f}</span>"
+                                else:
+                                    diff_view = "-"
+
                                 rows.append(
                                     {
-                                        "번호": i,
-                                        "변동일자": _fmt_kor_date_md(dt) if dt else "-",
-                                        "변동 사유": h.get("reason", "") or "",
-                                        "변동 전": f"{float(h.get('price_before', 0.0)):.1f}",
-                                        "변동 후": f"{float(h.get('price_after', 0.0)):.1f}",
+                                        "변동일시": _fmt_kor_datetime(dt),
+                                        "변동사유": h.get("reason", "") or "",
+                                        "변동 후": f"{pa:.1f}",
+                                        "변동 전": f"{pb:.1f}",
+                                        "주가 등락": diff_view,
                                     }
                                 )
-                            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+                            df = pd.DataFrame(rows)
+
+                            # ✅ HTML 스타일 적용되도록 dataframe 대신 HTML 테이블로 출력
+                            st.markdown(
+                                df.to_html(escape=False, index=False),
+                                unsafe_allow_html=True,
+                            )
                         else:
                             st.caption("아직 주가 변동 기록이 없습니다.")
 
