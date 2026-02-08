@@ -2384,6 +2384,85 @@ else:
     }
     tabs = list(tab_map.keys())
 
+# =========================
+# (PATCH) 공용: 신용점수/등급 계산 (내 통장 상단 요약에서 먼저 필요)
+# - 탭 실행 순서 때문에 내 통장에서 0등급(0점)으로 뜨는 문제 방지
+# =========================
+def _score_to_grade(score: int) -> int:
+    s = int(score or 0)
+    if s >= 90:
+        return 1
+    if s >= 80:
+        return 2
+    if s >= 70:
+        return 3
+    if s >= 60:
+        return 4
+    if s >= 50:
+        return 5
+    if s >= 40:
+        return 6
+    if s >= 30:
+        return 7
+    if s >= 20:
+        return 8
+    if s >= 10:
+        return 9
+    return 10
+
+def _get_credit_cfg():
+    ref = db.collection("config").document("credit_scoring")
+    snap = ref.get()
+    if not snap.exists:
+        return {"base": 50, "o": 1, "x": -3, "tri": 0}
+    d = snap.to_dict() or {}
+    return {
+        "base": int(d.get("base", 50) or 50),
+        "o": int(d.get("o", 1) or 1),
+        "x": int(d.get("x", -3) or -3),
+        "tri": int(d.get("tri", 0) or 0),
+    }
+
+def _norm_status(v) -> str:
+    v = str(v or "").strip().upper()
+    if v in ("O", "○"):
+        return "O"
+    if v in ("△", "▲", "Δ"):
+        return "△"
+    return "X"
+
+def _calc_credit_score_for_student(student_id: str):
+    credit_cfg = _get_credit_cfg()
+    base = int(credit_cfg.get("base", 50) or 50)
+    o_pt = int(credit_cfg.get("o", 1) or 1)
+    x_pt = int(credit_cfg.get("x", -3) or -3)
+    tri_pt = int(credit_cfg.get("tri", 0) or 0)
+
+    def _delta(v) -> int:
+        v = _norm_status(v)
+        if v == "O":
+            return o_pt
+        if v == "△":
+            return tri_pt
+        return x_pt
+
+    res = api_list_stat_submissions_cached(limit_cols=200)
+    rows_desc = list(res.get("rows", []) or []) if res.get("ok") else []
+
+    score = int(base)
+    # rows_desc는 최신→과거 / 누적은 과거→최신으로
+    for sub in reversed(rows_desc):
+        statuses = dict(sub.get("statuses", {}) or {})
+        v_raw = statuses.get(str(student_id), "X")
+        score = int(score + _delta(v_raw))
+        if score > 100:
+            score = 100
+        if score < 0:
+            score = 0
+
+    grade = _score_to_grade(score)
+    return score, grade
+
 
 # =========================
 # 1) 🏦 내 통장 (기존 사용자 화면 거의 그대로)
@@ -2481,21 +2560,38 @@ if "🏦 내 통장" in tabs:
             except Exception:
                 total_savings_principal = 0
 
-            # 2) 직업: students 문서에서 직접 읽기 (관리자 직업/월급에서 저장한 값 반영)
+            # 2) 직업: students.role_id 우선 반영 (admin_set_role은 role_id만 저장함)
             job_name = "없음"
             try:
                 stu_doc = db.collection("students").document(str(student_id)).get()
                 stu = stu_doc.to_dict() if stu_doc.exists else {}
-                job_name = stu.get("job_name") or stu.get("job") or "없음"
+
+                # (1) 혹시 job_name/job 필드를 쓰는 버전이면 그 값 사용
+                job_name = (stu.get("job_name") or stu.get("job") or "").strip()
+
+                # (2) 없으면 role_id → roles 문서에서 직업명 가져오기
+                if not job_name:
+                    role_id = str(stu.get("role_id") or "").strip()
+                    if role_id:
+                        role_snap = db.collection("roles").document(role_id).get()
+                        if role_snap.exists:
+                            rd = role_snap.to_dict() or {}
+                            job_name = str(rd.get("role_name") or role_id).strip()
+                        else:
+                            # roles에 없더라도 role_id 자체가 직업명이므로 표시
+                            job_name = role_id
+
+                if not job_name:
+                    job_name = "없음"
             except Exception:
                 job_name = "없음"
 
-            # 3) 신용도: 관리자 탭에서 쓰는 계산 함수 재사용
-            credit_score, credit_grade = 0, 0
+            # 3) 신용도: 공용 계산 함수 사용 (내 통장에서 0으로 뜨는 문제 방지)
+            credit_score, credit_grade = 0, 10
             try:
                 credit_score, credit_grade = _calc_credit_score_for_student(str(student_id))
             except Exception:
-                credit_score, credit_grade = 0, 0
+                credit_score, credit_grade = 0, 10
 
             st.markdown(f"## 🧾 {login_name} 통장")
             st.markdown(
@@ -2504,7 +2600,7 @@ if "🏦 내 통장" in tabs:
 **통장 잔액:** {balance}드림  
 **적금 금액:** {total_savings_principal}드림  
 **직업:** {job_name}  
-**신용도:** {credit_grade}등급 ({credit_score}점)
+**신용도:** {credit_grade}등급({credit_score}점)
 """
             )
 
