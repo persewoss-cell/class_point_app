@@ -2460,43 +2460,56 @@ if "🏦 내 통장" in tabs:
             balance = int(slot.get("balance", 0))
             student_id = slot.get("student_id")
 
-# ===== 통장 요약 정보 (실데이터 기준) =====
+            df_tx = slot.get("df_tx", pd.DataFrame())
+            balance = int(slot.get("balance", 0))
+            student_id = slot.get("student_id")
 
-# 1️⃣ 적금 총 원금 (running + matured 전부)
-total_savings_principal = 0
-try:
-    sdocs = (
-        db.collection(SAV_COL)
-        .where(filter=FieldFilter("student_id", "==", student_id))
-        .stream()
-    )
-    for d in sdocs:
-        s = d.to_dict() or {}
-        total_savings_principal += int(s.get("principal", 0) or 0)
-except Exception:
-    pass
+            # ===== 통장 요약 정보 (실데이터 기준) =====
 
-# 2️⃣ 학생 문서 직접 로드
-stu_doc = db.collection("students").document(student_id).get()
-stu = stu_doc.to_dict() if stu_doc.exists else {}
+            # 1️⃣ 적금 총 원금 (running + matured 전부)
+            total_savings_principal = 0
+            try:
+                sdocs = (
+                    db.collection(SAV_COL)
+                    .where(filter=FieldFilter("student_id", "==", student_id))
+                    .stream()
+                )
+                for d in sdocs:
+                    s = d.to_dict() or {}
+                    total_savings_principal += int(s.get("principal", 0) or 0)
+            except Exception:
+                pass
 
-# 직업
-job_name = stu.get("job_name") or stu.get("job") or "없음"
+            # 2️⃣ 학생 문서 직접 로드
+            stu = {}
+            try:
+                if student_id:
+                    stu_doc = db.collection("students").document(student_id).get()
+                    stu = stu_doc.to_dict() if stu_doc.exists else {}
+            except Exception:
+                stu = {}
 
-# 3️⃣ 신용도 (관리자 신용등급 계산 로직 재사용)
-credit_score, credit_grade = _calc_credit_score_for_student(student_id)
+            # 직업
+            job_name = stu.get("job_name") or stu.get("job") or stu.get("job_title") or "없음"
 
-st.markdown(f"## 🧾 {login_name} 통장")
-st.markdown(
-    f"""
+            # 3️⃣ 신용도 (관리자 신용등급 계산 로직 재사용)
+            credit_score, credit_grade = 0, 0
+            try:
+                if student_id:
+                    credit_score, credit_grade = _calc_credit_score_for_student(student_id)
+            except Exception:
+                credit_score, credit_grade = 0, 0
+
+            st.markdown(f"## 🧾 {login_name} 통장")
+            st.markdown(
+                f"""
 **내 자산:** {balance + total_savings_principal}드림  
 **통장 잔액:** {balance}드림  
 **적금 금액:** {total_savings_principal}드림  
 **직업:** {job_name}  
 **신용도:** {credit_grade}등급 ({credit_score}점)
 """
-)
-            
+            )
 
             # ✅ 거래 기록
             st.subheader("📝 거래 기록(통장에 찍기)")
@@ -2506,7 +2519,6 @@ st.markdown(
                 templates_list=TEMPLATES,
                 template_by_display=TEMPLATE_BY_DISPLAY,
             )
-
 
             col_btn1, col_btn2 = st.columns([1, 1])
 
