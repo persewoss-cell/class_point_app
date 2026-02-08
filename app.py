@@ -6602,7 +6602,7 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                             st.session_state[cell_key] = cur_v if cur_v in ("O", "X", "△") else "X"
 
                         picked = st.radio(
-                            label="",
+                            label=f"평가선택_{sub_id}_{stid}",   # ✅ 빈 라벨 금지 → 숨기더라도 값은 있어야 함
                             options=("O", "X", "△"),
                             index=("O", "X", "△").index(st.session_state[cell_key]),
                             horizontal=True,
