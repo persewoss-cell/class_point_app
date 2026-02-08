@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
+
 from datetime import datetime, timezone, timedelta, date
 
 import firebase_admin
@@ -3160,11 +3162,42 @@ if "📈 투자" in tabs:
 
                             df = pd.DataFrame(rows)
 
-                            # ✅ HTML 스타일 적용되도록 dataframe 대신 HTML 테이블로 출력
-                            st.markdown(
-                                df.to_html(escape=False, index=False),
-                                unsafe_allow_html=True,
-                            )
+                            # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
+                            left, right = st.columns([2.2, 1.3], gap="large")
+
+                            with left:
+                                st.markdown(
+                                    df.to_html(escape=False, index=False),
+                                    unsafe_allow_html=True,
+                                )
+
+                            with right:
+                                # 가로: 변동사유 / 세로: 변동 후(주가)
+                                chart_rows = []
+                                # hist는 보통 최신순 → 그래프는 오래된→최신으로
+                                for h2 in reversed(hist):
+                                    reason2 = str(h2.get("reason", "") or "").strip() or "-"
+                                    pa2 = float(h2.get("price_after", 0.0) or 0.0)
+                                    chart_rows.append({"변동사유": reason2, "변동 후": round(pa2, 1)})
+
+                                cdf = pd.DataFrame(chart_rows)
+
+                                if not cdf.empty:
+                                    order = cdf["변동사유"].tolist()
+                                    chart = (
+                                        alt.Chart(cdf)
+                                        .mark_line(point=True)
+                                        .encode(
+                                            x=alt.X("변동사유:N", sort=order, title=None),
+                                            y=alt.Y("변동 후:Q", title=None),
+                                            tooltip=["변동사유", "변동 후"],
+                                        )
+                                        .properties(height=260)
+                                    )
+                                    st.altair_chart(chart, use_container_width=True)
+                                else:
+                                    st.caption("그래프 데이터가 없습니다.")
+
                         else:
                             st.caption("아직 주가 변동 기록이 없습니다.")
 
