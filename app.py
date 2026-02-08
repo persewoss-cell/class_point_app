@@ -635,20 +635,33 @@ def _is_savings_memo(memo: str) -> bool:
     memo = str(memo or "")
     return ("적금 가입" in memo) or ("적금 해지" in memo) or ("적금 만기" in memo)
 
-def render_asset_summary(balance_now: int, savings_list: list[dict]):
+def render_asset_summary(balance_now: int, savings_list: list[dict], student_id: str, student_name: str):
     sv_total = sum(
         int(s.get("principal", 0) or 0)
         for s in (savings_list or [])
         if str(s.get("status", "")).lower().strip() == "active"
     )
+
     asset_total = int(balance_now) + int(sv_total)
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("총 자산", f"{asset_total}")
-    with c2:
-        st.metric("통장 잔액", f"{int(balance_now)}")
-    with c3:
-        st.metric("적금 총액", f"{int(sv_total)}")
+
+    # 직업 조회
+    job_name = "없음"
+    try:
+        snap = db.collection("students").document(student_id).get()
+        if snap.exists:
+            job_name = snap.to_dict().get("role_id") or "없음"
+    except Exception:
+        pass
+
+    # 신용도 조회
+    credit = api_get_credit_grade_by_student_id(student_id)
+
+    st.markdown(f"### 🏦 {student_name} 통장")
+    st.markdown(f"**내 자산:** {asset_total}드림")
+    st.markdown(f"통장잔액: {int(balance_now)}드림")
+    st.markdown(f"적금금액: {int(sv_total)}드림")
+    st.markdown(f"직업: {job_name}")
+    st.markdown(f"신용도: {credit}등급 ({credit}점)")
 
 def savings_active_total(savings_list: list[dict]) -> int:
     return sum(
