@@ -976,26 +976,27 @@ def api_list_accounts_cached():
 
 @st.cache_data(ttl=300, show_spinner=False)
 def api_list_templates_cached():
-    docs = db.collection("templates").stream()
-    templates = []
-    for d in docs:
-        t = d.to_dict() or {}
-        if t.get("label"):
-            templates.append(
-                {
-                    "template_id": d.id,
-                    # label에는 화면에 보여줄 문자열(※ 구분이 있으면 "[구분] ..." 형태 포함)
-                    "label": t.get("label"),
-                    # 선택적으로 별도 저장해둔 값(없으면 label에서 파싱해서 사용)
-                    "category": str(t.get("category", "") or ""),
-                    "base_label": str(t.get("base_label", "") or ""),
-                    "kind": t.get("kind"),
-                    "amount": int(t.get("amount", 0) or 0),
-                    "order": int(t.get("order", 999999) or 999999),
-                }
-            )
-    templates.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
-    return {"ok": True, "templates": templates}
+    try:
+        docs = db.collection("templates").stream()
+        templates = []
+        for d in docs:
+            t = d.to_dict() or {}
+            if t.get("label"):
+                templates.append(
+                    {
+                        "template_id": d.id,
+                        "label": t.get("label"),
+                        "kind": str(t.get("kind", "deposit") or "deposit"),
+                        "amount": int(t.get("amount", 0) or 0),
+                        "order": int(t.get("order", 999999) or 999999),
+                    }
+                )
+        templates.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
+        return {"ok": True, "templates": templates}
+    except Exception as e:
+        # ✅ 쿼터 초과/네트워크 이슈가 나도 앱이 죽지 않게
+        return {"ok": False, "templates": [], "error": str(e)}
+
 # =========================
 # ✅ (관리자) 보상/벌금/템플릿용 helpers
 # - templates 컬렉션: {label, category?, base_label?, kind, amount, order}
@@ -2315,7 +2316,11 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
 # =========================
 # Templates (공용) - 너 코드 유지
 # =========================
-tpl_res = api_list_templates_cached()
+try:
+    tpl_res = api_list_templates_cached()
+except Exception as e:
+    tpl_res = {"ok": False, "templates": [], "error": str(e)}
+
 TEMPLATES = tpl_res.get("templates", []) if tpl_res.get("ok") else []
 
 def template_display_for_trade(t):
@@ -2323,6 +2328,7 @@ def template_display_for_trade(t):
     return f"{t['label']}[{kind_kr} {int(t['amount'])}]"
 
 TEMPLATE_BY_DISPLAY = {template_display_for_trade(t): t for t in TEMPLATES}
+
 
 # =========================
 # ✅ 공용: 거래 입력 UI (너 코드 그대로)
