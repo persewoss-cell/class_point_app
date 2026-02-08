@@ -5625,9 +5625,15 @@ if "🎯 목표" in tabs and (not is_admin):
         st.write(f"총 자산 기준 예상 달성률: **{exp_ratio*100:.1f}%** (예상 {expected_amount} / 목표 {goal_amount})")
 
         if principal_all_running > 0:
-            st.info(f"📌 진행 중 적금 원금 **+{principal_all_running}** 포함 (목표일 이후 만기 적금은 원금만 반영)")
-        if interest_before_goal > 0:
-            st.caption(f"※ 목표일({g_date.isoformat()}) 이전 만기 적금 이자 **+{interest_before_goal}** 포함")
+            msg = f"📌 진행 중 적금 원금 **+{principal_all_running}** 포함"
+
+            if interest_before_goal > 0:
+                msg += f", 목표일({g_date.isoformat()}) 이전 만기 적금 이자 **+{interest_before_goal}** 포함"
+            else:
+                msg += " (목표일 이전 만기 적금은 원금만 반영)"
+
+            st.info(msg)
+
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 현재 잔액과 같아요.")
 
