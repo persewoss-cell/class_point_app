@@ -2996,7 +2996,14 @@ with st.sidebar:
 # =========================
 # Main: 로그인 (너 코드 방식 유지: form)
 # =========================
-st.subheader("🔐 로그인")
+# =========================
+# Main: 로그인 (너 코드 방식 유지: form)
+# =========================
+if st.session_state.get("logged_in", False):
+    _who = str(st.session_state.get("login_name", "") or "").strip()
+    st.subheader(f"🔐 로그인({_who})" if _who else "🔐 로그인")
+else:
+    st.subheader("🔐 로그인")
 
 if not st.session_state.logged_in:
     with st.form("login_form", clear_on_submit=False):
