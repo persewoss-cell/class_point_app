@@ -4057,7 +4057,7 @@ if "🔎 개별조회" in tabs:
 
         # ✅ (PATCH) 로그아웃 상태면 이전에 눌렀던 "불러오기" 상태를 무조건 초기화
         if not st.session_state.get("logged_in", False):
-            st.session_state["admin_ind_view_loaded"] = False
+            st.session_state.pop("admin_ind_view_loaded", None)
 
         if not st.session_state["admin_ind_view_loaded"]:
             st.info("개별조회 데이터는 필요할 때만 불러옵니다.")
