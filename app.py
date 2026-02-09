@@ -6073,36 +6073,55 @@ if "💼 직업/월급" in tabs:
         up_job = st.file_uploader("📤 직업 엑셀 업로드(xlsx)", type=["xlsx"], key="job_bulk_upl")
 
         if up_job is not None:
+            # ✅ rerun 반복 방지용: 같은 파일은 1회만 처리
             try:
-                df = pd.read_excel(up_job)
-                # ※ 실수령은 자동 계산이므로 업로드 컬럼에서 제외
-                need_cols = {"순", "직업", "월급", "학생 수"}
-                if not need_cols.issubset(set(df.columns)):
-                    st.error("엑셀 컬럼은 반드시: 순 | 직업 | 월급 | 학생 수 여야 합니다.")
-                    st.stop()
+                file_bytes = up_job.getvalue()
+            except Exception:
+                file_bytes = None
 
-                if wipe_before:
-                    docs = db.collection("job_salary").stream()
-                    for d in docs:
-                        db.collection("job_salary").document(d.id).delete()
+            sig = None
+            if file_bytes is not None:
+                sig = (getattr(up_job, "name", ""), len(file_bytes))
 
-                for _, r in df.iterrows():
-                    db.collection("job_salary").document().set(
-                        {
-                            "order": int(r["순"]),
-                            "job": str(r["직업"]),
-                            "salary": int(r["월급"]),
-                            "student_cnt": int(r["학생 수"]),
-                            "assigned_ids": [],
-                            "created_at": firestore.SERVER_TIMESTAMP,
-                        }
-                    )
+            # 이미 처리한 파일이면 다시 실행하지 않음
+            if sig is not None and st.session_state.get("job_bulk_done_sig") == sig:
+                st.info("이미 업로드 처리된 파일입니다. (반복 실행 방지)")
+            else:
+                try:
+                    df = pd.read_excel(up_job)
+                    # ※ 실수령은 자동 계산이므로 업로드 컬럼에서 제외
+                    need_cols = {"순", "직업", "월급", "학생 수"}
+                    if not need_cols.issubset(set(df.columns)):
+                        st.error("엑셀 컬럼은 반드시: 순 | 직업 | 월급 | 학생 수 여야 합니다.")
+                        st.stop()
 
-                toast("직업 엑셀 업로드 완료!", icon="📥")
-                st.rerun()
+                    if wipe_before:
+                        docs = db.collection("job_salary").stream()
+                        for d in docs:
+                            db.collection("job_salary").document(d.id).delete()
 
-            except Exception as e:
-                st.error(f"직업 엑셀 처리 실패: {e}")
+                    for _, r in df.iterrows():
+                        db.collection("job_salary").document().set(
+                            {
+                                "order": int(r["순"]),
+                                "job": str(r["직업"]),
+                                "salary": int(r["월급"]),
+                                "student_cnt": int(r["학생 수"]),
+                                "assigned_ids": [],
+                                "created_at": firestore.SERVER_TIMESTAMP,
+                            }
+                        )
+
+                    # ✅ 처리 완료 기록 + 업로더 비우기(무한 rerun 방지)
+                    if sig is not None:
+                        st.session_state["job_bulk_done_sig"] = sig
+                    st.session_state.pop("job_bulk_upl", None)
+
+                    toast("직업 엑셀 업로드 완료!", icon="📥")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"직업 엑셀 처리 실패: {e}")
 
         st.divider()
 
