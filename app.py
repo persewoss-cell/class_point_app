@@ -3047,6 +3047,10 @@ else:
         st.session_state.login_name = ""
         st.session_state.login_pin = ""
         st.session_state.undo_mode = False
+
+        # ✅ (PATCH) 개별조회 지연로딩 상태 완전 초기화 (로그아웃 후 재로그인 시 자동 로드 방지)
+        st.session_state.pop("admin_ind_view_loaded", None)
+
         st.rerun()
 
 if not st.session_state.logged_in:
