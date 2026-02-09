@@ -4256,7 +4256,20 @@ if "🔎 개별조회" in tabs:
                 st.session_state["admin_ind_view_loaded"] = True
                 st.rerun()
         else:
+            # =========================
+            # 🔽 개별조회 접기 버튼
+            # =========================
+            if st.button(
+                "🔽 개별조회 접기",
+                key="admin_ind_view_close",
+                use_container_width=True
+            ):
+                st.session_state["admin_ind_view_loaded"] = False
+                st.rerun()
+
+            # =========================
             # ✅ students에서 번호(no) 포함해서 다시 로드(번호순 정렬)
+            # =========================
             docs = (
                 db.collection("students")
                 .where(filter=FieldFilter("is_active", "==", True))
