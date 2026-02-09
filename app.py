@@ -3745,68 +3745,6 @@ if "🏦 내 통장" in tabs:
                                 st.session_state["bank_tpl_del_confirm"] = False
                                 st.rerun()
 
-        # =================================================
-        # 📥 직업 엑셀 일괄 업로드 (직업 추가/수정 바로 아래)
-        # =================================================
-        st.divider()
-
-        st.markdown("### 📥 직업 엑셀 일괄 업로드")
-        st.caption("엑셀 업로드 시 선택에 따라 기존 직업 목록을 전체 삭제 후 다시 등록할 수 있습니다.")
-
-        import io
-
-        sample_df = pd.DataFrame(
-            [
-                {"순": 1, "직업": "반장", "월급": 500, "실수령": 450, "학생 수": 1},
-            ]
-        )
-        bio = io.BytesIO()
-        with pd.ExcelWriter(bio, engine="openpyxl") as writer:
-            sample_df.to_excel(writer, index=False, sheet_name="jobs")
-
-        st.download_button(
-            "📄 직업 샘플 엑셀 다운로드",
-            data=bio.getvalue(),
-            file_name="jobs_sample.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
-
-        wipe_before = st.checkbox("⚠️ 업로드 전 기존 직업 목록 전체 삭제", value=False)
-
-        up_job = st.file_uploader("📤 직업 엑셀 업로드(xlsx)", type=["xlsx"])
-
-        if up_job is not None:
-            try:
-                df = pd.read_excel(up_job)
-                need_cols = {"순", "직업", "월급", "실수령", "학생 수"}
-                if not need_cols.issubset(df.columns):
-                    st.error("엑셀 컬럼은: 순 | 직업 | 월급 | 실수령 | 학생 수")
-                    st.stop()
-
-                if wipe_before:
-                    for d in db.collection("job_salary").stream():
-                        db.collection("job_salary").document(d.id).delete()
-
-                for _, r in df.iterrows():
-                    db.collection("job_salary").document().set(
-                        {
-                            "order": int(r["순"]),
-                            "job": str(r["직업"]),
-                            "salary": int(r["월급"]),
-                            "net_salary": int(r["실수령"]),
-                            "student_cnt": int(r["학생 수"]),
-                            "assigned_ids": [],
-                            "created_at": firestore.SERVER_TIMESTAMP,
-                        }
-                    )
-
-                toast("직업 엑셀 업로드 완료!", icon="📥")
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"직업 엑셀 처리 실패: {e}")
-
             # =================================================
             # [개인] : 체크된 학생만 “일괄 지급/벌금” 적용
             # =================================================
