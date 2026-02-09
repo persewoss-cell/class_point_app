@@ -6047,11 +6047,11 @@ if "💼 직업/월급" in tabs:
 
         import io
 
-        # ✅ 샘플 엑셀 다운로드
+        # ✅ 샘플 엑셀 다운로드  (※ 실수령은 자동 계산이므로 컬럼에서 제거)
         sample_df = pd.DataFrame(
             [
-                {"순": 1, "직업": "반장", "월급": 500, "실수령": 450, "학생 수": 1},
-                {"순": 2, "직업": "서기", "월급": 300, "실수령": 270, "학생 수": 2},
+                {"순": 1, "직업": "반장", "월급": 500, "학생 수": 1},
+                {"순": 2, "직업": "서기", "월급": 300, "학생 수": 2},
             ]
         )
         bio = io.BytesIO()
@@ -6075,9 +6075,10 @@ if "💼 직업/월급" in tabs:
         if up_job is not None:
             try:
                 df = pd.read_excel(up_job)
-                need_cols = {"순", "직업", "월급", "실수령", "학생 수"}
+                # ※ 실수령은 자동 계산이므로 업로드 컬럼에서 제외
+                need_cols = {"순", "직업", "월급", "학생 수"}
                 if not need_cols.issubset(set(df.columns)):
-                    st.error("엑셀 컬럼은 반드시: 순 | 직업 | 월급 | 실수령 | 학생 수 여야 합니다.")
+                    st.error("엑셀 컬럼은 반드시: 순 | 직업 | 월급 | 학생 수 여야 합니다.")
                     st.stop()
 
                 if wipe_before:
@@ -6091,7 +6092,6 @@ if "💼 직업/월급" in tabs:
                             "order": int(r["순"]),
                             "job": str(r["직업"]),
                             "salary": int(r["월급"]),
-                            "net_salary": int(r["실수령"]),
                             "student_cnt": int(r["학생 수"]),
                             "assigned_ids": [],
                             "created_at": firestore.SERVER_TIMESTAMP,
