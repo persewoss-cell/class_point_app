@@ -3658,10 +3658,16 @@ if "🏦 내 통장" in tabs:
 
                 st.session_state.setdefault("bank_tpl_edit_id", "")
                 st.session_state.setdefault("bank_tpl_pick_prev", None)
-                st.session_state.setdefault("bank_tpl_label", "")
+
+                # ✅ 기존 bank_tpl_label 대신: base_label + category(구분)로 분리
+                st.session_state.setdefault("bank_tpl_base_label", "")
+                st.session_state.setdefault("bank_tpl_category_kr", "없음")
+
                 st.session_state.setdefault("bank_tpl_kind_setting_kr", "입금")
                 st.session_state.setdefault("bank_tpl_amount", 10)
                 st.session_state.setdefault("bank_tpl_order", 1)
+
+                CATEGORY_CHOICES = ["없음", "보상", "구입", "벌금"]
 
                 def tpl_display(t):
                     kind_kr = "입금" if t["kind"] == "deposit" else "출금"
@@ -3669,7 +3675,19 @@ if "🏦 내 통장" in tabs:
 
                 def _fill_tpl_form(t):
                     st.session_state["bank_tpl_edit_id"] = t["template_id"]
-                    st.session_state["bank_tpl_label"] = t.get("label", "")
+
+                    # ✅ category/base_label이 있으면 우선 사용, 없으면 label에서 파싱
+                    cat = str(t.get("category", "") or "").strip()
+                    base = str(t.get("base_label", "") or "").strip()
+
+                    if (not cat) and (not base):
+                        cat2, base2 = _parse_template_label(t.get("label", ""))
+                        cat = str(cat2 or "").strip()
+                        base = str(base2 or "").strip()
+
+                    st.session_state["bank_tpl_base_label"] = base
+                    st.session_state["bank_tpl_category_kr"] = cat if cat else "없음"
+
                     st.session_state["bank_tpl_kind_setting_kr"] = KIND_TO_KR.get(t.get("kind", "deposit"), "입금")
                     st.session_state["bank_tpl_amount"] = int(t.get("amount", 10) or 10)
                     st.session_state["bank_tpl_order"] = int(t.get("order", 1) or 1)
@@ -3689,9 +3707,12 @@ if "🏦 내 통장" in tabs:
                     st.session_state["bank_tpl_edit_id"] = ""
                     st.session_state["bank_tpl_pick_prev"] = None
 
-                tcol1, tcol2, tcol3 = st.columns([2, 1, 1])
+                # ✅ 컬럼: 내역이름 / 구분 / 종류 / 금액
+                tcol1, tcol_mid, tcol2, tcol3 = st.columns([2, 1.2, 1, 1])
                 with tcol1:
-                    tpl_label = st.text_input("내역 이름", key="bank_tpl_label").strip()
+                    tpl_base_label = st.text_input("내역 이름", key="bank_tpl_base_label").strip()
+                with tcol_mid:
+                    tpl_category_kr = st.selectbox("구분", CATEGORY_CHOICES, key="bank_tpl_category_kr")
                 with tcol2:
                     tpl_kind_kr = st.selectbox("종류", ["입금", "출금"], key="bank_tpl_kind_setting_kr")
                 with tcol3:
@@ -3700,12 +3721,24 @@ if "🏦 내 통장" in tabs:
                 tpl_order = st.number_input("순서(order)", min_value=1, step=1, key="bank_tpl_order")
 
                 if st.button("저장(추가/수정)", key="bank_tpl_save", use_container_width=True):
-                    if not tpl_label:
+                    if not tpl_base_label:
                         st.error("내역 이름이 필요합니다.")
                     else:
                         kind_eng = KR_TO_KIND[tpl_kind_kr]
                         tid = st.session_state.get("bank_tpl_edit_id", "") if mode == "수정" else ""
-                        res = api_admin_upsert_template(ADMIN_PIN, tid, tpl_label, kind_eng, int(tpl_amount), int(tpl_order))
+
+                        # ✅ "없음"이면 category는 빈 문자열로 저장
+                        cat = "" if str(tpl_category_kr) == "없음" else str(tpl_category_kr).strip()
+
+                        res = api_admin_upsert_template(
+                            ADMIN_PIN,
+                            tid,
+                            tpl_base_label,
+                            cat,
+                            kind_eng,
+                            int(tpl_amount),
+                            int(tpl_order),
+                        )
                         if res.get("ok"):
                             toast("템플릿 저장 완료!", icon="🧩")
                             api_list_templates_cached.clear()
