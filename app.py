@@ -2150,6 +2150,260 @@ def api_add_treasury_tx(admin_pin: str, memo: str, income: int, expense: int, ac
     except Exception as e:
         return {"ok": False, "error": f"국고 저장 실패: {e}"}
 
+
+
+# =========================
+# ✅ 자동 국고 반영(체크박스용)
+#   - 사용자/관리자 거래에서 "국고 반영" 체크 시 사용
+#   - 관리자 PIN 없이도 동작(수업용 편의 기능)
+# =========================
+def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, actor: str):
+    """signed_amount: +세입 / -세출"""
+    memo = str(memo or "").strip()
+    signed_amount = int(signed_amount or 0)
+
+    if signed_amount == 0 or (not memo):
+        return
+
+    state_ref = db.collection("treasury").document("state")
+    led_ref = db.collection("treasury_ledger").document()
+
+    if signed_amount > 0:
+        tx_type = "income"
+        income = int(signed_amount)
+        expense = 0
+    else:
+        tx_type = "expense"
+        income = 0
+        expense = int(-signed_amount)
+
+    st_snap = state_ref.get(transaction=transaction)
+    cur_bal = 0
+    if st_snap.exists:
+        cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+
+    new_bal = int(cur_bal + signed_amount)
+
+    transaction.set(
+        state_ref,
+        {
+            "balance": int(new_bal),
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+    transaction.set(
+        led_ref,
+        {
+            "type": tx_type,
+            "amount": int(signed_amount),  # +세입 / -세출
+            "income": int(income),
+            "expense": int(expense),
+            "balance_after": int(new_bal),
+            "memo": memo,
+            "actor": str(actor or ""),
+            "created_at": firestore.SERVER_TIMESTAMP,
+        },
+    )
+
+
+def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury: bool, treasury_memo: str, actor: str = "auto"):
+    """학생 거래 + (선택)국고 반영을 한 트랜잭션에서 처리"""
+    memo = (memo or "").strip()
+    deposit = int(deposit or 0)
+    withdraw = int(withdraw or 0)
+
+    if not memo:
+        return {"ok": False, "error": "내역이 필요합니다."}
+    if (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
+        return {"ok": False, "error": "입금/출금 중 하나만 입력하세요."}
+
+    student_doc = fs_auth_student(login_name, login_pin)  # ✅ 기존 로그인 정보 사용(원코드 유지)
+    if not student_doc:
+        return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
+
+    student_ref = db.collection("students").document(student_doc.id)
+    tx_ref = db.collection("transactions").document()
+
+    amount = deposit if deposit > 0 else -withdraw
+    tx_type = "deposit" if deposit > 0 else "withdraw"
+
+    # ✅ 국고 반영 금액(학생 기준)
+    # - 학생 입금  -> 국고 세출(음수)
+    # - 학생 출금  -> 국고 세입(양수)
+    tre_signed = 0
+    if bool(apply_treasury):
+        tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
+
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
+        bal = int((snap.to_dict() or {}).get("balance", 0))
+
+        # 일반 출금은 잔액 부족이면 불가
+        if tx_type == "withdraw" and bal < withdraw:
+            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+
+        new_bal = bal + amount
+        transaction.update(student_ref, {"balance": new_bal})
+        transaction.set(
+            tx_ref,
+            {
+                "student_id": student_doc.id,
+                "type": tx_type,
+                "amount": amount,
+                "balance_after": new_bal,
+                "memo": memo,
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+
+        # ✅ 국고 반영(같은 트랜잭션)
+        if tre_signed != 0:
+            _treasury_apply_in_transaction(
+                transaction,
+                memo=str(treasury_memo or memo),
+                signed_amount=int(tre_signed),
+                actor=str(actor or "auto"),
+            )
+
+        return new_bal
+
+    try:
+        new_bal = _do(db.transaction())
+        # 캐시 갱신
+        api_get_treasury_state_cached.clear()
+        api_list_treasury_ledger_cached.clear()
+        return {"ok": True, "balance": new_bal}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"저장 실패: {e}"}
+
+
+def api_admin_add_tx_by_student_id_with_treasury(admin_pin: str, student_id: str, memo: str, deposit: int, withdraw: int, apply_treasury: bool, treasury_memo: str, actor: str = "admin_auto"):
+    """관리자 개별 지급/벌금 + (선택)국고 반영"""
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    memo = (memo or "").strip()
+    deposit = int(deposit or 0)
+    withdraw = int(withdraw or 0)
+
+    if not memo:
+        return {"ok": False, "error": "내역이 필요합니다."}
+    if (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
+        return {"ok": False, "error": "입금/출금 중 하나만 입력하세요."}
+    if not student_id:
+        return {"ok": False, "error": "student_id가 없습니다."}
+
+    student_ref = db.collection("students").document(student_id)
+    tx_ref = db.collection("transactions").document()
+
+    amount = deposit if deposit > 0 else -withdraw
+    tx_type = "deposit" if deposit > 0 else "withdraw"
+
+    tre_signed = 0
+    if bool(apply_treasury):
+        tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
+
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
+        if not snap.exists:
+            raise ValueError("계정을 찾지 못했습니다.")
+        bal = int((snap.to_dict() or {}).get("balance", 0))
+        new_bal = bal + amount  # ✅ 음수 허용
+        transaction.update(student_ref, {"balance": new_bal})
+        transaction.set(
+            tx_ref,
+            {
+                "student_id": student_id,
+                "type": tx_type,
+                "amount": amount,
+                "balance_after": new_bal,
+                "memo": memo,
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+
+        if tre_signed != 0:
+            _treasury_apply_in_transaction(
+                transaction,
+                memo=str(treasury_memo or memo),
+                signed_amount=int(tre_signed),
+                actor=str(actor or "admin_auto"),
+            )
+
+        return new_bal
+
+    try:
+        new_bal = _do(db.transaction())
+        api_get_treasury_state_cached.clear()
+        api_list_treasury_ledger_cached.clear()
+        api_list_accounts_cached.clear()
+        return {"ok": True, "balance": new_bal}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"저장 실패: {e}"}
+
+
+def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "admin_bulk_auto"):
+    """일괄 지급/벌금 시 국고를 한 번만 합산 반영"""
+    memo = str(memo or "").strip()
+    signed_amount = int(signed_amount or 0)
+    if (not memo) or signed_amount == 0:
+        return {"ok": True}
+
+    state_ref = db.collection("treasury").document("state")
+    led_ref = db.collection("treasury_ledger").document()
+
+    if signed_amount > 0:
+        tx_type = "income"
+        income = int(signed_amount)
+        expense = 0
+    else:
+        tx_type = "expense"
+        income = 0
+        expense = int(-signed_amount)
+
+    @firestore.transactional
+    def _do(transaction):
+        st_snap = state_ref.get(transaction=transaction)
+        cur_bal = 0
+        if st_snap.exists:
+            cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+        new_bal = int(cur_bal + signed_amount)
+
+        transaction.set(
+            state_ref,
+            {"balance": int(new_bal), "updated_at": firestore.SERVER_TIMESTAMP},
+            merge=True,
+        )
+        transaction.set(
+            led_ref,
+            {
+                "type": tx_type,
+                "amount": int(signed_amount),
+                "income": int(income),
+                "expense": int(expense),
+                "balance_after": int(new_bal),
+                "memo": memo,
+                "actor": str(actor or ""),
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+        return new_bal
+
+    try:
+        _do(db.transaction())
+        api_get_treasury_state_cached.clear()
+        api_list_treasury_ledger_cached.clear()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": f"국고 저장 실패: {e}"}
+
 @st.cache_data(ttl=30, show_spinner=False)
 def api_list_treasury_ledger_cached(limit=300):
     q = (
@@ -2415,6 +2669,11 @@ def render_admin_trade_ui(prefix: str, templates_list: list, template_by_display
                 st.rerun()
 
         st.text_input("내역", key=memo_key)
+
+        # ✅ 국고 반영(항상 사용 가능)
+        tre_key = f"{prefix}_treasury_apply"
+        st.session_state.setdefault(tre_key, False)
+        st.checkbox("국고 반영", key=tre_key)
 
         st.caption("⚡ 빠른 금액(원형 버튼)")
         QUICK_AMOUNTS = [0, 10, 20, 50, 100, 200, 500, 1000]
@@ -3336,10 +3595,21 @@ if "🏦 내 통장" in tabs:
                         elif not memo_bulk:
                             st.error("내역(메모)을 입력해 주세요.")
                         else:
+                            tre_apply_bulk = bool(st.session_state.get("admin_bulk_reward_treasury_apply", False))
+
                             if dep_bulk > 0:
                                 res = api_admin_bulk_deposit(ADMIN_PIN, dep_bulk, memo_bulk)
                                 if res.get("ok"):
                                     toast(f"일괄 지급 완료! ({res.get('count')}명)", icon="🎉")
+                                    # ✅ 국고 반영(체크 시): 전체 지급 → 국고 세출(합산)
+                                    if tre_apply_bulk:
+                                        cnt = int(res.get("count", 0) or 0)
+                                        if cnt > 0:
+                                            api_treasury_auto_bulk_adjust(
+                                                memo=f"전체 {memo_bulk}".strip(),
+                                                signed_amount=-(int(dep_bulk) * cnt),
+                                                actor="전체",
+                                            )
                                     st.rerun()
                                 else:
                                     st.error(res.get("error", "일괄 지급 실패"))
@@ -3347,6 +3617,15 @@ if "🏦 내 통장" in tabs:
                                 res = api_admin_bulk_withdraw(ADMIN_PIN, wd_bulk, memo_bulk)
                                 if res.get("ok"):
                                     toast(f"벌금 완료! (적용 {res.get('count')}명)", icon="⚠️")
+                                    # ✅ 국고 반영(체크 시): 전체 벌금 → 국고 세입(합산)
+                                    if tre_apply_bulk:
+                                        cnt = int(res.get("count", 0) or 0)
+                                        if cnt > 0:
+                                            api_treasury_auto_bulk_adjust(
+                                                memo=f"전체 {memo_bulk}".strip(),
+                                                signed_amount=(int(wd_bulk) * cnt),
+                                                actor="전체",
+                                            )
                                     st.rerun()
                                 else:
                                     st.error(res.get("error", "일괄 벌금 실패"))
@@ -4002,9 +4281,36 @@ if "🏦 내 통장" in tabs:
                             ok_cnt = 0
                             fail = []
 
+                            tre_apply_personal = bool(st.session_state.get("admin_personal_reward_treasury_apply", False))
+                            sid_to_disp = {}
+                            try:
+                                for _a in (accounts_now or []):
+                                    _sid = str(_a.get("student_id", "") or "")
+                                    if _sid:
+                                        _no = int(_a.get("no", 0) or 0)
+                                        _nm = str(_a.get("name", "") or "")
+                                        if _no > 0:
+                                            sid_to_disp[_sid] = f"{_no}번 {_nm}"
+                                        else:
+                                            sid_to_disp[_sid] = _nm
+                            except Exception:
+                                sid_to_disp = {}
+
                             for sid in selected_ids:
                                 # ✅ 체크된 학생만 적용 (관리자 출금은 음수 허용)
-                                res = api_admin_add_tx_by_student_id(ADMIN_PIN, sid, memo_p, int(dep_p), int(wd_p))
+                                disp_name = sid_to_disp.get(str(sid), str(sid))
+                                tre_memo = f"{disp_name} {memo_p}".strip()
+
+                                res = api_admin_add_tx_by_student_id_with_treasury(
+                                    ADMIN_PIN,
+                                    sid,
+                                    memo_p,
+                                    int(dep_p),
+                                    int(wd_p),
+                                    tre_apply_personal,
+                                    tre_memo,
+                                    actor=disp_name,
+                                )
                                 if res.get("ok"):
                                     ok_cnt += 1
                                 else:
@@ -4131,7 +4437,36 @@ if "🏦 내 통장" in tabs:
                     elif (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
                         st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
                     else:
-                        res = api_add_tx(login_name, login_pin, memo, deposit, withdraw)
+                        # ✅ 국고 반영(체크 시): 학생 입금 → 국고 세출 / 학생 출금 → 국고 세입
+                        tre_apply = bool(st.session_state.get(f"bank_trade_{login_name}_treasury_apply", False))
+
+                        disp_name = str(login_name or "")
+                        try:
+                            if student_id:
+                                _s = db.collection("students").document(str(student_id)).get()
+                                if _s.exists:
+                                    _d = _s.to_dict() or {}
+                                    _no = int(_d.get("no", 0) or 0)
+                                    _nm = str(_d.get("name", "") or disp_name)
+                                    if _no > 0:
+                                        disp_name = f"{_no}번 {_nm}"
+                                    else:
+                                        disp_name = _nm
+                        except Exception:
+                            pass
+
+                        tre_memo = f"{disp_name} {memo}".strip()
+
+                        res = api_add_tx_with_treasury(
+                            login_name,
+                            login_pin,
+                            memo,
+                            deposit,
+                            withdraw,
+                            tre_apply,
+                            tre_memo,
+                            actor=disp_name,
+                        )
                         if res.get("ok"):
                             toast("저장 완료!", icon="✅")
 
