@@ -4965,8 +4965,8 @@ if "👥 계정 정보/활성화" in tabs:
         import io
         sample_df = pd.DataFrame(
             [
-                {"번호": 1, "이름": "홍길동", "비밀번호": "1234", "입출금활성화": True, "투자활성화": True},
-                {"번호": 2, "이름": "김철수", "비밀번호": "2345", "입출금활성화": True, "투자활성화": False},
+                {"번호": 1, "이름": "홍길동", "비밀번호": "1234"},
+                {"번호": 2, "이름": "김철수", "비밀번호": "2345"},
             ]
         )
         bio = io.BytesIO()
@@ -4993,12 +4993,6 @@ if "👥 계정 정보/활성화" in tabs:
                     if not need_cols.issubset(set(df_up.columns)):
                         st.error("엑셀 컬럼이 부족합니다. 최소: 번호, 이름, 비밀번호")
                         st.stop()
-
-                    # 활성화 컬럼이 없으면 기본 True
-                    if "입출금활성화" not in df_up.columns:
-                        df_up["입출금활성화"] = True
-                    if "투자활성화" not in df_up.columns:
-                        df_up["투자활성화"] = True
 
                     # 현재 active 학생들 맵(번호->docid, 이름->docid)
                     cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
@@ -5028,18 +5022,6 @@ if "👥 계정 정보/활성화" in tabs:
                         if not name or not pin_ok(pin):
                             skipped += 1
                             continue
-
-                        io_ok = bool(r.get("입출금활성화", True))
-                        inv_ok = bool(r.get("투자활성화", True))
-
-                        payload = {
-                            "no": int(no),
-                            "name": name,
-                            "pin": pin,
-                            "is_active": True,
-                            "io_enabled": io_ok,
-                            "invest_enabled": inv_ok,
-                        }
 
                         # ✅ 번호 우선 업데이트, 없으면 이름으로 업데이트, 없으면 신규 생성
                         if int(no) in by_no:
@@ -5177,15 +5159,22 @@ if "👥 계정 정보/활성화" in tabs:
             },
         )
 
-
         # ✅ editor 결과를 내부 df에 다시 합치기(_sid 유지)
         #    (행 순서 고정: 번호 기준으로 다시 정렬해서 '체크하면 아래로 내려감' 현상 최소화)
         if not df_all.empty and edited_view is not None:
             tmp = st.session_state.account_df.copy()
-            for col in ["선택", "번호", "이름", "비밀번호", "입출금활성화", "투자활성화"]:
+
+            # ✅ 요청대로: 표에 남기는 4개만 합치기
+            for col in ["선택", "번호", "이름", "비밀번호"]:
                 if col in edited_view.columns and col in tmp.columns:
                     tmp[col] = edited_view[col].values
-            tmp = tmp.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
+
+            tmp = tmp.sort_values(
+                ["번호", "이름"],
+                ascending=[True, True],
+                kind="mergesort"
+            ).reset_index(drop=True)
+
             st.session_state.account_df = tmp
 
 # =========================
