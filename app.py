@@ -5970,7 +5970,6 @@ if "💼 직업/월급" in tabs:
             value=int(edit_row["student_count"]) if edit_row else 1,
             key="job_in_count",
         )
-
         b1, b2, b3 = st.columns([1, 1, 1])
         with b1:
             if st.button("✅ 저장", use_container_width=True, key="job_save_btn"):
@@ -6016,19 +6015,16 @@ if "💼 직업/월급" in tabs:
                     toast("추가 완료!", icon="✅")
                     st.rerun()
 
+        # ✅ 입력 초기화 버튼 삭제 (자리만 빈 칸으로 유지)
         with b2:
-            if st.button("🧹 입력 초기화", use_container_width=True, key="job_clear_btn"):
-                st.session_state.pop("job_in_job", None)
-                st.session_state.pop("job_in_salary", None)
-                st.session_state.pop("job_in_count", None)
-                st.session_state["job_edit_pick"] = "(새로 추가)"
-                st.rerun()
+            st.write("")
 
         with b3:
             if st.button("🗑️ 삭제", use_container_width=True, key="job_delete_btn", disabled=(edit_row is None)):
                 if not edit_row:
                     st.stop()
                 st.session_state._job_delete_id = edit_row["_id"]
+
 
         if "_job_delete_id" in st.session_state:
             st.warning("정말 삭제하시겠습니까?")
