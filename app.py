@@ -5135,7 +5135,19 @@ if "👥 계정 정보/활성화" in tabs:
         #   - '회색 하이라이트'는 data_editor가 직접 지원이 어려워서,
         #     선택 행을 아래에 '회색 강조 미리보기'로 추가 표시(대신 확실히 보임)
         # -------------------------------------------------
+
+        # ✅ 혹시 예전 코드 실행 흔적(세션)에 '입출금활성화/투자활성화'가 남아있어도
+        #    여기서 강제로 삭제해서 표에 절대 안 뜨게 처리
+        st.session_state.account_df = st.session_state.account_df.drop(
+            columns=["입출금활성화", "투자활성화"],
+            errors="ignore",
+        )
+
+        # ✅ 표에는 4개 컬럼만 보이게 고정
         show_df = st.session_state.account_df.drop(columns=["_sid"], errors="ignore")
+        keep_cols = ["선택", "번호", "이름", "비밀번호"]
+        show_df = show_df[[c for c in keep_cols if c in show_df.columns]]
+
 
         # ✅ 표 높이: 화면에 최대한 크게(표 안 스크롤 최소화)
         # - row_height는 Streamlit 버전에 따라 무시될 수 있음(무시돼도 문제 없음)
