@@ -4042,92 +4042,135 @@ if "🔎 개별조회" in tabs:
             st.error("관리자 전용 탭입니다.")
             st.stop()
 
-        name_search2 = st.text_input("🔎 계정검색(이름 일부)", key="admin_ind_view_search").strip()
+        name_search2 = st.text_input(
+            "🔎 계정검색(이름 일부)",
+            key="admin_ind_view_search"
+        ).strip()
 
-        # ✅ students에서 번호(no) 포함해서 다시 로드(번호순 정렬)
-        docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-        acc_rows = []
-        for d in docs:
-            x = d.to_dict() or {}
-            nm = str(x.get("name", "") or "").strip()
-            if not nm:
-                continue
-            if name_search2 and (name_search2 not in nm):
-                continue
-            try:
-                no = int(x.get("no", 999999) or 999999)
-            except Exception:
-                no = 999999
-            acc_rows.append(
-                {
-                    "student_id": d.id,
-                    "no": no,
-                    "name": nm,
-                    "balance": int(x.get("balance", 0) or 0),
-                }
+        # =================================================
+        # (PATCH) 🔎 개별조회 지연 로딩 게이트
+        #  - 로그인 시 자동 로딩 ❌
+        #  - 버튼 클릭 시에만 무거운 데이터 로드 ⭕
+        # =================================================
+        if "admin_ind_view_loaded" not in st.session_state:
+            st.session_state["admin_ind_view_loaded"] = False
+
+        if not st.session_state["admin_ind_view_loaded"]:
+            st.info("개별조회 데이터는 필요할 때만 불러옵니다.")
+            if st.button(
+                "🔄 개별조회 데이터 불러오기",
+                key="admin_ind_view_load",
+                use_container_width=True
+            ):
+                st.session_state["admin_ind_view_loaded"] = True
+                st.rerun()
+        else:
+            # ✅ students에서 번호(no) 포함해서 다시 로드(번호순 정렬)
+            docs = (
+                db.collection("students")
+                .where(filter=FieldFilter("is_active", "==", True))
+                .stream()
             )
 
-        acc_rows.sort(key=lambda r: (int(r.get("no", 999999) or 999999), str(r.get("name", ""))))
+            acc_rows = []
+            for d in docs:
+                x = d.to_dict() or {}
+                nm = str(x.get("name", "") or "").strip()
+                if not nm:
+                    continue
+                if name_search2 and (name_search2 not in nm):
+                    continue
+                try:
+                    no = int(x.get("no", 999999) or 999999)
+                except Exception:
+                    no = 999999
 
-        if not acc_rows:
-            st.info("표시할 계정이 없습니다.")
-        else:
-            for r in acc_rows:
-                sid = str(r["student_id"])
-                nm = str(r["name"])
-                no = int(r.get("no", 0) or 0)
-                bal_now = int(r.get("balance", 0) or 0)
-
-                # 적금
-                sres = api_savings_list_by_student_id(sid)
-                savings = sres.get("savings", []) if sres.get("ok") else []
-                sv_total = savings_active_total(savings)
-                # ✅ '적금 탭에서 보이는 원금 합계'와 동일하게: 만기/해지 제외 전부 합산
-                sv_total = sum(
-                    int(s.get("principal", 0) or 0)
-                    for s in savings
-                    if str(s.get("status", "")).lower().strip() not in ("matured", "canceled", "cancelled")
+                acc_rows.append(
+                    {
+                        "student_id": d.id,
+                        "no": no,
+                        "name": nm,
+                        "balance": int(x.get("balance", 0) or 0),
+                    }
                 )
 
-                # 투자(보유) 요약  ✅ (text, total) 로 받기
-                inv_text, inv_total = _get_invest_summary_by_student_id(sid)
-
-                # 직업(roles)
-                role_name = _get_role_name_by_student_id(sid)
-
-                # 신용등급(있으면 계산식 사용)
-                credit_score, credit_grade = _safe_credit(sid)
-
-                # 총자산(통장+적금원금+투자현재가치추정)
-                asset_total = int(bal_now) + int(sv_total) + int(inv_total)
-
-                collapsed = _fmt_admin_one_line(
-                    no=no,
-                    name=nm,
-                    asset_total=asset_total,
-                    bal_now=bal_now,
-                    sv_total=sv_total,
-                    inv_text=inv_text,      # ✅ 여기!
-                    inv_total=inv_total,
-                    role_name=role_name,
-                    credit_score=credit_score,
-                    credit_grade=credit_grade,
+            acc_rows.sort(
+                key=lambda r: (
+                    int(r.get("no", 999999) or 999999),
+                    str(r.get("name", "")),
                 )
+            )
 
-                with st.expander(collapsed, expanded=False):
+            if not acc_rows:
+                st.info("표시할 계정이 없습니다.")
+            else:
+                for r in acc_rows:
+                    sid = str(r["student_id"])
+                    nm = str(r["name"])
+                    no = int(r.get("no", 0) or 0)
+                    bal_now = int(r.get("balance", 0) or 0)
 
-                    # 통장내역(최신 120)
-                    st.markdown("### 📒 통장내역")
-                    txr = api_get_txs_by_student_id(sid, limit=120)
-                    if not txr.get("ok"):
-                        st.error(txr.get("error", "내역을 불러오지 못했어요."))
-                    else:
-                        df_tx = pd.DataFrame(txr.get("rows", []))
-                        if df_tx.empty:
-                            st.info("거래 내역이 없어요.")
+                    # -------------------------
+                    # 적금
+                    # -------------------------
+                    sres = api_savings_list_by_student_id(sid)
+                    savings = sres.get("savings", []) if sres.get("ok") else []
+
+                    # ✅ 적금 탭과 동일한 기준: 만기/해지 제외 원금 합계
+                    sv_total = sum(
+                        int(s.get("principal", 0) or 0)
+                        for s in savings
+                        if str(s.get("status", "")).lower().strip()
+                        not in ("matured", "canceled", "cancelled")
+                    )
+
+                    # -------------------------
+                    # 투자 요약
+                    # -------------------------
+                    inv_text, inv_total = _get_invest_summary_by_student_id(sid)
+
+                    # -------------------------
+                    # 직업 / 신용
+                    # -------------------------
+                    role_name = _get_role_name_by_student_id(sid)
+                    credit_score, credit_grade = _safe_credit(sid)
+
+                    # -------------------------
+                    # 총자산
+                    # -------------------------
+                    asset_total = int(bal_now) + int(sv_total) + int(inv_total)
+
+                    collapsed = _fmt_admin_one_line(
+                        no=no,
+                        name=nm,
+                        asset_total=asset_total,
+                        bal_now=bal_now,
+                        sv_total=sv_total,
+                        inv_text=inv_text,
+                        inv_total=inv_total,
+                        role_name=role_name,
+                        credit_score=credit_score,
+                        credit_grade=credit_grade,
+                    )
+
+                    with st.expander(collapsed, expanded=False):
+                        # -------------------------
+                        # 통장내역(최신 120)
+                        # -------------------------
+                        st.markdown("### 📒 통장내역")
+                        txr = api_get_txs_by_student_id(sid, limit=120)
+                        if not txr.get("ok"):
+                            st.error(txr.get("error", "내역을 불러오지 못했어요."))
                         else:
-                            df_tx = df_tx.sort_values("created_at_utc", ascending=False)
-                            render_tx_table(df_tx)
+                            df_tx = pd.DataFrame(txr.get("rows", []))
+                            if df_tx.empty:
+                                st.info("거래 내역이 없어요.")
+                            else:
+                                df_tx = df_tx.sort_values(
+                                    "created_at_utc",
+                                    ascending=False
+                                )
+                                render_tx_table(df_tx)
 
 if "📈 투자" in tabs:
     with tab_map["📈 투자"]:
