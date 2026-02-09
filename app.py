@@ -5018,8 +5018,13 @@ if "👥 계정 정보/활성화" in tabs:
                         st.error("엑셀 컬럼이 부족합니다. 최소: 번호, 이름, 비밀번호")
                         st.stop()
 
-                    # 현재 active 학생들 맵(번호->docid, 이름->docid)
-                    cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+                    # ✅ (요청) 입출금/투자 활성화 기능 제거:
+                    # - 엑셀에서 '입출금활성화/투자활성화' 컬럼을 받지도, 자동 생성하지도 않음
+
+                    # ✅ 현재 active 학생들 맵(번호->docid, 이름->docid)
+                    cur_docs = db.collection("students").where(
+                        filter=FieldFilter("is_active", "==", True)
+                    ).stream()
                     by_no = {}
                     by_name = {}
                     for d in cur_docs:
@@ -5046,6 +5051,13 @@ if "👥 계정 정보/활성화" in tabs:
                         if not name or not pin_ok(pin):
                             skipped += 1
                             continue
+
+                        payload = {
+                            "no": int(no),
+                            "name": name,
+                            "pin": pin,
+                            "is_active": True,
+                        }
 
                         # ✅ 번호 우선 업데이트, 없으면 이름으로 업데이트, 없으면 신규 생성
                         if int(no) in by_no:
