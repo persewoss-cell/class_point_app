@@ -6223,10 +6223,10 @@ if "💼 직업/월급" in tabs:
                     st.session_state.pop("_job_delete_id", None)
                     st.rerun()
         # -------------------------------------------------
-        # ✅ 직업 엑셀 일괄 업로드 (전체 삭제 옵션 + 샘플)
+        # ✅ 직업 엑셀 일괄 업로드 (미리보기 + 저장 버튼 반영)
         # -------------------------------------------------
         st.markdown("### 📥 직업 엑셀 일괄 업로드")
-        st.caption("엑셀 업로드 시 선택에 따라 기존 직업 목록을 전체 삭제 후 다시 등록할 수 있습니다.")
+        st.caption("엑셀 업로드 후 미리보기 확인 → '저장(반영)'을 눌러야 실제 반영됩니다.")
 
         import io
 
@@ -6235,11 +6235,13 @@ if "💼 직업/월급" in tabs:
             [
                 {"순": 1, "직업": "반장", "월급": 500, "학생 수": 1},
                 {"순": 2, "직업": "서기", "월급": 300, "학생 수": 2},
-            ]
+            ],
+            columns=["순", "직업", "월급", "학생 수"],
         )
         bio = io.BytesIO()
         with pd.ExcelWriter(bio, engine="openpyxl") as writer:
             sample_df.to_excel(writer, index=False, sheet_name="jobs")
+        bio.seek(0)
 
         st.download_button(
             "📄 직업 샘플 엑셀 다운로드",
@@ -6250,13 +6252,17 @@ if "💼 직업/월급" in tabs:
             key="job_sample_down",
         )
 
-        # ✅ 기존 목록 삭제 여부
-        wipe_before = st.checkbox("⚠️ 업로드 전 기존 직업 목록 전체 삭제", value=False, key="job_wipe_before")
+        # ✅ 기존 목록 삭제 여부(저장 시 적용)
+        wipe_before = st.checkbox("⚠️ 저장 시 기존 직업 목록 전체 삭제(덮어쓰기)", value=False, key="job_wipe_before")
 
         up_job = st.file_uploader("📤 직업 엑셀 업로드(xlsx)", type=["xlsx"], key="job_bulk_upl")
+        st.session_state.setdefault("job_bulk_df", None)
+        st.session_state.setdefault("job_bulk_sig", None)
 
+        # -------------------------
+        # 1) 업로드 → 미리보기만 저장
+        # -------------------------
         if up_job is not None:
-            # ✅ rerun 반복 방지용: 같은 파일은 1회만 처리
             try:
                 file_bytes = up_job.getvalue()
             except Exception:
@@ -6266,24 +6272,75 @@ if "💼 직업/월급" in tabs:
             if file_bytes is not None:
                 sig = (getattr(up_job, "name", ""), len(file_bytes))
 
-            # 이미 처리한 파일이면 다시 실행하지 않음
-            if sig is not None and st.session_state.get("job_bulk_done_sig") == sig:
-                st.info("이미 업로드 처리된 파일입니다. (반복 실행 방지)")
+            # ✅ 같은 파일을 이미 파싱해서 미리보기로 들고 있으면 재파싱하지 않음
+            if sig is not None and st.session_state.get("job_bulk_sig") == sig and st.session_state.get("job_bulk_df") is not None:
+                st.info("업로드한 엑셀 미리보기가 준비되어 있습니다. 아래에서 저장(반영)하세요.")
             else:
                 try:
                     df = pd.read_excel(up_job)
-                    # ※ 실수령은 자동 계산이므로 업로드 컬럼에서 제외
+                    df = df.copy()
+                    df.columns = [str(c).strip() for c in df.columns]
+
                     need_cols = {"순", "직업", "월급", "학생 수"}
                     if not need_cols.issubset(set(df.columns)):
                         st.error("엑셀 컬럼은 반드시: 순 | 직업 | 월급 | 학생 수 여야 합니다.")
-                        st.stop()
+                        st.session_state["job_bulk_df"] = None
+                        st.session_state["job_bulk_sig"] = None
+                    else:
+                        # 정리/검증
+                        df["순"] = pd.to_numeric(df["순"], errors="coerce").fillna(999999).astype(int)
+                        df["직업"] = df["직업"].astype(str).str.strip()
+                        df["월급"] = pd.to_numeric(df["월급"], errors="coerce").fillna(0).astype(int)
+                        df["학생 수"] = pd.to_numeric(df["학생 수"], errors="coerce").fillna(0).astype(int)
 
+                        bad_job = df[df["직업"].str.len() == 0]
+                        bad_sal = df[df["월급"] <= 0]
+                        bad_cnt = df[df["학생 수"] <= 0]
+
+                        if (not bad_job.empty) or (not bad_sal.empty) or (not bad_cnt.empty):
+                            if not bad_job.empty:
+                                st.error("❌ 직업명이 비어있는 행이 있습니다.")
+                            if not bad_sal.empty:
+                                st.error("❌ 월급은 1 이상이어야 합니다.")
+                            if not bad_cnt.empty:
+                                st.error("❌ 학생 수는 1 이상이어야 합니다.")
+                            st.session_state["job_bulk_df"] = None
+                            st.session_state["job_bulk_sig"] = None
+                        else:
+                            # 보기 좋게 순 정렬
+                            df = df.sort_values(["순", "직업"]).reset_index(drop=True)
+
+                            st.session_state["job_bulk_df"] = df
+                            st.session_state["job_bulk_sig"] = sig
+                            st.success(f"미리보기 준비 완료! ({len(df)}행) 아래에서 저장(반영)을 누르세요.")
+
+                except Exception as e:
+                    st.error(f"직업 엑셀 읽기 실패: {e}")
+                    st.session_state["job_bulk_df"] = None
+                    st.session_state["job_bulk_sig"] = None
+
+        # -------------------------
+        # 2) 미리보기 표시
+        # -------------------------
+        df_preview = st.session_state.get("job_bulk_df")
+        if df_preview is not None and not df_preview.empty:
+            st.dataframe(df_preview, use_container_width=True, hide_index=True)
+
+        # -------------------------
+        # 3) 저장(반영) 버튼: 여기서만 DB 반영
+        # -------------------------
+        if st.button("✅ 저장(반영)", use_container_width=True, key="job_bulk_save_btn"):
+            df2 = st.session_state.get("job_bulk_df")
+            if df2 is None or df2.empty:
+                st.error("먼저 올바른 엑셀을 업로드해서 미리보기를 만든 뒤 저장하세요.")
+            else:
+                try:
                     if wipe_before:
                         docs = db.collection("job_salary").stream()
                         for d in docs:
                             db.collection("job_salary").document(d.id).delete()
 
-                    for _, r in df.iterrows():
+                    for _, r in df2.iterrows():
                         db.collection("job_salary").document().set(
                             {
                                 "order": int(r["순"]),
@@ -6295,16 +6352,16 @@ if "💼 직업/월급" in tabs:
                             }
                         )
 
-                    # ✅ 처리 완료 기록 + 업로더 비우기(무한 rerun 방지)
-                    if sig is not None:
-                        st.session_state["job_bulk_done_sig"] = sig
+                    # ✅ 반영 후 세션/업로더 정리 (무한 rerun 방지 + 다음 업로드 준비)
+                    st.session_state["job_bulk_df"] = None
+                    st.session_state["job_bulk_sig"] = None
                     st.session_state.pop("job_bulk_upl", None)
 
-                    toast("직업 엑셀 업로드 완료!", icon="📥")
+                    toast("직업 엑셀 저장(반영) 완료!", icon="📥")
                     st.rerun()
 
                 except Exception as e:
-                    st.error(f"직업 엑셀 처리 실패: {e}")
+                    st.error(f"직업 엑셀 저장 실패: {e}")
 
         st.divider()
 
