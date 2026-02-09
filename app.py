@@ -3745,19 +3745,19 @@ if "🏦 내 통장" in tabs:
                                 st.session_state["bank_tpl_del_confirm"] = False
                                 st.rerun()
 
-        # -------------------------------------------------
-        # ✅ 직업 엑셀 일괄 업로드 (전체 삭제 옵션 + 샘플)
-        # -------------------------------------------------
+        # =================================================
+        # 📥 직업 엑셀 일괄 업로드 (직업 추가/수정 바로 아래)
+        # =================================================
+        st.divider()
+
         st.markdown("### 📥 직업 엑셀 일괄 업로드")
         st.caption("엑셀 업로드 시 선택에 따라 기존 직업 목록을 전체 삭제 후 다시 등록할 수 있습니다.")
 
         import io
 
-        # ✅ 샘플 엑셀 다운로드
         sample_df = pd.DataFrame(
             [
                 {"순": 1, "직업": "반장", "월급": 500, "실수령": 450, "학생 수": 1},
-                {"순": 2, "직업": "서기", "월급": 300, "실수령": 270, "학생 수": 2},
             ]
         )
         bio = io.BytesIO()
@@ -3770,25 +3770,22 @@ if "🏦 내 통장" in tabs:
             file_name="jobs_sample.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
-            key="job_sample_down",
         )
 
-        # ✅ 기존 목록 삭제 여부
-        wipe_before = st.checkbox("⚠️ 업로드 전 기존 직업 목록 전체 삭제", value=False, key="job_wipe_before")
+        wipe_before = st.checkbox("⚠️ 업로드 전 기존 직업 목록 전체 삭제", value=False)
 
-        up_job = st.file_uploader("📤 직업 엑셀 업로드(xlsx)", type=["xlsx"], key="job_bulk_upl")
+        up_job = st.file_uploader("📤 직업 엑셀 업로드(xlsx)", type=["xlsx"])
 
         if up_job is not None:
             try:
                 df = pd.read_excel(up_job)
                 need_cols = {"순", "직업", "월급", "실수령", "학생 수"}
-                if not need_cols.issubset(set(df.columns)):
-                    st.error("엑셀 컬럼은 반드시: 순 | 직업 | 월급 | 실수령 | 학생 수 여야 합니다.")
+                if not need_cols.issubset(df.columns):
+                    st.error("엑셀 컬럼은: 순 | 직업 | 월급 | 실수령 | 학생 수")
                     st.stop()
 
                 if wipe_before:
-                    docs = db.collection("job_salary").stream()
-                    for d in docs:
+                    for d in db.collection("job_salary").stream():
                         db.collection("job_salary").document(d.id).delete()
 
                 for _, r in df.iterrows():
@@ -3809,8 +3806,6 @@ if "🏦 내 통장" in tabs:
 
             except Exception as e:
                 st.error(f"직업 엑셀 처리 실패: {e}")
-
-        st.divider()
 
             # =================================================
             # [개인] : 체크된 학생만 “일괄 지급/벌금” 적용
