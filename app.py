@@ -4957,13 +4957,42 @@ if "👥 계정 정보/활성화" in tabs:
         st.caption("엑셀을 올리면 아래 리스트(학생 표)에 바로 반영됩니다.")
 
         # ✅ 샘플 다운로드
-        import io
-        sample_df = pd.DataFrame(
-            [
-                {"번호": 1, "이름": "홍길동", "비밀번호": "1234"},
-                {"번호": 2, "이름": "김철수", "비밀번호": "2345"},
-            ]
-        )
+                    # ✅ 현재 active 학생들 맵(번호->docid, 이름->docid)
+                    cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+                    by_no = {}
+                    by_name = {}
+                    for d in cur_docs:
+                        x = d.to_dict() or {}
+                        no0 = x.get("no")
+                        nm0 = str(x.get("name", "") or "").strip()
+                        if isinstance(no0, (int, float)) and str(no0) != "nan":
+                            by_no[int(no0)] = d.id
+                        if nm0:
+                            by_name[nm0] = d.id
+
+                    created, updated, skipped = 0, 0, 0
+
+                    for _, r in df_up.iterrows():
+                        try:
+                            no = int(r.get("번호"))
+                        except Exception:
+                            skipped += 1
+                            continue
+
+                        name = str(r.get("이름", "") or "").strip()
+                        pin = str(r.get("비밀번호", "") or "").strip()
+
+                        if not name or not pin_ok(pin):
+                            skipped += 1
+                            continue
+
+                        # ✅ 활성화(입출금/투자) 기능 삭제: 엑셀에서 받지도/저장하지도 않음
+                        payload = {
+                            "no": int(no),
+                            "name": name,
+                            "pin": pin,
+                            "is_active": True,
+                        }
         bio = io.BytesIO()
         with pd.ExcelWriter(bio, engine="openpyxl") as writer:
             sample_df.to_excel(writer, index=False, sheet_name="accounts")
