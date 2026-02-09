@@ -3116,15 +3116,10 @@ if is_admin:
     tab_objs = st.tabs(tabs_display)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
-    # ✅ 투자 탭 노출 여부(계정 정보/활성화에서 '투자활성화' 꺼진 학생은 숨김)
-    inv_ok = True
-    try:
-        if my_student_id:
-            snap = db.collection("students").document(str(my_student_id)).get()
-            if snap.exists:
-                inv_ok = bool((snap.to_dict() or {}).get("invest_enabled", True))
-    except Exception:
-        inv_ok = True
+    # ✅ 학생 탭은 권한(tab_visible) 기준으로만 노출
+    tabs = [t for t in ALL_TABS if tab_visible(t)]
+    tab_objs = st.tabs(tabs)
+    tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 
     # 화면 탭 라벨
     user_tab_labels = ["📝 거래", "💰 적금"]
