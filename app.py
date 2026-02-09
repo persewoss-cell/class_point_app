@@ -14,7 +14,7 @@ import re
 # =========================
 # 설정
 # =========================
-APP_TITLE = "학급 경제 시스템"
+APP_TITLE = "학급 경제 시스템 (포인트 통장 기반)"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
@@ -3116,10 +3116,15 @@ if is_admin:
     tab_objs = st.tabs(tabs_display)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
-    # ✅ 학생 탭은 권한(tab_visible) 기준으로만 노출
-    tabs = [t for t in ALL_TABS if tab_visible(t)]
-    tab_objs = st.tabs(tabs)
-    tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
+    # ✅ 투자 탭 노출 여부(계정 정보/활성화에서 '투자활성화' 꺼진 학생은 숨김)
+    inv_ok = True
+    try:
+        if my_student_id:
+            snap = db.collection("students").document(str(my_student_id)).get()
+            if snap.exists:
+                inv_ok = bool((snap.to_dict() or {}).get("invest_enabled", True))
+    except Exception:
+        inv_ok = True
 
     # 화면 탭 라벨
     user_tab_labels = ["📝 거래", "💰 적금"]
@@ -4957,7 +4962,45 @@ if "👥 계정 정보/활성화" in tabs:
         st.caption("엑셀을 올리면 아래 리스트(학생 표)에 바로 반영됩니다.")
 
         # ✅ 샘플 다운로드
-                    # ✅ 현재 active 학생들 맵(번호->docid, 이름->docid)
+        import io
+        sample_df = pd.DataFrame(
+            [
+                {"번호": 1, "이름": "홍길동", "비밀번호": "1234", "입출금활성화": True, "투자활성화": True},
+                {"번호": 2, "이름": "김철수", "비밀번호": "2345", "입출금활성화": True, "투자활성화": False},
+            ]
+        )
+        bio = io.BytesIO()
+        with pd.ExcelWriter(bio, engine="openpyxl") as writer:
+            sample_df.to_excel(writer, index=False, sheet_name="accounts")
+        st.download_button(
+            "📄 샘플 엑셀 다운로드",
+            data=bio.getvalue(),
+            file_name="accounts_sample.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="acc_bulk_sample_down",
+        )
+
+        up = st.file_uploader("📤 엑셀 업로드(xlsx)", type=["xlsx"], key="acc_bulk_upl")
+
+        if st.button("엑셀 일괄 등록 실행", use_container_width=True, key="acc_bulk_run"):
+            if not up:
+                st.warning("엑셀 파일을 업로드하세요.")
+            else:
+                try:
+                    df_up = pd.read_excel(up)
+                    need_cols = {"번호", "이름", "비밀번호"}
+                    if not need_cols.issubset(set(df_up.columns)):
+                        st.error("엑셀 컬럼이 부족합니다. 최소: 번호, 이름, 비밀번호")
+                        st.stop()
+
+                    # 활성화 컬럼이 없으면 기본 True
+                    if "입출금활성화" not in df_up.columns:
+                        df_up["입출금활성화"] = True
+                    if "투자활성화" not in df_up.columns:
+                        df_up["투자활성화"] = True
+
+                    # 현재 active 학생들 맵(번호->docid, 이름->docid)
                     cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
                     by_no = {}
                     by_name = {}
@@ -4986,77 +5029,16 @@ if "👥 계정 정보/활성화" in tabs:
                             skipped += 1
                             continue
 
-                        # ✅ 활성화(입출금/투자) 기능 삭제: 엑셀에서 받지도/저장하지도 않음
-                        payload = {
-                            "no": int(no),
-                            "name": name,
-                            "pin": pin,
-                            "is_active": True,
-                        }
-        bio = io.BytesIO()
-        with pd.ExcelWriter(bio, engine="openpyxl") as writer:
-            sample_df.to_excel(writer, index=False, sheet_name="accounts")
-        st.download_button(
-            "📄 샘플 엑셀 다운로드",
-            data=bio.getvalue(),
-            file_name="accounts_sample.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            key="acc_bulk_sample_down",
-        )
-
-        up = st.file_uploader("📤 엑셀 업로드(xlsx)", type=["xlsx"], key="acc_bulk_upl")
-
-        if st.button("엑셀 일괄 등록 실행", use_container_width=True, key="acc_bulk_run"):
-            if not up:
-                st.warning("엑셀 파일을 업로드하세요.")
-            else:
-                try:
-                    df_up = pd.read_excel(up)
-                    need_cols = {"번호", "이름", "비밀번호"}
-                    if not need_cols.issubset(set(df_up.columns)):
-                        st.error("엑셀 컬럼이 부족합니다. 최소: 번호, 이름, 비밀번호")
-                        st.stop()
-
-                    # ✅ (요청) 입출금/투자 활성화 기능 제거:
-                    # - 엑셀에서 '입출금활성화/투자활성화' 컬럼을 받지도, 자동 생성하지도 않음
-
-                    # ✅ 현재 active 학생들 맵(번호->docid, 이름->docid)
-                    cur_docs = db.collection("students").where(
-                        filter=FieldFilter("is_active", "==", True)
-                    ).stream()
-                    by_no = {}
-                    by_name = {}
-                    for d in cur_docs:
-                        x = d.to_dict() or {}
-                        no0 = x.get("no")
-                        nm0 = str(x.get("name", "") or "").strip()
-                        if isinstance(no0, (int, float)) and str(no0) != "nan":
-                            by_no[int(no0)] = d.id
-                        if nm0:
-                            by_name[nm0] = d.id
-
-                    created, updated, skipped = 0, 0, 0
-
-                    for _, r in df_up.iterrows():
-                        try:
-                            no = int(r.get("번호"))
-                        except Exception:
-                            skipped += 1
-                            continue
-
-                        name = str(r.get("이름", "") or "").strip()
-                        pin = str(r.get("비밀번호", "") or "").strip()
-
-                        if not name or not pin_ok(pin):
-                            skipped += 1
-                            continue
+                        io_ok = bool(r.get("입출금활성화", True))
+                        inv_ok = bool(r.get("투자활성화", True))
 
                         payload = {
                             "no": int(no),
                             "name": name,
                             "pin": pin,
                             "is_active": True,
+                            "io_enabled": io_ok,
+                            "invest_enabled": inv_ok,
                         }
 
                         # ✅ 번호 우선 업데이트, 없으면 이름으로 업데이트, 없으면 신규 생성
@@ -5109,6 +5091,8 @@ if "👥 계정 정보/활성화" in tabs:
                     "번호": no,
                     "이름": x.get("name", ""),
                     "비밀번호": x.get("pin", ""),
+                    "입출금활성화": bool(x.get("io_enabled", True)),
+                    "투자활성화": bool(x.get("invest_enabled", True)),
                 }
             )
 
@@ -5146,6 +5130,33 @@ if "👥 계정 정보/활성화" in tabs:
                 else:
                     st.session_state._delete_targets = sel["_sid"].tolist()
 
+        # 2줄: 입출금/투자 일괄 켜기/끄기
+        r2c1, r2c2, r2c3, r2c4 = st.columns(4)
+
+        with r2c1:
+            if st.button("🔌 입출금 켜기", use_container_width=True, key="io_all_on"):
+                if "입출금활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["입출금활성화"] = True
+                st.rerun()
+
+        with r2c2:
+            if st.button("⛔ 입출금 끄기", use_container_width=True, key="io_all_off"):
+                if "입출금활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["입출금활성화"] = False
+                st.rerun()
+
+        with r2c3:
+            if st.button("📈 투자 켜기", use_container_width=True, key="inv_all_on"):
+                if "투자활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["투자활성화"] = True
+                st.rerun()
+
+        with r2c4:
+            if st.button("📉 투자 끄기", use_container_width=True, key="inv_all_off"):
+                if "투자활성화" in st.session_state.account_df.columns:
+                    st.session_state.account_df["투자활성화"] = False
+                st.rerun()
+
         # 삭제 확인
         if "_delete_targets" in st.session_state:
             st.warning("정말 삭제하시겠습니까?")
@@ -5171,19 +5182,7 @@ if "👥 계정 정보/활성화" in tabs:
         #   - '회색 하이라이트'는 data_editor가 직접 지원이 어려워서,
         #     선택 행을 아래에 '회색 강조 미리보기'로 추가 표시(대신 확실히 보임)
         # -------------------------------------------------
-
-        # ✅ 혹시 예전 코드 실행 흔적(세션)에 '입출금활성화/투자활성화'가 남아있어도
-        #    여기서 강제로 삭제해서 표에 절대 안 뜨게 처리
-        st.session_state.account_df = st.session_state.account_df.drop(
-            columns=["입출금활성화", "투자활성화"],
-            errors="ignore",
-        )
-
-        # ✅ 표에는 4개 컬럼만 보이게 고정
         show_df = st.session_state.account_df.drop(columns=["_sid"], errors="ignore")
-        keep_cols = ["선택", "번호", "이름", "비밀번호"]
-        show_df = show_df[[c for c in keep_cols if c in show_df.columns]]
-
 
         # ✅ 표 높이: 화면에 최대한 크게(표 안 스크롤 최소화)
         # - row_height는 Streamlit 버전에 따라 무시될 수 있음(무시돼도 문제 없음)
@@ -5204,25 +5203,20 @@ if "👥 계정 정보/활성화" in tabs:
             key="account_editor",
             column_config={
                 "선택": st.column_config.CheckboxColumn(),
+                "입출금활성화": st.column_config.CheckboxColumn(),
+                "투자활성화": st.column_config.CheckboxColumn(),
             },
         )
+
 
         # ✅ editor 결과를 내부 df에 다시 합치기(_sid 유지)
         #    (행 순서 고정: 번호 기준으로 다시 정렬해서 '체크하면 아래로 내려감' 현상 최소화)
         if not df_all.empty and edited_view is not None:
             tmp = st.session_state.account_df.copy()
-
-            # ✅ 요청대로: 표에 남기는 4개만 합치기
-            for col in ["선택", "번호", "이름", "비밀번호"]:
+            for col in ["선택", "번호", "이름", "비밀번호", "입출금활성화", "투자활성화"]:
                 if col in edited_view.columns and col in tmp.columns:
                     tmp[col] = edited_view[col].values
-
-            tmp = tmp.sort_values(
-                ["번호", "이름"],
-                ascending=[True, True],
-                kind="mergesort"
-            ).reset_index(drop=True)
-
+            tmp = tmp.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
             st.session_state.account_df = tmp
 
 # =========================
