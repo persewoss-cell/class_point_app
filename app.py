@@ -4062,6 +4062,157 @@ if "🏦 내 통장" in tabs:
             st.subheader("📒 통장 내역(최신순)")
             render_tx_table(df_tx)
 
+                st.divider()
+                st.markdown("### 📥 템플릿 엑셀로 일괄 추가")
+
+                import io
+
+                # -------------------------
+                # 1) 샘플 엑셀 다운로드
+                # -------------------------
+                sample_df = pd.DataFrame(
+                    [
+                        {"내역이름": "대여료", "구분": "구입", "종류": "출금", "금액": 100, "순서": 1},
+                        {"내역이름": "칭찬스티커", "구분": "보상", "종류": "입금", "금액": 10, "순서": 2},
+                        {"내역이름": "지각", "구분": "벌금", "종류": "출금", "금액": 20, "순서": 3},
+                        {"내역이름": "기타", "구분": "없음", "종류": "입금", "금액": 5, "순서": 4},
+                    ],
+                    columns=["내역이름", "구분", "종류", "금액", "순서"],
+                )
+
+                bio = io.BytesIO()
+                with pd.ExcelWriter(bio, engine="openpyxl") as writer:
+                    sample_df.to_excel(writer, index=False, sheet_name="templates")
+                bio.seek(0)
+
+                st.download_button(
+                    "📄 샘플 엑셀 다운로드",
+                    data=bio.getvalue(),
+                    file_name="템플릿_샘플.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="bank_tpl_sample_xlsx_download",
+                )
+
+                st.caption("• 샘플 형식: 내역이름 | 구분(없음/보상/구입/벌금) | 종류(입금/출금) | 금액 | 순서")
+                st.caption("• 엑셀을 올린 뒤, 아래의 **저장** 버튼을 눌러야 실제 반영됩니다.")
+
+                # -------------------------
+                # 2) 엑셀 업로드 + 미리보기
+                # -------------------------
+                upl = st.file_uploader(
+                    "엑셀 업로드(.xlsx)",
+                    type=["xlsx"],
+                    key="bank_tpl_bulk_xlsx",
+                    help="샘플 형식 그대로 업로드하세요. 업로드만으로는 반영되지 않고, 아래 '저장' 버튼을 눌러야 반영됩니다.",
+                )
+
+                st.session_state.setdefault("bank_tpl_bulk_df", None)
+
+                if upl is not None:
+                    try:
+                        df = pd.read_excel(upl)
+                        df = df.copy()
+
+                        # 공백 컬럼명 정리
+                        df.columns = [str(c).strip() for c in df.columns]
+
+                        need_cols = ["내역이름", "구분", "종류", "금액", "순서"]
+                        miss = [c for c in need_cols if c not in df.columns]
+                        if miss:
+                            st.error(f"필수 컬럼이 없습니다: {miss}")
+                            st.session_state["bank_tpl_bulk_df"] = None
+                        else:
+                            # 문자열/정수 정리
+                            df["내역이름"] = df["내역이름"].astype(str).str.strip()
+                            df["구분"] = df["구분"].astype(str).str.strip()
+                            df["종류"] = df["종류"].astype(str).str.strip()
+                            df["금액"] = pd.to_numeric(df["금액"], errors="coerce").fillna(0).astype(int)
+                            df["순서"] = pd.to_numeric(df["순서"], errors="coerce").fillna(999999).astype(int)
+
+                            # 기본값 보정
+                            df.loc[df["구분"].isin(["nan", "None", ""]), "구분"] = "없음"
+
+                            # 검증
+                            bad_cat = df[~df["구분"].isin(["없음", "보상", "구입", "벌금"])]
+                            bad_kind = df[~df["종류"].isin(["입금", "출금"])]
+                            bad_label = df[df["내역이름"].str.len() == 0]
+                            bad_amt = df[df["금액"] <= 0]
+
+                            if (not bad_cat.empty) or (not bad_kind.empty) or (not bad_label.empty) or (not bad_amt.empty):
+                                if not bad_label.empty:
+                                    st.error("❌ 내역이름이 비어있는 행이 있습니다.")
+                                if not bad_cat.empty:
+                                    st.error("❌ 구분 값이 잘못된 행이 있습니다. (없음/보상/구입/벌금만 가능)")
+                                if not bad_kind.empty:
+                                    st.error("❌ 종류 값이 잘못된 행이 있습니다. (입금/출금만 가능)")
+                                if not bad_amt.empty:
+                                    st.error("❌ 금액은 1 이상이어야 합니다.")
+                                st.session_state["bank_tpl_bulk_df"] = None
+                            else:
+                                st.session_state["bank_tpl_bulk_df"] = df
+                                st.success(f"업로드 완료! ({len(df)}행) 아래 미리보기 확인 후 저장을 누르세요.")
+                                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                    except Exception as e:
+                        st.error(f"엑셀 읽기 실패: {e}")
+                        st.session_state["bank_tpl_bulk_df"] = None
+
+                # -------------------------
+                # 3) 저장(반영) 버튼 + (옵션) 기존 리스트 삭제
+                # -------------------------
+                del_old = st.checkbox(
+                    "저장 시 기존 템플릿 리스트를 모두 삭제하고 새로 올린 엑셀로 덮어쓰기",
+                    value=False,
+                    key="bank_tpl_bulk_delete_old",
+                )
+
+                if st.button("✅ 엑셀 내용 저장(반영)", use_container_width=True, key="bank_tpl_bulk_save_btn"):
+                    df2 = st.session_state.get("bank_tpl_bulk_df", None)
+                    if df2 is None or df2.empty:
+                        st.error("먼저 올바른 엑셀을 업로드하세요.")
+                    else:
+                        try:
+                            # 1) 기존 삭제(옵션)
+                            if del_old:
+                                docs = list(db.collection("templates").stream())
+                                batch = db.batch()
+                                for d in docs:
+                                    batch.delete(d.reference)
+                                if docs:
+                                    batch.commit()
+
+                            # 2) 엑셀 행들을 upsert(신규로 저장)
+                            saved = 0
+                            for _, r in df2.iterrows():
+                                base_label = str(r["내역이름"]).strip()
+                                cat_kr = str(r["구분"]).strip()
+                                kind_kr = str(r["종류"]).strip()
+                                amt = int(r["금액"])
+                                order = int(r["순서"])
+
+                                category = "" if cat_kr == "없음" else cat_kr
+                                kind = KR_TO_KIND.get(kind_kr, "deposit")
+
+                                res = api_admin_upsert_template(
+                                    ADMIN_PIN,
+                                    "",  # ✅ 일괄은 신규로 추가(기존과 매칭/수정은 하지 않음)
+                                    base_label,
+                                    category,
+                                    kind,
+                                    amt,
+                                    order,
+                                )
+                                if res.get("ok"):
+                                    saved += 1
+
+                            api_list_templates_cached.clear()
+                            toast(f"엑셀 저장 완료! ({saved}개 반영)", icon="📥")
+                            st.session_state["bank_tpl_bulk_df"] = None
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error(f"저장 실패: {e}")
 
 
 # =========================
