@@ -14,7 +14,7 @@ import re
 # =========================
 # 설정
 # =========================
-APP_TITLE = "학급 경제 시스템 (포인트 통장 기반)"
+APP_TITLE = "학급 경제 시스템"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
