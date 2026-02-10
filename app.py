@@ -2896,10 +2896,9 @@ def api_list_roles_cached():
     return {"ok": True, "roles": roles}
 
 def get_my_permissions(student_id: str, is_admin: bool):
-    """현재 로그인한 학생의 권한 세트 반환
-
-    - 기본: roles/{role_id}.permissions
-    - 추가: students/{student_id}.extra_permissions (개별 부여용)
+    """로그인한 사용자의 최종 권한 집합을 반환합니다.
+    - 관리자: admin_all
+    - 학생: roles/{role_id}.permissions + students/{student_id}.extra_permissions
     """
     if is_admin:
         return {"admin_all"}
@@ -2910,66 +2909,55 @@ def get_my_permissions(student_id: str, is_admin: bool):
     if not snap.exists:
         return set()
 
-    sdata = snap.to_dict() or {}
-    # ✅ 개별(추가) 권한: 계정 정보/활성화 탭에서 부여/회수
-    extra = set(sdata.get("extra_permissions", []) or [])
+    sd = snap.to_dict() or {}
 
-    role_id = str(sdata.get("role_id", "") or "").strip()
-    if not role_id:
-        return extra
+    # 1) 역할(role) 기반 권한
+    perms: set = set()
+    role_id = str(sd.get("role_id", "") or "")
+    if role_id:
+        rdoc = db.collection("roles").document(role_id).get()
+        if rdoc.exists:
+            perms |= set((rdoc.to_dict() or {}).get("permissions", []) or [])
 
-    rdoc = db.collection("roles").document(role_id).get()
-    if not rdoc.exists:
-        return extra
+    # 2) 학생 개별 추가 권한(관리자 탭 권한 부여용)
+    extra = sd.get("extra_permissions", []) or []
+    if isinstance(extra, list):
+        perms |= set([str(x) for x in extra if str(x).strip()])
+    else:
+        # 혹시 과거 데이터가 문자열/기타로 들어간 경우 안전 처리
+        try:
+            perms |= set([str(extra).strip()]) if str(extra).strip() else set()
+        except Exception:
+            pass
 
-    base = set((rdoc.to_dict() or {}).get("permissions", []) or [])
-    return base | extra
+    return perms
 
 def can(perms: set, need: str) -> bool:
     return ("admin_all" in perms) or (need in perms)
 
 # =========================
-# (관리자) 개별 탭 권한 부여/회수 helpers
-# - students.extra_permissions: ["treasury_write", "credit_write", ...]
+# (PATCH) 학생에게 '관리자 탭' 권한을 부여하기 위한 키
+# - students/{student_id}.extra_permissions: ["tab::🏛️ 국세청(국고)", "tab::💳 신용등급", ...]
+# - 탭 노출/조작 허용 여부를 이 키로 판단합니다.
 # =========================
-def _norm_perm_list(x):
-    if not x:
-        return []
-    if isinstance(x, (list, tuple, set)):
-        return [str(i) for i in x if str(i).strip()]
-    return [str(x)]
+def tab_perm_key(tab_name: str) -> str:
+    return f"tab::{tab_name}"
 
-def api_admin_update_extra_permissions(student_ids, add_perms=None, remove_perms=None):
-    """선택 학생들의 extra_permissions를 추가/삭제(merge)"""
-    add_set = set(_norm_perm_list(add_perms))
-    rem_set = set(_norm_perm_list(remove_perms))
+def has_tab_access(tab_name: str, perms: set) -> bool:
+    # 관리자면 항상 True
+    return ("admin_all" in perms) or (tab_perm_key(tab_name) in perms)
 
-    if not student_ids:
-        return {"ok": False, "error": "대상 학생이 없습니다."}
+# 탭을 부여할 때 함께 추가(조작 포함)할 권한 묶음
+# - 각 탭 권한의 '표시/관리'는 tab_perm_key(tab_name) 로 판단
+# - 실제 기능(조작)은 아래 권한들이 있으면 더 자연스럽게 동작합니다.
+TAB_PERMISSION_BUNDLES = {
+    "🏛️ 국세청(국고)": ["treasury_read", "treasury_write"],
+    "📊 통계청": ["stats_write"],
+    "💳 신용등급": ["credit_write"],
+    "💼 직업/월급": ["jobs_write"],
+    "🏦 은행(적금)": ["bank_read", "bank_write"],
+}
 
-    try:
-        for sid in student_ids:
-            if not sid:
-                continue
-            ref = db.collection("students").document(str(sid))
-            snap = ref.get()
-            cur = []
-            if snap.exists:
-                cur = (snap.to_dict() or {}).get("extra_permissions", []) or []
-            cur_set = set(_norm_perm_list(cur))
-            cur_set |= add_set
-            cur_set -= rem_set
-            ref.set({"extra_permissions": sorted(cur_set)}, merge=True)
-
-        # ✅ 계정 목록 캐시 갱신(필요시)
-        try:
-            api_list_accounts_cached.clear()
-        except Exception:
-            pass
-
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
 
 # =========================
 # 학급 확장: 초기 데이터 업로드(직업표/월급/은행금리표)
@@ -3423,11 +3411,15 @@ def tab_visible(tab_name: str):
     if is_admin:
         return True
 
-    # 학생은 기본 "내 통장" + 일정(읽기)
+    # 학생은 기본 "내 통장"
     if tab_name == "🏦 내 통장":
         return True
 
-    # 권한별 탭 표시
+    # ✅ (PATCH) 개별 부여된 '관리자 탭' 권한이 있으면 해당 탭 노출
+    if tab_name != "👥 계정 정보/활성화" and has_tab_access(tab_name, my_perms):
+        return True
+
+    # 기존 권한별 탭 표시(역할 기반 perms 유지)
     if tab_name == "🏛️ 국세청(국고)":
         return can(my_perms, "treasury_read") or can(my_perms, "treasury_write")
     if tab_name == "📊 통계청":
@@ -3437,14 +3429,17 @@ def tab_visible(tab_name: str):
     if tab_name == "🏦 은행(적금)":
         return can(my_perms, "bank_read") or can(my_perms, "bank_write")
 
+    # 학생 기본 노출
     if tab_name == "📈 투자":
         return True
     if tab_name == "🛒 구입/벌금":
         return True
 
-    # 학생에게 숨김
-    if tab_name in ("💼 직업/월급", "👥 계정 정보/활성화"):
+    # 학생에게 기본 숨김(단, 위의 has_tab_access에 의해 열릴 수 있음)
+    if tab_name in ("💼 직업/월급", "🗓️ 일정", "👥 계정 정보/활성화"):
         return False
+
+    return False
 
     return False
 
@@ -5765,95 +5760,6 @@ if "👥 계정 정보/활성화" in tabs:
         if "account_df" not in st.session_state:
             st.session_state.account_df = df_all.copy()
         
-
-        # -------------------------------------------------
-        # ✅ (NEW) 특정 학생에게 '탭 권한' 개별 부여/회수
-        #   - students.extra_permissions 에 저장
-        #   - 예) 국세청(국고) → treasury_read/treasury_write
-        # -------------------------------------------------
-        st.markdown("#### 🔐 탭 권한 부여/회수")
-        st.caption("선택한 학생에게 특정 탭(국세청/신용등급/통계청/은행) 접근 권한을 개별로 줄 수 있어요. (기존 역할(role) 권한과 합쳐서 적용)")
-
-        # 탭 → permission 키 매핑 (현재 tab_visible() 기준)
-        TAB_TO_PERMS = {
-            "🏛️ 국세청(국고)": ["treasury_read", "treasury_write"],
-            "💳 신용등급": ["credit_write"],
-            "📊 통계청": ["stats_write"],
-            "🏦 은행(적금)": ["bank_read", "bank_write"],
-        }
-
-        tab_choices = list(TAB_TO_PERMS.keys())
-        sel_tabs = st.multiselect(
-            "권한을 줄 탭 선택",
-            tab_choices,
-            default=[],
-            key="perm_tabs_sel",
-        )
-
-        # 학생 선택: 번호/이름 표시 (내부값은 _sid)
-        # df_all: ["_sid","선택","번호","이름","비밀번호", ...]
-        acc_opts = []
-        acc_map = {}
-        for _, rr in df_all.iterrows():
-            sid = rr.get("_sid")
-            no = rr.get("번호", "")
-            nm = rr.get("이름", "")
-            lab = f"{int(no):02d} {nm}" if str(no).isdigit() else f"{no} {nm}"
-            acc_opts.append(lab)
-            acc_map[lab] = sid
-
-        # ✅ 전체 선택 옵션
-        all_on = st.checkbox("전체 학생에게 적용", value=False, key="perm_all_on")
-        if all_on:
-            sel_acc_labels = acc_opts
-        else:
-            sel_acc_labels = st.multiselect(
-                "권한을 줄 학생 선택",
-                acc_opts,
-                default=[],
-                key="perm_students_sel",
-            )
-
-        cpa, cpr = st.columns(2)
-        with cpa:
-            if st.button("✅ 선택 학생에게 권한 부여", use_container_width=True, key="perm_grant_btn"):
-                if not sel_tabs:
-                    st.warning("먼저 '권한을 줄 탭'을 선택하세요.")
-                elif not sel_acc_labels:
-                    st.warning("먼저 '권한을 줄 학생'을 선택하세요.")
-                else:
-                    sids = [acc_map.get(x) for x in sel_acc_labels]
-                    sids = [x for x in sids if x]
-                    add_perms = []
-                    for tname in sel_tabs:
-                        add_perms += TAB_TO_PERMS.get(tname, [])
-                    res = api_admin_update_extra_permissions(sids, add_perms=add_perms, remove_perms=None)
-                    if res.get("ok"):
-                        toast("권한 부여 완료!", icon="🔐")
-                        st.rerun()
-                    else:
-                        st.error(res.get("error", "권한 부여 실패"))
-
-        with cpr:
-            if st.button("❌ 선택 학생 권한 회수", use_container_width=True, key="perm_revoke_btn"):
-                if not sel_tabs:
-                    st.warning("먼저 '회수할 탭'을 선택하세요.")
-                elif not sel_acc_labels:
-                    st.warning("먼저 '회수할 학생'을 선택하세요.")
-                else:
-                    sids = [acc_map.get(x) for x in sel_acc_labels]
-                    sids = [x for x in sids if x]
-                    rem_perms = []
-                    for tname in sel_tabs:
-                        rem_perms += TAB_TO_PERMS.get(tname, [])
-                    res = api_admin_update_extra_permissions(sids, add_perms=None, remove_perms=rem_perms)
-                    if res.get("ok"):
-                        toast("권한 회수 완료!", icon="🧹")
-                        st.rerun()
-                    else:
-                        st.error(res.get("error", "권한 회수 실패"))
-
-        st.divider()
         # -------------------------------------------------
         # ✅ 상단 버튼(2줄): [전체선택/전체해제/계정삭제] + [입출금/투자 일괄]
         # -------------------------------------------------
@@ -5945,6 +5851,147 @@ if "👥 계정 정보/활성화" in tabs:
             tmp = tmp.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
             st.session_state.account_df = tmp
 
+# -------------------------------------------------
+# ✅ (PATCH) 학생별 관리자 탭 권한(추가 권한) 부여/회수
+# - students/{student_id}.extra_permissions 에 "tab::<탭이름>" 형태로 저장
+# -------------------------------------------------
+st.markdown("---")
+st.subheader("🔐 학생별 관리자 탭 권한 부여/회수")
+st.caption("특정 학생에게 특정 '관리자 탭'을 추가로 열어줄 수 있습니다. (👥 계정 정보/활성화 탭은 제외)")
+
+# 1) 대상 탭(관리자 탭) 목록
+grantable_tabs = [t for t in ALL_TABS if t != "👥 계정 정보/활성화"]
+
+# 2) 활성 학생 목록 로드
+docs_active = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+stu_list = []
+for d in docs_active:
+    x = d.to_dict() or {}
+    try:
+        no = int(x.get("no", 999999) or 999999)
+    except Exception:
+        no = 999999
+    nm = str(x.get("name", "") or "").strip()
+    extra = (x.get("extra_permissions", []) or [])
+    if not isinstance(extra, list):
+        extra = [str(extra)]
+    stu_list.append({
+        "student_id": d.id,
+        "번호": no,
+        "이름": nm,
+        "extra_permissions": [str(v) for v in extra if str(v).strip()]
+    })
+stu_list = sorted(stu_list, key=lambda r: (r["번호"], r["이름"]))
+
+# 선택 UI
+tab_sel = st.selectbox("권한을 부여/회수할 탭", grantable_tabs, key="perm_tab_sel")
+
+# 학생 선택(전체 선택 지원)
+all_labels = [f"{(r['번호'] if r['번호'] != 999999 else 0):02d} {r['이름']}".strip() for r in stu_list]
+label_to_id = {lab: r["student_id"] for lab, r in zip(all_labels, stu_list)}
+
+csel1, csel2 = st.columns([1, 3])
+with csel1:
+    sel_all = st.checkbox("전체 선택", key="perm_sel_all")
+with csel2:
+    if sel_all:
+        sel_labels = st.multiselect("대상 학생", all_labels, default=all_labels, key="perm_students")
+    else:
+        sel_labels = st.multiselect("대상 학생", all_labels, default=[], key="perm_students")
+
+sel_ids = [label_to_id.get(l) for l in sel_labels if label_to_id.get(l)]
+perm_keys = [tab_perm_key(tab_sel)] + list(TAB_PERMISSION_BUNDLES.get(tab_sel, []) or [])
+
+# 3) 액션 버튼
+b1, b2, b3 = st.columns(3)
+with b1:
+    do_grant = st.button("✅ 선택 학생에게 권한 부여", use_container_width=True, key="perm_grant_btn")
+with b2:
+    do_revoke = st.button("❎ 선택 학생에게서 권한 회수", use_container_width=True, key="perm_revoke_btn")
+with b3:
+    do_revoke_all_sel = st.button("🧹 선택 학생 추가권한 전체 회수", use_container_width=True, key="perm_revoke_all_btn")
+
+# (위험) 전체 회수
+danger_c1, danger_c2 = st.columns([1, 3])
+with danger_c1:
+    confirm_all = st.checkbox("전체 회수 확인", key="perm_confirm_all_revoke")
+with danger_c2:
+    do_revoke_all = st.button("⚠️ 전체 학생 추가권한 전체 회수", use_container_width=True, key="perm_revoke_all_students_btn", disabled=(not confirm_all))
+
+def _commit_updates(updates: list[tuple[str, list]]):
+    """updates: [(student_id, new_extra_permissions_list), ...]"""
+    if not updates:
+        return
+    batch = db.batch()
+    cnt = 0
+    for sid, new_list in updates:
+        ref = db.collection("students").document(str(sid))
+        batch.update(ref, {"extra_permissions": new_list})
+        cnt += 1
+        # Firestore batch limit(500) 여유 있게 450 단위로 커밋
+        if cnt % 450 == 0:
+            batch.commit()
+            batch = db.batch()
+    batch.commit()
+
+# 4) 실행 로직
+if do_grant or do_revoke or do_revoke_all_sel or do_revoke_all:
+    if do_revoke_all:
+        # 전체 학생 추가권한 전체 회수
+        updates = [(r["student_id"], []) for r in stu_list]
+        _commit_updates(updates)
+        st.success("전체 학생의 추가 권한을 모두 회수했습니다.")
+        st.rerun()
+
+    if not sel_ids:
+        st.warning("대상 학생을 선택하세요.")
+    else:
+        # 선택 학생만 처리
+        id_to_row = {r["student_id"]: r for r in stu_list}
+        updates = []
+        for sid in sel_ids:
+            row = id_to_row.get(sid)
+            if not row:
+                continue
+            cur = list(row.get("extra_permissions", []) or [])
+
+            if do_revoke_all_sel:
+                new_list = []
+            elif do_grant:
+                for pk in perm_keys:
+                    if pk not in cur:
+                        cur.append(pk)
+                new_list = sorted(set(cur))
+            elif do_revoke:
+                new_list = [p for p in cur if p not in set(perm_keys)]
+            else:
+                new_list = cur
+
+            updates.append((sid, new_list))
+
+        _commit_updates(updates)
+
+        if do_grant:
+            st.success(f"선택 학생에게 [{tab_sel}] 권한을 부여했습니다.")
+        elif do_revoke:
+            st.success(f"선택 학생에게서 [{tab_sel}] 권한을 회수했습니다.")
+        elif do_revoke_all_sel:
+            st.success("선택 학생의 추가 권한을 모두 회수했습니다.")
+        st.rerun()
+
+# 5) 현재 부여 현황 표
+st.markdown("### 📌 권한 부여 현황")
+rows_status = []
+for r in stu_list:
+    perms_now = set(r.get("extra_permissions", []) or [])
+    granted_tabs = [t for t in grantable_tabs if tab_perm_key(t) in perms_now]
+    rows_status.append({
+        "번호": (r["번호"] if r["번호"] != 999999 else ""),
+        "이름": r["이름"],
+        "부여된 관리자 탭": ", ".join(granted_tabs) if granted_tabs else "",
+    })
+st.dataframe(pd.DataFrame(rows_status), use_container_width=True, hide_index=True)
+
 # =========================
 # 3) 💼 직업/월급 (관리자 중심, 학생은 읽기만)
 # =========================
@@ -5952,7 +5999,7 @@ if "💼 직업/월급" in tabs:
     with tab_map["💼 직업/월급"]:
         st.subheader("💼 직업/월급 시스템")
 
-        if not is_admin:
+        if not (is_admin or has_tab_access("💼 직업/월급", my_perms)):
             st.info("관리자 전용 탭입니다.")
             st.stop()
 
@@ -6858,7 +6905,7 @@ if "🏛️ 국세청(국고)" in tabs:
         st.subheader("🏛️ 국세청(국고)")
 
         # 관리자만 쓰기 가능 / 학생은 읽기만(원하면 later: treasury_read 권한으로 확장)
-        writable = bool(is_admin)
+        writable = bool(is_admin or has_tab_access("🏛️ 국세청(국고)", my_perms))
 
         # 1) 상단 잔액 표시: [국고] : 00000드림
         st_res = api_get_treasury_state_cached()
@@ -7017,7 +7064,7 @@ if "📊 통계청" in tabs:
     with tab_map["📊 통계청"]:
         st.subheader("📊 통계청(제출물 관리)")
 
-        if not is_admin:
+        if not (is_admin or has_tab_access("📊 통계청", my_perms)):
             st.error("관리자 전용 탭입니다.")
             st.stop()
 
@@ -7576,7 +7623,7 @@ if "💳 신용등급" in tabs:
     with tab_map["💳 신용등급"]:
         st.subheader("💳 신용등급")
 
-        if not is_admin:
+        if not (is_admin or has_tab_access("💳 신용등급", my_perms)):
             st.info("관리자 전용 탭입니다.")
             st.stop()
 
