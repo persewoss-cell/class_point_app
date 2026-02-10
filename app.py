@@ -5737,33 +5737,6 @@ if "👥 계정 정보/활성화" in tabs:
                 else:
                     st.session_state._delete_targets = sel["_sid"].tolist()
 
-        # 2줄: 입출금/투자 일괄 켜기/끄기
-        r2c1, r2c2, r2c3, r2c4 = st.columns(4)
-
-        with r2c1:
-            if st.button("🔌 입출금 켜기", use_container_width=True, key="io_all_on"):
-                if "입출금활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["입출금활성화"] = True
-                st.rerun()
-
-        with r2c2:
-            if st.button("⛔ 입출금 끄기", use_container_width=True, key="io_all_off"):
-                if "입출금활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["입출금활성화"] = False
-                st.rerun()
-
-        with r2c3:
-            if st.button("📈 투자 켜기", use_container_width=True, key="inv_all_on"):
-                if "투자활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["투자활성화"] = True
-                st.rerun()
-
-        with r2c4:
-            if st.button("📉 투자 끄기", use_container_width=True, key="inv_all_off"):
-                if "투자활성화" in st.session_state.account_df.columns:
-                    st.session_state.account_df["투자활성화"] = False
-                st.rerun()
-
         # 삭제 확인
         if "_delete_targets" in st.session_state:
             st.warning("정말 삭제하시겠습니까?")
