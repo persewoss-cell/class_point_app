@@ -1554,12 +1554,13 @@ def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, d
         snap = student_ref.get(transaction=transaction)
         if not snap.exists:
             raise ValueError("계정을 찾지 못했습니다.")
-
         bal = int((snap.to_dict() or {}).get("balance", 0))
-        new_bal = bal + amount  # ✅ 관리자 개인지급은 음수 허용(원 정책 유지)
 
-        # ✅ 국고 반영(같은 트랜잭션)
-        # ⚠️ 반드시 학생/거래 WRITE 전에 실행해야 read-after-write 오류가 안 남
+        # 일반 출금은 잔액 부족이면 불가 (관리자 개별지급도 동일 규칙 유지 중이면 그대로)
+        if tx_type == "withdraw" and bal < withdraw:
+            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+
+        # ✅ 국고 반영(같은 트랜잭션) - 반드시 학생 update/set(WRITE)보다 먼저!
         if tre_signed != 0:
             _treasury_apply_in_transaction(
                 transaction,
@@ -1568,12 +1569,12 @@ def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, d
                 actor=str(actor or "admin_auto"),
             )
 
-        # ✅ 이제 WRITE만
+        new_bal = bal + amount  # (관리자라도 여기서는 기존 로직 유지)
         transaction.update(student_ref, {"balance": new_bal})
         transaction.set(
             tx_ref,
             {
-                "student_id": str(student_id),  # ✅ student_doc 쓰면 안 됨(여긴 없음)
+                "student_id": student_id,   # ✅ student_doc.id → student_id 로 수정
                 "type": tx_type,
                 "amount": amount,
                 "balance_after": new_bal,
