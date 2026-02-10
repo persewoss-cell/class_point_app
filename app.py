@@ -5629,8 +5629,6 @@ else:
         extra_start = 4
 
     # ✅ 추가 관리자 탭 매핑
-    for i, t in enumerate(extra_admin_tabs):
-        tab_map[t] = tab_objs[extra_start + i]
 
     tabs = list(tab_map.keys())
 # ==================================================
@@ -8882,3 +8880,30 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 현재 잔액과 같아요.")
+
+
+# ✅ (PATCH) 관리자 허브 탭 안에서만 서브탭 생성 (최상단 tab_objs에 추가 매핑 금지)
+# - 권한이 없으면 "권한이 없습니다."
+# - 권한이 있으면 extra_admin_tabs 목록으로 서브탭 생성
+with tab_map[hub_label]:
+    st.subheader("🛠️ 관리자")
+
+    if not extra_admin_tabs:
+        st.warning("권한이 없습니다.")
+    else:
+        # 보기 좋은 표시 라벨
+        sub_labels = []
+        for t in extra_admin_tabs:
+            if t == "🏛️ 국세청(국고)":
+                sub_labels.append("🏛️ 국세청")
+            elif t == "📊 통계청":
+                sub_labels.append("📊 통계청")
+            else:
+                sub_labels.append(t)
+
+        sub_objs = st.tabs(sub_labels)
+
+        for t, sub in zip(extra_admin_tabs, sub_objs):
+            with sub:
+                st.caption(f"관리자 기능: {t}")
+                st.info("여기에 해당 탭의 관리자 UI를 연결하세요.")
