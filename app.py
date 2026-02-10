@@ -7617,10 +7617,10 @@ if "👥 계정 정보/활성화" in tabs:
         with g2:
             btn_revoke = st.button("➖ 권한 회수", use_container_width=True, key="perm_btn_revoke_v2")
         with g3:
-            confirm_all = st.checkbox("확인", key="perm_confirm_revoke_all_v2")
+            confirm_all = st.checkbox("전체 권환 선택", key="perm_confirm_revoke_all_v2")
         with g4:
             btn_revoke_all = st.button(
-                "🔥 전체 권한 전체 회수",
+                "🔥 전체 권한 회수",
                 use_container_width=True,
                 disabled=(not confirm_all),
                 key="perm_btn_revoke_all_v2",
