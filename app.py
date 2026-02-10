@@ -2672,7 +2672,7 @@ def render_admin_trade_ui(prefix: str, templates_list: list, template_by_display
 
         # ✅ 국고 반영(항상 사용 가능)
         tre_key = f"{prefix}_treasury_apply"
-        st.session_state.setdefault(tre_key, False)
+        st.session_state.setdefault(tre_key, True)   # ✅ 기본 체크(ON)
         st.checkbox("국고 반영", key=tre_key)
 
         st.caption("⚡ 빠른 금액(원형 버튼)")
