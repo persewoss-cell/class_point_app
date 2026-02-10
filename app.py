@@ -2896,47 +2896,23 @@ def api_list_roles_cached():
     return {"ok": True, "roles": roles}
 
 def get_my_permissions(student_id: str, is_admin: bool):
-    """내 권한 집합 반환
-    - 관리자(is_admin=True): admin_all
-    - 학생: roles.permissions + students.extra_permissions(추가권한)
-      * extra_permissions는 문자열 리스트를 권장(예: ["treasury_write","credit_write"])
-    """
     if is_admin:
         return {"admin_all"}
-
     if not student_id:
         return set()
-
     snap = db.collection("students").document(student_id).get()
     if not snap.exists:
         return set()
-
-    sdata = snap.to_dict() or {}
-
-    # 1) 역할(Role) 기반 권한
-    perms = set()
-    role_id = str(sdata.get("role_id", "") or "")
-    if role_id:
-        rdoc = db.collection("roles").document(role_id).get()
-        if rdoc.exists:
-            perms |= set((rdoc.to_dict() or {}).get("permissions", []) or [])
-
-    # 2) 학생 개별 추가 권한(extra_permissions)
-    extra = sdata.get("extra_permissions", []) or []
-    # 혹시 dict 형태로 저장된 경우도 방어(값 True인 것만)
-    if isinstance(extra, dict):
-        extra_list = [k for k, v in (extra or {}).items() if bool(v)]
-    elif isinstance(extra, (list, tuple, set)):
-        extra_list = list(extra)
-    else:
-        extra_list = []
-
-    perms |= set([str(x).strip() for x in extra_list if str(x).strip()])
-
+    role_id = str((snap.to_dict() or {}).get("role_id", "") or "")
+    if not role_id:
+        return set()
+    rdoc = db.collection("roles").document(role_id).get()
+    if not rdoc.exists:
+        return set()
+    perms = set((rdoc.to_dict() or {}).get("permissions", []) or [])
     return perms
 
 def can(perms: set, need: str) -> bool:
-
     return ("admin_all" in perms) or (need in perms)
 
 # =========================
@@ -3388,42 +3364,36 @@ ALL_TABS = [
 ]
 
 def tab_visible(tab_name: str):
-    # ✅ 관리자는 항상 전체 탭
     if is_admin:
         return True
 
-    # ✅ 학생 기본 탭(항상 노출)
+    # 학생은 기본 "내 통장" + 일정(읽기)
     if tab_name == "🏦 내 통장":
         return True
-    if tab_name == "📈 투자":
-        return True
-    if tab_name == "🏦 은행(적금)":
-        # 학생용 적금 탭은 기본 노출(내부에서 학생/관리자 UI가 갈림)
-        return True
 
-    # ✅ (추가) 권한 기반으로 관리자 탭을 학생에게 노출
+    # 권한별 탭 표시
     if tab_name == "🏛️ 국세청(국고)":
         return can(my_perms, "treasury_read") or can(my_perms, "treasury_write")
     if tab_name == "📊 통계청":
         return can(my_perms, "stats_write")
     if tab_name == "💳 신용등급":
         return can(my_perms, "credit_write")
-    if tab_name == "💼 직업/월급":
-        return can(my_perms, "jobs_write")
+    if tab_name == "🏦 은행(적금)":
+        return can(my_perms, "bank_read") or can(my_perms, "bank_write")
 
-    # ✅ (선택) 개별조회까지 열어주고 싶으면 이 권한을 부여하세요.
-    if tab_name == "🔎 개별조회":
-        return can(my_perms, "ind_view")
+    if tab_name == "📈 투자":
+        return True
+    if tab_name == "🛒 구입/벌금":
+        return True
 
-    # 👥 계정정보는 학생에게 절대 노출하지 않음(관리자만)
-    if tab_name == "👥 계정 정보/활성화":
+    # 학생에게 숨김
+    if tab_name in ("💼 직업/월급", "👥 계정 정보/활성화"):
         return False
 
     return False
 
 # -------------------------
 # ✅ 탭 구성
-
 # - 관리자: 기존 ALL_TABS(tab_visible) 그대로
 # - 학생(개별로그인): "거래/투자/적금/목표" (투자 비활성화면 투자 탭 숨김)
 # -------------------------
@@ -3434,9 +3404,7 @@ if is_admin:
     tab_objs = st.tabs(tabs_display)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
-    # ✅ 학생(개별로그인) 탭 구성:
-    #   - 기본 탭: 거래/적금/투자/목표
-    #   - + 추가권한을 받은 관리자 탭(예: 국세청/신용등급/통계청/직업/개별조회)
+    # ✅ 투자 탭 노출 여부(계정 정보/활성화에서 '투자활성화' 꺼진 학생은 숨김)
     inv_ok = True
     try:
         if my_student_id:
@@ -3446,37 +3414,33 @@ else:
     except Exception:
         inv_ok = True
 
-    # (1) 기본 탭(키는 기존 로직과 호환되게 유지)
-    base_keys = ["🏦 내 통장", "🏦 은행(적금)"]
-    base_labels = ["📝 거래", "💰 적금"]
-
+    # 화면 탭 라벨
+    user_tab_labels = ["📝 거래", "💰 적금"]
     if inv_ok:
-        base_keys.append("📈 투자")
-        base_labels.append("📈 투자")
+        user_tab_labels.append("📈 투자")
+    user_tab_labels.append("🎯 목표")
 
-    base_keys.append("🎯 목표")
-    base_labels.append("🎯 목표")
+    tab_objs = st.tabs(user_tab_labels)
 
-    # (2) 추가 권한 탭(ALL_TABS 중에서 tab_visible=True인데, 기본탭/계정탭은 제외)
-    extra_keys = []
-    for t in ALL_TABS:
-        if t in ("🏦 내 통장", "🏦 은행(적금)", "📈 투자", "👥 계정 정보/활성화"):
-            continue
-        if t == "🎯 목표":
-            continue
-        if tab_visible(t):
-            extra_keys.append(t)
+    # 아래 기존 로직(내 통장/은행/목표)을 재사용하기 위해 tab_map 키는 유지합니다.
+    if inv_ok:
+        tab_map = {
+            "🏦 내 통장": tab_objs[0],
+            "🏦 은행(적금)": tab_objs[1],
+            "📈 투자": tab_objs[2],
+            "🎯 목표": tab_objs[3],
+        }
+    else:
+        tab_map = {
+            "🏦 내 통장": tab_objs[0],
+            "🏦 은행(적금)": tab_objs[1],
+            "🎯 목표": tab_objs[2],
+        }
 
-    tabs = base_keys + extra_keys
-    tabs_display = base_labels + extra_keys  # 추가 탭은 원래 이름 그대로 표시
-
-    tab_objs = st.tabs(tabs_display)
-    tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
+    tabs = list(tab_map.keys())
 
 # =========================
 # (PATCH) 공용: 신용점수/등급 계산 (내 통장 상단 요약에서 먼저 필요)
-# - 탭 실행 순서 때문에 내 통장에서 0등급(0점)으로 뜨는 문제 방지
-# =========================
 # - 탭 실행 순서 때문에 내 통장에서 0등급(0점)으로 뜨는 문제 방지
 # =========================
 def _score_to_grade(score: int) -> int:
@@ -4614,8 +4578,8 @@ if "🔎 개별조회" in tabs:
     with tab_map["🔎 개별조회"]:
         st.subheader("🔎 개별조회(번호순)")
 
-        if not (is_admin or can(my_perms, "ind_view")):
-            st.error("이 탭을 볼 권한이 없습니다.")
+        if not is_admin:
+            st.error("관리자 전용 탭입니다.")
             st.stop()
 
         name_search2 = st.text_input(
@@ -5862,178 +5826,6 @@ if "👥 계정 정보/활성화" in tabs:
             tmp = tmp.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
             st.session_state.account_df = tmp
 
-
-        st.divider()
-
-        # -------------------------------------------------
-        # ✅ (NEW) 사용자에게 관리자 탭 권한(추가 권한) 부여
-        #  - students.extra_permissions: ["treasury_write", "credit_write", ...]
-        #  - 역할(role) 권한과 합쳐서 get_my_permissions()에서 최종 권한이 됩니다.
-        # -------------------------------------------------
-        st.markdown("### 🔑 사용자에게 관리자 탭 권한 부여")
-        st.caption("여기서 저장한 권한을 받은 학생은, 학생 로그인 화면에서도 해당 관리자 탭이 추가로 보이고(또는 조작 가능)해집니다.")
-
-        # 활성 학생 목록
-        _docs_perm = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-        _stu = []
-        for _d in _docs_perm:
-            _x = _d.to_dict() or {}
-            try:
-                _no = int(_x.get("no", 999999) or 999999)
-            except Exception:
-                _no = 999999
-            _nm = str(_x.get("name", "") or "").strip()
-            if not _nm:
-                continue
-            _extra = (_x.get("extra_permissions", []) or [])
-            if isinstance(_extra, dict):
-                _extra = [k for k, v in (_extra or {}).items() if bool(v)]
-            _stu.append(
-                {
-                    "student_id": _d.id,
-                    "no": _no,
-                    "name": _nm,
-                    "label": f"{_no:02d} {_nm}" if isinstance(_no, int) and _no < 100 else f"{_no} {_nm}",
-                    "extra": set([str(p).strip() for p in (_extra or []) if str(p).strip()]),
-                }
-            )
-        _stu.sort(key=lambda r: (r["no"], r["name"]))
-
-        _labels = [r["label"] for r in _stu]
-        _label_to_id = {r["label"]: r["student_id"] for r in _stu}
-        _id_to_row = {r["student_id"]: r for r in _stu}
-
-        # 이 화면에서 관리하는 permission 키(※ 여기 목록에 없는 permission은 건드리지 않음)
-        MANAGED_PERMS = [
-            "treasury_read",
-            "treasury_write",
-            "stats_write",
-            "credit_write",
-            "jobs_write",
-            "bank_read",
-            "bank_write",
-            "ind_view",
-        ]
-
-        # 현재 상태 → perm별 학생 라벨 목록
-        def _who_has(p: str):
-            out = []
-            for r in _stu:
-                if p in (r.get("extra") or set()):
-                    out.append(r["label"])
-            return out
-
-        with st.expander("권한 부여/회수(탭별)", expanded=True):
-            st.markdown("#### 🏛️ 국세청(국고)")
-            c1, c2 = st.columns(2)
-            with c1:
-                tre_read = st.multiselect(
-                    "국세청 보기(treasury_read)",
-                    _labels,
-                    default=_who_has("treasury_read"),
-                    key="perm_tre_read",
-                )
-            with c2:
-                tre_write = st.multiselect(
-                    "국세청 조작(treasury_write)",
-                    _labels,
-                    default=_who_has("treasury_write"),
-                    key="perm_tre_write",
-                )
-
-            st.markdown("#### 📊 통계청(제출물 관리)")
-            stats_write = st.multiselect(
-                "통계청 조작(stats_write)",
-                _labels,
-                default=_who_has("stats_write"),
-                key="perm_stats_write",
-            )
-
-            st.markdown("#### 💳 신용등급")
-            credit_write = st.multiselect(
-                "신용등급 조작(credit_write)",
-                _labels,
-                default=_who_has("credit_write"),
-                key="perm_credit_write",
-            )
-
-            st.markdown("#### 💼 직업/월급")
-            jobs_write = st.multiselect(
-                "직업/월급 조작(jobs_write)",
-                _labels,
-                default=_who_has("jobs_write"),
-                key="perm_jobs_write",
-            )
-
-            st.markdown("#### 🏦 은행(적금) - 관리자 장부")
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                bank_read = st.multiselect(
-                    "은행 장부 보기(bank_read)",
-                    _labels,
-                    default=_who_has("bank_read"),
-                    key="perm_bank_read",
-                )
-            with bc2:
-                bank_write = st.multiselect(
-                    "은행 장부 조작(bank_write)",
-                    _labels,
-                    default=_who_has("bank_write"),
-                    key="perm_bank_write",
-                )
-
-            st.markdown("#### 🔎 개별조회(선택)")
-            ind_view = st.multiselect(
-                "개별조회 보기(ind_view)",
-                _labels,
-                default=_who_has("ind_view"),
-                key="perm_ind_view",
-            )
-
-            st.divider()
-
-            if st.button("✅ 권한 저장", use_container_width=True, key="perm_save_btn"):
-                # 선택 결과 → perm별 student_id set
-                def _to_ids(lbl_list):
-                    return set([_label_to_id.get(l) for l in (lbl_list or []) if _label_to_id.get(l)])
-
-                desired = {
-                    "treasury_read": _to_ids(tre_read),
-                    "treasury_write": _to_ids(tre_write),
-                    "stats_write": _to_ids(stats_write),
-                    "credit_write": _to_ids(credit_write),
-                    "jobs_write": _to_ids(jobs_write),
-                    "bank_read": _to_ids(bank_read),
-                    "bank_write": _to_ids(bank_write),
-                    "ind_view": _to_ids(ind_view),
-                }
-
-                # 학생별로 새로운 extra_permissions 계산 후 저장(관리 대상 권한만 덮어쓰기)
-                updated = 0
-                for r in _stu:
-                    sid = r["student_id"]
-                    cur = set(r.get("extra") or set())
-
-                    # 관리 대상 권한은 일단 제거
-                    cur = set([p for p in cur if p not in MANAGED_PERMS])
-
-                    # 새로 선택된 권한 추가
-                    for p, sids in desired.items():
-                        if sid in sids:
-                            cur.add(p)
-
-                    try:
-                        db.collection("students").document(str(sid)).set(
-                            {"extra_permissions": sorted(list(cur)), "updated_at": firestore.SERVER_TIMESTAMP},
-                            merge=True,
-                        )
-                        updated += 1
-                    except Exception as e:
-                        st.error(f"{_id_to_row.get(sid, {}).get('label', sid)} 저장 실패: {e}")
-
-                toast(f"권한 저장 완료! ({updated}명 반영)", icon="✅")
-                st.rerun()
-
 # =========================
 # 3) 💼 직업/월급 (관리자 중심, 학생은 읽기만)
 # =========================
@@ -6041,9 +5833,8 @@ if "💼 직업/월급" in tabs:
     with tab_map["💼 직업/월급"]:
         st.subheader("💼 직업/월급 시스템")
 
-        # ✅ 접근 권한: 관리자 또는 jobs_write
-        if not (is_admin or can(my_perms, "jobs_write")):
-            st.info("이 탭을 볼 권한이 없습니다.")
+        if not is_admin:
+            st.info("관리자 전용 탭입니다.")
             st.stop()
 
         # -------------------------------------------------
@@ -6947,13 +6738,8 @@ if "🏛️ 국세청(국고)" in tabs:
     with tab_map["🏛️ 국세청(국고)"]:
         st.subheader("🏛️ 국세청(국고)")
 
-        # ✅ 접근 권한: 관리자 또는 (학생) treasury_read/treasury_write
-        if not (is_admin or can(my_perms, "treasury_read") or can(my_perms, "treasury_write")):
-            st.error("이 탭을 볼 권한이 없습니다.")
-            st.stop()
-
-        # ✅ 쓰기 가능 여부(저장/템플릿 수정 등)
-        writable = bool(is_admin) or can(my_perms, "treasury_write")
+        # 관리자만 쓰기 가능 / 학생은 읽기만(원하면 later: treasury_read 권한으로 확장)
+        writable = bool(is_admin)
 
         # 1) 상단 잔액 표시: [국고] : 00000드림
         st_res = api_get_treasury_state_cached()
@@ -7112,9 +6898,8 @@ if "📊 통계청" in tabs:
     with tab_map["📊 통계청"]:
         st.subheader("📊 통계청(제출물 관리)")
 
-        # ✅ 접근 권한: 관리자 또는 stats_write
-        if not (is_admin or can(my_perms, "stats_write")):
-            st.error("이 탭을 볼 권한이 없습니다.")
+        if not is_admin:
+            st.error("관리자 전용 탭입니다.")
             st.stop()
 
         # -------------------------
@@ -7672,9 +7457,8 @@ if "💳 신용등급" in tabs:
     with tab_map["💳 신용등급"]:
         st.subheader("💳 신용등급")
 
-        # ✅ 접근 권한: 관리자 또는 credit_write
-        if not (is_admin or can(my_perms, "credit_write")):
-            st.info("이 탭을 볼 권한이 없습니다.")
+        if not is_admin:
+            st.info("관리자 전용 탭입니다.")
             st.stop()
 
         # -------------------------
@@ -8040,10 +7824,6 @@ if "🏦 은행(적금)" in tabs:
     with tab_map["🏦 은행(적금)"]:
         st.subheader("🏦 은행(적금)")
 
-        # ✅ 은행(적금) "관리자 장부/중도해지" 접근 권한(학생 위임 가능)
-        bank_admin = bool(is_admin) or can(my_perms, "bank_read") or can(my_perms, "bank_write")
-        bank_writable = bool(is_admin) or can(my_perms, "bank_write")
-
         # -------------------------------------------------
         # 공통 유틸
         # -------------------------------------------------
@@ -8393,7 +8173,7 @@ if "🏦 은행(적금)" in tabs:
         # -------------------------------------------------
         # (A) 관리자: 적금 관리 장부 (엑셀형 표 느낌) + 최신순
         # -------------------------------------------------
-        if bank_admin:
+        if is_admin:
             st.markdown("### 📒 적금 관리 장부")
 
             st.markdown(
@@ -8462,10 +8242,6 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
 
                 st.markdown("#### 🧯 중도해지 처리(관리자)")
-
-                if not bank_writable:
-                    st.info("읽기 권한만 있어 중도해지 처리는 할 수 없습니다.")
-
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
 
                 running = df[df["처리 결과"] == "진행중"].copy()
@@ -8481,7 +8257,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
                     pick = st.selectbox("중도해지할 적금 선택", options, key="bank_cancel_pick")
                     if pick != "(선택 없음)":
-                        if st.button("중도해지 처리(원금 지급)", use_container_width=True, key="bank_cancel_do", disabled=(not bank_writable)):
+                        if st.button("중도해지 처리(원금 지급)", use_container_width=True, key="bank_cancel_do"):
                             doc_id = str(label_to_id.get(pick))
                             res = _cancel_savings(doc_id)
                             if res.get("ok"):
