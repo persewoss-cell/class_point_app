@@ -2934,6 +2934,11 @@ def has_tab_access(perms: set, tab_name: str, is_admin: bool) -> bool:
     """탭(화면) 접근 권한: 관리자이거나 students.extra_permissions에 tab::<탭이름>이 있으면 True"""
     if is_admin:
         return True
+
+
+def is_admin_like_tab(tab_name: str) -> bool:
+    """관리자이거나 해당 탭(tab::<탭이름>) 권한이 있으면 True"""
+    return bool(is_admin) or has_tab_access(my_perms, tab_name, is_admin=False)
     return f"tab::{tab_name}" in perms
 
 # =========================
@@ -3389,9 +3394,9 @@ def tab_visible(tab_name: str):
     if is_admin:
         return True
 
-    # 학생 기본 탭은 별도 UI(user_tab_labels)에서 구성합니다.
-    # 여기(tab_visible)는 '추가로 열어줄 관리자 탭' 판정에 주로 사용하므로
-    # 기본적으로는 권한(tab::<탭이름>) 또는 역할 기반 권한이 있을 때만 표시합니다.
+    # 학생 기본 탭(항상 표시)
+    if tab_name in ("💰보상/벌금/템플릿", "📈 투자", "🛒 구입/벌금"):
+        return True
 
     # ✅ 학생에게 '탭 권한(tab::<탭이름>)'이 부여된 경우 표시
     if has_tab_access(my_perms, tab_name, is_admin=False):
@@ -3414,6 +3419,8 @@ def tab_visible(tab_name: str):
     # 계정 정보/활성화는 학생에게 기본 숨김(권한 관리 UI가 있어서)
     if tab_name == "👥 계정 정보/활성화":
         return False
+
+    return False
 
     return False
 
@@ -3441,12 +3448,8 @@ else:
     # ✅ 학생 기본 탭 + (추가) 관리자 탭 권한 부여된 탭 표시
     # -------------------------
     base_labels = ["📝 거래", "💰 적금"]
-
-    # ✅ 투자 탭: invest_enabled가 꺼져 있어도, "tab::📈 투자" 권한이 있으면 표시
-    inv_tab_allowed = bool(inv_ok) or has_tab_access(my_perms, "📈 투자", is_admin=False)
-    if inv_tab_allowed:
+    if inv_ok:
         base_labels.append("📈 투자")
-
     base_labels.append("🎯 목표")
 
     # ✅ 추가로 열어줄 '관리자 탭'(계정 정보/활성화 제외)
@@ -3469,7 +3472,7 @@ else:
     tab_map["💰보상/벌금/템플릿"] = tab_objs[0]
     tab_map["🏦 은행(적금)"] = tab_objs[1]
 
-    if inv_tab_allowed:
+    if inv_ok:
         tab_map["📈 투자"] = tab_objs[2]
         tab_map["🎯 목표"] = tab_objs[3]
         extra_start = 4
@@ -3625,9 +3628,8 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
 # =========================
 if "💰보상/벌금/템플릿" in tabs:
     with tab_map["💰보상/벌금/템플릿"]:
-        admin_trade_ok = bool(is_admin) or has_tab_access(my_perms, "💰보상/벌금/템플릿", is_admin=False)
-
-        if admin_trade_ok:
+        admin_like_templates = is_admin or has_tab_access(my_perms, "💰보상/벌금/템플릿", is_admin=False)
+        if admin_like_templates:
 
             # ✅ (보상/벌금/템플릿) 내부 작은 탭
             sub_tab_all, sub_tab_personal = st.tabs(["전체", "개인"])
@@ -4778,8 +4780,6 @@ if "🔎 개별조회" in tabs:
 if "📈 투자" in tabs:
     with tab_map["📈 투자"]:
 
-        inv_admin_ok = bool(is_admin) or has_tab_access(my_perms, "📈 투자", is_admin=False)
-
         INV_PROD_COL = "invest_products"
         INV_HIST_COL = "invest_price_history"
         INV_LEDGER_COL = "invest_ledger"
@@ -4827,7 +4827,7 @@ if "📈 투자" in tabs:
         # - 관리자 or 직업 '투자증권'
         # -------------------------
         def _can_redeem(actor_student_id: str) -> bool:
-            if inv_admin_ok:
+            if is_admin:
                 return True
             try:
                 if not actor_student_id:
@@ -5022,7 +5022,7 @@ if "📈 투자" in tabs:
                 cur = p["current_price"]
                 st.markdown(f"- **{nm}** (현재주가 **{cur:.1f}**)")
 
-                if inv_admin_ok:
+                if is_admin:
                     with st.expander(f"{nm} 주가 변동 반영", expanded=False):
                         c1, c2, c3 = st.columns([3.2, 2.2, 1.2], gap="small")
                         with c1:
@@ -5282,7 +5282,7 @@ if "📈 투자" in tabs:
         # -------------------------------------------------
         st.markdown("### 🧾 투자 상품 관리 장부")
 
-        ledger_rows = _load_ledger(None if inv_admin_ok else my_student_id)
+        ledger_rows = _load_ledger(None if is_admin else my_student_id)
 
         view_rows = []
         for x in ledger_rows:
@@ -5358,7 +5358,7 @@ if "📈 투자" in tabs:
                             sell_label = _fmt_kor_date_md(sell_dt)
                             memo = f"투자 회수({prod_name})"
 
-                            if inv_admin_ok:
+                            if is_admin:
                                 res = api_admin_add_tx_by_student_id(
                                     admin_pin=ADMIN_PIN,
                                     student_id=sid,
@@ -5475,7 +5475,7 @@ if "📈 투자" in tabs:
         # -------------------------------------------------
         # 4) (관리자) 투자 종목 추가/수정/삭제
         # -------------------------------------------------
-        if inv_admin_ok:
+        if is_admin:
             st.divider()
             st.markdown("### 🧰 투자 종목 추가/수정/삭제")
 
@@ -5673,7 +5673,6 @@ if "👥 계정 정보/활성화" in tabs:
                 key="perm_sel_students",
             )
 
-
         # 실제로 저장할 권한 키 구성
         def _keys_for_tab(tab_name: str):
             keys = [f"tab::{tab_name}"]
@@ -5704,28 +5703,28 @@ if "👥 계정 정보/활성화" in tabs:
                 cur_set.discard(str(k))
             ref.update({"extra_permissions": sorted(list(cur_set))})
 
-        g1, g2, g3 = st.columns([1, 1, 1.2])
+        g1, g2, g3 = st.columns([1, 1, 1])
         with g1:
             btn_grant = st.button("➕ 권한 부여", use_container_width=True, key="perm_grant")
         with g2:
             btn_revoke = st.button("➖ 권한 회수", use_container_width=True, key="perm_revoke")
         with g3:
-            confirm_all = st.checkbox(
-                "⚠️ 전체 회수 확인",
-                key="perm_confirm_revoke_all",
-                help="활성 학생 전체의 extra_permissions를 비웁니다. 되돌릴 수 없습니다.",
-            )
-            revoke_all = st.button(
-                "🔥 전체 권한 회수",
-                use_container_width=True,
-                disabled=(not confirm_all),
-                key="perm_revoke_all",
-            )
-
+            confirm_all = st.checkbox("전체권한회수(되돌릴 수 없음)", key="perm_revoke_all_confirm")
+            btn_revoke_all = st.button("🔥 전체권한회수", use_container_width=True, key="perm_revoke_all", disabled=(not confirm_all))
 
         # ✅ 선택 학생들에 대해 부여/회수
         if (btn_grant or btn_revoke) and (not sel_students):
             st.warning("먼저 학생을 선택해 주세요.")
+        if btn_revoke_all:
+            # ✅ 모든 활성 학생의 extra_permissions 전체 제거
+            docs_all = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+            cnt=0
+            for d in docs_all:
+                db.collection("students").document(d.id).update({"extra_permissions": []})
+                cnt+=1
+            st.success(f"전체권한회수 완료: {cnt}명")
+            st.rerun()
+
         elif btn_grant:
             keys = _keys_for_tab(sel_tab)
             ok_cnt = 0
@@ -5750,18 +5749,7 @@ if "👥 계정 정보/활성화" in tabs:
             st.rerun()
 
         # -------------------------------------------------
-        # 📌 권한 부여 현황
-        # ✅ 전체 권한 회수(활성 학생 전체)
-        if revoke_all and confirm_all:
-            docs_perm3 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-            n = 0
-            for d in docs_perm3:
-                db.collection("students").document(d.id).update({"extra_permissions": []})
-                n += 1
-            st.success(f"전체 학생 권한 회수 완료: {n}명")
-            st.rerun()
-
-        # 📌 권한 부여 현황 표
+        # 📌 권한 부여 현황 표 + 일괄 회수
         # -------------------------------------------------
         st.markdown("### 📌 권한 부여 현황")
         st.caption("현재 extra_permissions에 저장된 'tab::' 권한을 기준으로 표시합니다.")
@@ -5796,6 +5784,37 @@ if "👥 계정 정보/활성화" in tabs:
         # 화면에는 _doc_id 숨김
         st.dataframe(df_status.drop(columns=["_doc_id"], errors="ignore"), use_container_width=True, hide_index=True)
 
+        h1, h2 = st.columns([1, 2])
+        with h1:
+            revoke_selected_all = st.button("🧹 선택 학생 권한 전체 회수", use_container_width=True, key="perm_revoke_selected_all")
+        with h2:
+            confirm_all = st.checkbox("⚠️ 전체 학생 권한 전체 회수(되돌릴 수 없음)", key="perm_confirm_revoke_all")
+            revoke_all = st.button("🔥 전체 권한 전체 회수", use_container_width=True, disabled=(not confirm_all), key="perm_revoke_all")
+
+        if revoke_selected_all:
+            if not sel_students:
+                st.warning("먼저 학생을 선택해 주세요.")
+            else:
+                n = 0
+                for lab in sel_students:
+                    r = by_label.get(lab)
+                    if not r:
+                        continue
+                    # extra_permissions 전체 제거
+                    db.collection("students").document(str(r["doc_id"])).update({"extra_permissions": []})
+                    n += 1
+                st.success(f"선택 학생 권한 전체 회수 완료: {n}명")
+                st.rerun()
+
+        if revoke_all and confirm_all:
+            # 활성 학생 전체 extra_permissions 비우기
+            docs_perm3 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+            n = 0
+            for d in docs_perm3:
+                db.collection("students").document(d.id).update({"extra_permissions": []})
+                n += 1
+            st.success(f"전체 학생 권한 전체 회수 완료: {n}명")
+            st.rerun()
 
         # -------------------------------------------------
         # ✅ (탭 상단) 엑셀 일괄 계정 추가 + 샘플 다운로드
@@ -8034,8 +8053,6 @@ if "🏦 은행(적금)" in tabs:
     with tab_map["🏦 은행(적금)"]:
         st.subheader("🏦 은행(적금)")
 
-        bank_admin_ok = bool(is_admin) or has_tab_access(my_perms, "🏦 은행(적금)", is_admin=False)
-
         # -------------------------------------------------
         # 공통 유틸
         # -------------------------------------------------
@@ -8379,13 +8396,13 @@ if "🏦 은행(적금)" in tabs:
         # -------------------------------------------------
         # (관리자) 자동 만기 처리(열 때마다 한 번)
         # -------------------------------------------------
-        if bank_admin_ok:
+        if is_admin_like_tab("🏦 은행(적금)"):
             _ensure_maturity_processing_once()
 
         # -------------------------------------------------
         # (A) 관리자: 적금 관리 장부 (엑셀형 표 느낌) + 최신순
         # -------------------------------------------------
-        if bank_admin_ok:
+        if is_admin:
             st.markdown("### 📒 적금 관리 장부")
 
             st.markdown(
