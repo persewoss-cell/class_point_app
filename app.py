@@ -5698,8 +5698,6 @@ if "👥 계정 정보/활성화" in tabs:
                     "번호": no,
                     "이름": x.get("name", ""),
                     "비밀번호": x.get("pin", ""),
-                    "입출금활성화": bool(x.get("io_enabled", True)),
-                    "투자활성화": bool(x.get("invest_enabled", True)),
                 }
             )
 
@@ -5762,6 +5760,11 @@ if "👥 계정 정보/활성화" in tabs:
         #   - '회색 하이라이트'는 data_editor가 직접 지원이 어려워서,
         #     선택 행을 아래에 '회색 강조 미리보기'로 추가 표시(대신 확실히 보임)
         # -------------------------------------------------
+        # ✅ (PATCH) 예전 세션에 남아있을 수 있는 컬럼 제거(화면/편집에서 완전히 숨김)
+        st.session_state.account_df = st.session_state.account_df.drop(
+            columns=["입출금활성화", "투자활성화"], errors="ignore"
+        )
+        
         show_df = st.session_state.account_df.drop(columns=["_sid"], errors="ignore")
 
         # ✅ 표 높이: 화면에 최대한 크게(표 안 스크롤 최소화)
@@ -5783,8 +5786,6 @@ if "👥 계정 정보/활성화" in tabs:
             key="account_editor",
             column_config={
                 "선택": st.column_config.CheckboxColumn(),
-                "입출금활성화": st.column_config.CheckboxColumn(),
-                "투자활성화": st.column_config.CheckboxColumn(),
             },
         )
 
@@ -5793,7 +5794,7 @@ if "👥 계정 정보/활성화" in tabs:
         #    (행 순서 고정: 번호 기준으로 다시 정렬해서 '체크하면 아래로 내려감' 현상 최소화)
         if not df_all.empty and edited_view is not None:
             tmp = st.session_state.account_df.copy()
-            for col in ["선택", "번호", "이름", "비밀번호", "입출금활성화", "투자활성화"]:
+            for col in ["선택", "번호", "이름", "비밀번호"]:
                 if col in edited_view.columns and col in tmp.columns:
                     tmp[col] = edited_view[col].values
             tmp = tmp.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
