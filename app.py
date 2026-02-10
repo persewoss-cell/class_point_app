@@ -2310,15 +2310,27 @@ def api_admin_add_tx_by_student_id_with_treasury(admin_pin: str, student_id: str
     @firestore.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
-        if not snap.exists:
-            raise ValueError("계정을 찾지 못했습니다.")
         bal = int((snap.to_dict() or {}).get("balance", 0))
-        new_bal = bal + amount  # ✅ 음수 허용
+
+        # 일반 출금은 잔액 부족이면 불가
+        if tx_type == "withdraw" and bal < withdraw:
+            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+
+        # ✅ 국고 반영(같은 트랜잭션) - 먼저 처리(READ 먼저, WRITE는 나중)
+        if tre_signed != 0:
+            _treasury_apply_in_transaction(
+                transaction,
+                memo=str(treasury_memo or memo),
+                signed_amount=int(tre_signed),
+                actor=str(actor or "auto"),
+            )
+
+        new_bal = bal + amount
         transaction.update(student_ref, {"balance": new_bal})
         transaction.set(
             tx_ref,
             {
-                "student_id": student_id,
+                "student_id": student_doc.id,
                 "type": tx_type,
                 "amount": amount,
                 "balance_after": new_bal,
@@ -2326,14 +2338,6 @@ def api_admin_add_tx_by_student_id_with_treasury(admin_pin: str, student_id: str
                 "created_at": firestore.SERVER_TIMESTAMP,
             },
         )
-
-        if tre_signed != 0:
-            _treasury_apply_in_transaction(
-                transaction,
-                memo=str(treasury_memo or memo),
-                signed_amount=int(tre_signed),
-                actor=str(actor or "admin_auto"),
-            )
 
         return new_bal
 
