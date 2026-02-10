@@ -2344,7 +2344,7 @@ def api_admin_add_tx_by_student_id_with_treasury(admin_pin: str, student_id: str
         transaction.set(
             tx_ref,
             {
-                "student_id": student_doc.id,
+                "student_id": str(student_id),
                 "type": tx_type,
                 "amount": amount,
                 "balance_after": new_bal,
