@@ -2936,6 +2936,16 @@ def has_tab_access(perms: set, tab_name: str, is_admin: bool) -> bool:
         return True
     return f"tab::{tab_name}" in perms
 
+def has_admin_feature_access(perms: set, tab_name: str, is_admin: bool) -> bool:
+    """탭은 기본으로 보여도, '관리자 기능(관리 UI)'을 열어줄 때 쓰는 권한.
+    - 관리자: True
+    - 학생: students.extra_permissions에 admin::<탭이름>이 있으면 True
+    """
+    if is_admin:
+        return True
+    return f"admin::{tab_name}" in perms
+
+
 # =========================
 # 학급 확장: 초기 데이터 업로드(직업표/월급/은행금리표)
 # =========================
@@ -3373,7 +3383,7 @@ my_perms = get_my_permissions(my_student_id, is_admin=is_admin)
 # (관리자) 학급 시스템 탭 + (학생) 접근 가능한 탭만
 # =========================
 ALL_TABS = [
-    "💰보상/벌금/템플릿",
+    "🏦 내 통장",
     "🔎 개별조회",
     "💼 직업/월급",
     "🏛️ 국세청(국고)",
@@ -3390,7 +3400,7 @@ def tab_visible(tab_name: str):
         return True
 
     # 학생 기본 탭(항상 표시)
-    if tab_name in ("💰보상/벌금/템플릿", "📈 투자", "🛒 구입/벌금"):
+    if tab_name in ("🏦 내 통장", "📈 투자", "🛒 구입/벌금"):
         return True
 
     # ✅ 학생에게 '탭 권한(tab::<탭이름>)'이 부여된 경우 표시
@@ -3426,8 +3436,8 @@ def tab_visible(tab_name: str):
 # -------------------------
 if is_admin:
     tabs = [t for t in ALL_TABS if tab_visible(t)]
-    # ✅ 관리자 탭 표시
-    tabs_display = tabs
+    # ✅ 관리자 탭에서만 '🏦 내 통장' 탭 이름을 변경(학생 탭에는 영향 없음)
+    tabs_display = [("💰보상/벌금/템플릿" if t == "🏦 내 통장" else t) for t in tabs]
     tab_objs = st.tabs(tabs_display)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
@@ -3455,7 +3465,7 @@ else:
         if t in ("👥 계정 정보/활성화",):
             continue
         # 이미 기본 탭으로 구현된 것들은 제외(키는 다르지만 기능 겹침)
-        if t in ("💰보상/벌금/템플릿", "🏦 은행(적금)", "📈 투자"):
+        if t in ("🏦 내 통장", "🏦 은행(적금)", "📈 투자"):
             continue
         if tab_visible(t):
             extra_admin_tabs.append(t)
@@ -3466,7 +3476,7 @@ else:
 
     # 아래 기존 로직(내 통장/은행/목표)을 재사용하기 위해 tab_map 키는 유지합니다.
     tab_map = {}
-    tab_map["💰보상/벌금/템플릿"] = tab_objs[0]
+    tab_map["🏦 내 통장"] = tab_objs[0]
     tab_map["🏦 은행(적금)"] = tab_objs[1]
 
     if inv_ok:
@@ -3564,7 +3574,7 @@ def _calc_credit_score_for_student(student_id: str):
 
 
 # =========================
-# 1) 💰보상/벌금/템플릿 (기존 사용자 화면 거의 그대로)
+# 1) 🏦 내 통장 (기존 사용자 화면 거의 그대로)
 # =========================
 def render_tx_table(df_tx: pd.DataFrame):
     if df_tx is None or df_tx.empty:
@@ -3621,11 +3631,12 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
 
 
 # =========================
-# 💰보상/벌금/템플릿 탭
+# 🏦 내 통장 탭
 # =========================
-if "💰보상/벌금/템플릿" in tabs:
-    with tab_map["💰보상/벌금/템플릿"]:
-        if is_admin:
+if "🏦 내 통장" in tabs:
+    with tab_map["🏦 내 통장"]:
+        trade_admin_ok = is_admin or has_admin_feature_access(my_perms, "🏦 내 통장", is_admin=is_admin)
+        if trade_admin_ok:
 
             # ✅ (보상/벌금/템플릿) 내부 작은 탭
             sub_tab_all, sub_tab_personal = st.tabs(["전체", "개인"])
@@ -4776,6 +4787,8 @@ if "🔎 개별조회" in tabs:
 if "📈 투자" in tabs:
     with tab_map["📈 투자"]:
 
+        inv_admin_ok = is_admin or has_admin_feature_access(my_perms, "📈 투자", is_admin=is_admin)
+
         INV_PROD_COL = "invest_products"
         INV_HIST_COL = "invest_price_history"
         INV_LEDGER_COL = "invest_ledger"
@@ -4823,7 +4836,7 @@ if "📈 투자" in tabs:
         # - 관리자 or 직업 '투자증권'
         # -------------------------
         def _can_redeem(actor_student_id: str) -> bool:
-            if is_admin:
+            if inv_admin_ok:
                 return True
             try:
                 if not actor_student_id:
@@ -5018,7 +5031,7 @@ if "📈 투자" in tabs:
                 cur = p["current_price"]
                 st.markdown(f"- **{nm}** (현재주가 **{cur:.1f}**)")
 
-                if is_admin:
+                if inv_admin_ok:
                     with st.expander(f"{nm} 주가 변동 반영", expanded=False):
                         c1, c2, c3 = st.columns([3.2, 2.2, 1.2], gap="small")
                         with c1:
@@ -5354,7 +5367,7 @@ if "📈 투자" in tabs:
                             sell_label = _fmt_kor_date_md(sell_dt)
                             memo = f"투자 회수({prod_name})"
 
-                            if is_admin:
+                            if inv_admin_ok:
                                 res = api_admin_add_tx_by_student_id(
                                     admin_pin=ADMIN_PIN,
                                     student_id=sid,
@@ -5471,7 +5484,7 @@ if "📈 투자" in tabs:
         # -------------------------------------------------
         # 4) (관리자) 투자 종목 추가/수정/삭제
         # -------------------------------------------------
-        if is_admin:
+        if inv_admin_ok:
             st.divider()
             st.markdown("### 🧰 투자 종목 추가/수정/삭제")
 
@@ -5605,16 +5618,29 @@ if "👥 계정 정보/활성화" in tabs:
             st.error("관리자 전용 탭입니다.")
             st.stop()
 
-
         # -------------------------------------------------
-        # 🔐 학생별 관리자 탭 권한 부여/회수 (관리자만)
-        #   - students/{id}.extra_permissions : ["tab::<탭이름>", ...]
+        # 🔐 학생별 관리자 탭/관리자기능 권한 부여/회수 (관리자만)
+        #
+        # 1) "tab::<탭이름>"  : 학생에게 '관리자 탭' 자체를 추가로 노출(기본 탭이 아닌 것들)
+        # 2) "admin::<탭이름>": 이미 학생에게 기본으로 보이는 탭 안에서 '관리자 기능(관리 UI)'을 열어줌
+        #    - 💰보상/벌금/템플릿(관리자)  -> admin::🏦 내 통장
+        #    - 🏦 은행(적금)(관리자)      -> admin::🏦 은행(적금)
+        #    - 📈 투자(관리자)            -> admin::📈 투자
         # -------------------------------------------------
         st.markdown("### 🔐 학생별 관리자 탭 권한 부여/회수")
-        st.caption("특정 학생에게 특정 '관리자 탭'을 추가로 보여주고 조작할 수 있게 합니다. (👥 계정 정보/활성화 탭은 제외)")
+        st.caption("특정 학생에게 '관리자 탭' 또는 '관리자 기능(같은 탭 안)' 권한을 부여합니다. (👥 계정 정보/활성화 탭은 제외)")
 
-        # ✅ 부여 가능한 탭(관리자 탭 전부, 단 계정 정보/활성화 제외)
-        grantable_tabs = [t for t in ALL_TABS if t != "👥 계정 정보/활성화"]
+        # ✅ 부여 가능한 항목(탭/관리자기능)
+        # - (관리자기능) 항목은 학생에게 기본으로 보이는 탭 안에서 관리자 UI를 열어주는 용도입니다.
+        GRANT_OPTIONS = [
+            ("💰보상/벌금/템플릿(관리자)", ("admin", "🏦 내 통장")),
+            ("🏦 은행(적금)(관리자)", ("admin", "🏦 은행(적금)")),
+            ("📈 투자(관리자)", ("admin", "📈 투자")),
+        ] + [
+            (t, ("tab", t))
+            for t in ALL_TABS
+            if t not in ("👥 계정 정보/활성화", "🏦 내 통장", "🏦 은행(적금)", "📈 투자")
+        ]
 
         # ✅ 탭별로 함께 부여할 기능 권한(조작 가능하게)
         TAB_BUNDLE = {
@@ -5636,7 +5662,6 @@ if "👥 계정 정보/활성화" in tabs:
             except Exception:
                 no = 0
             name = str(x.get("name", "") or "")
-            pin = str(x.get("pin", "") or "")
             extra = x.get("extra_permissions", []) or []
             if not isinstance(extra, list):
                 extra = []
@@ -5644,45 +5669,49 @@ if "👥 계정 정보/활성화" in tabs:
                 "doc_id": d.id,
                 "no": no,
                 "name": name,
-                "pin": pin,
                 "extra": [str(v) for v in extra if str(v).strip()]
             })
 
         stu_list = sorted(stu_list, key=lambda r: (r.get("no", 9999), r.get("name", "")))
 
-        # 표시용 라벨
         def _stu_label(r):
-            n = r.get("no", 0)
-            nm = r.get("name", "")
+            n = int(r.get("no", 0) or 0)
+            nm = str(r.get("name", "") or "")
             return f"{n:02d} {nm}".strip()
 
         by_label = {_stu_label(r): r for r in stu_list}
+        opt_labels = [lab for (lab, _v) in GRANT_OPTIONS]
+        opt_map = {lab: v for (lab, v) in GRANT_OPTIONS}
 
         cpa, cpb = st.columns([2, 3])
         with cpa:
-            sel_tab = st.selectbox("부여할 탭 선택", grantable_tabs, key="perm_sel_tab")
+            sel_opt_label = st.selectbox("부여할 항목 선택", opt_labels, key="perm_sel_opt_label_v2")
+            sel_kind, sel_tab_internal = opt_map.get(sel_opt_label)
         with cpb:
             sel_students = st.multiselect(
-                "권한을 부여/회수할 학생 선택(복수 가능)",
+                "대상 학생 선택(복수 가능)",
                 options=list(by_label.keys()),
                 default=[],
-                key="perm_sel_students",
+                key="perm_sel_students_v2",
             )
 
-        # 실제로 저장할 권한 키 구성
-        def _keys_for_tab(tab_name: str):
-            keys = [f"tab::{tab_name}"]
-            keys += TAB_BUNDLE.get(tab_name, [])
+        def _keys_for_selection(kind: str, tab_internal: str):
+            # kind: "tab" or "admin"
+            if kind == "admin":
+                base = [f"admin::{tab_internal}"]
+            else:
+                base = [f"tab::{tab_internal}"]
+            base += TAB_BUNDLE.get(tab_internal, [])
             # 중복 제거
-            out = []
-            seen = set()
-            for k in keys:
-                if k not in seen:
+            out, seen = [], set()
+            for k in base:
+                k = str(k)
+                if k and (k not in seen):
                     seen.add(k)
                     out.append(k)
             return out
 
-        def _update_student_extra(doc_id: str, add_keys=None, remove_keys=None):
+        def _update_student_extra(doc_id: str, add_keys=None, remove_keys=None, clear_all=False):
             add_keys = add_keys or []
             remove_keys = remove_keys or []
             ref = db.collection("students").document(str(doc_id))
@@ -5693,65 +5722,69 @@ if "👥 계정 정보/활성화" in tabs:
                 if isinstance(cur0, list):
                     cur = [str(v) for v in cur0 if str(v).strip()]
             cur_set = set(cur)
+            if clear_all:
+                cur_set = set()
             for k in add_keys:
                 cur_set.add(str(k))
             for k in remove_keys:
                 cur_set.discard(str(k))
             ref.update({"extra_permissions": sorted(list(cur_set))})
 
-        g1, g2, g3 = st.columns([1, 1, 1])
+        g1, g2, g3, g4 = st.columns([1, 1, 1, 2])
         with g1:
-            btn_grant = st.button("➕ 권한 부여", use_container_width=True, key="perm_grant")
+            btn_grant = st.button("➕ 권한 부여", use_container_width=True, key="perm_btn_grant_v2")
         with g2:
-            btn_revoke = st.button("➖ 권한 회수", use_container_width=True, key="perm_revoke")
+            btn_revoke = st.button("➖ 권한 회수", use_container_width=True, key="perm_btn_revoke_v2")
         with g3:
-            confirm_all = st.checkbox("⚠️ 전체 권한 회수 확인", key="perm_confirm_revoke_all_v2")
-            revoke_all = st.button("🔥 전체 권한 회수", use_container_width=True, disabled=(not confirm_all), key="perm_revoke_all_v2")
+            confirm_all = st.checkbox("확인", key="perm_confirm_revoke_all_v2")
+        with g4:
+            btn_revoke_all = st.button(
+                "🔥 전체 권한 전체 회수",
+                use_container_width=True,
+                disabled=(not confirm_all),
+                key="perm_btn_revoke_all_v2",
+            )
 
-        # ✅ 선택 학생들에 대해 부여/회수
         if (btn_grant or btn_revoke) and (not sel_students):
             st.warning("먼저 학생을 선택해 주세요.")
         elif btn_grant:
-            keys = _keys_for_tab(sel_tab)
-            ok_cnt = 0
+            keys = _keys_for_selection(sel_kind, sel_tab_internal)
+            n = 0
             for lab in sel_students:
                 r = by_label.get(lab)
                 if not r:
                     continue
-                _update_student_extra(r["doc_id"], add_keys=keys, remove_keys=[])
-                ok_cnt += 1
-            st.success(f"권한 부여 완료: {ok_cnt}명")
+                _update_student_extra(r["doc_id"], add_keys=keys)
+                n += 1
+            st.success(f"권한 부여 완료: {n}명")
             st.rerun()
         elif btn_revoke:
-            keys = _keys_for_tab(sel_tab)
-            ok_cnt = 0
+            keys = _keys_for_selection(sel_kind, sel_tab_internal)
+            n = 0
             for lab in sel_students:
                 r = by_label.get(lab)
                 if not r:
                     continue
-                _update_student_extra(r["doc_id"], add_keys=[], remove_keys=keys)
-                ok_cnt += 1
-            st.success(f"권한 회수 완료: {ok_cnt}명")
+                _update_student_extra(r["doc_id"], remove_keys=keys)
+                n += 1
+            st.success(f"권한 회수 완료: {n}명")
             st.rerun()
 
-
-        # ✅ 전체 권한 전체 회수(활성 학생 전체 extra_permissions 비우기)
-        if revoke_all and confirm_all:
-            docs_perm_all = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        if btn_revoke_all and confirm_all:
+            docs_perm3 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
             n = 0
-            for d in docs_perm_all:
+            for d in docs_perm3:
                 db.collection("students").document(d.id).update({"extra_permissions": []})
                 n += 1
-            st.success(f"전체 권한 회수 완료: {n}명")
+            st.success(f"전체 학생 권한 전체 회수 완료: {n}명")
             st.rerun()
 
         # -------------------------------------------------
-        # 📌 권한 부여 현황 표 + 일괄 회수
+        # 📌 권한 부여 현황 표
         # -------------------------------------------------
         st.markdown("### 📌 권한 부여 현황")
-        st.caption("현재 extra_permissions에 저장된 'tab::' 권한을 기준으로 표시합니다.")
+        st.caption("students.extra_permissions의 tab:: / admin:: 값을 기준으로 표시합니다.")
 
-        # 다시 로드(저장 직후 반영)
         docs_perm2 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
         rows_status = []
         for d in docs_perm2:
@@ -5759,28 +5792,49 @@ if "👥 계정 정보/활성화" in tabs:
             extra = x.get("extra_permissions", []) or []
             if not isinstance(extra, list):
                 extra = []
-            tab_keys = [k for k in extra if isinstance(k, str) and k.startswith("tab::")]
-            tab_names = [k.replace("tab::", "", 1) for k in tab_keys]
+            tab_names = [str(k).replace("tab::", "", 1) for k in extra if isinstance(k, str) and k.startswith("tab::")]
+            admin_tabs = [str(k).replace("admin::", "", 1) for k in extra if isinstance(k, str) and k.startswith("admin::")]
+
+            # 표시용(관리자기능은 라벨을 보기 좋게 바꿈)
+            admin_disp = []
+            for t in admin_tabs:
+                if t == "🏦 내 통장":
+                    admin_disp.append("💰보상/벌금/템플릿(관리자)")
+                elif t == "🏦 은행(적금)":
+                    admin_disp.append("🏦 은행(적금)(관리자)")
+                elif t == "📈 투자":
+                    admin_disp.append("📈 투자(관리자)")
+                else:
+                    admin_disp.append(f"{t}(관리자)")
+
+            if (not tab_names) and (not admin_disp):
+                continue
+
             try:
                 no = int(x.get("no", 0) or 0)
             except Exception:
                 no = 0
             nm = str(x.get("name", "") or "")
-            if tab_names:
-                rows_status.append({
-                    "번호": no,
-                    "이름": nm,
-                    "부여된 탭": ", ".join(tab_names),
-                    "_doc_id": d.id
-                })
+            rows_status.append({
+                "번호": no,
+                "이름": nm,
+                "추가 탭(tab::)": ", ".join(tab_names) if tab_names else "",
+                "관리자 기능(admin::)": ", ".join(admin_disp) if admin_disp else "",
+            })
 
-        df_status = pd.DataFrame(rows_status) if rows_status else pd.DataFrame(columns=["번호","이름","부여된 탭","_doc_id"])
+        df_status = pd.DataFrame(rows_status) if rows_status else pd.DataFrame(columns=["번호","이름","추가 탭(tab::)","관리자 기능(admin::)"])
         if not df_status.empty:
             df_status = df_status.sort_values(["번호","이름"]).reset_index(drop=True)
 
-        # 화면에는 _doc_id 숨김
-        st.dataframe(df_status.drop(columns=["_doc_id"], errors="ignore"), use_container_width=True, hide_index=True)
+        st.dataframe(df_status, use_container_width=True, hide_index=True)
 
+        # -------------------------------------------------
+        # ✅ (탭 상단) 엑셀 일괄 계정 추가 + 샘플 다운로드
+
+        # -------------------------------------------------
+        # ✅ (탭 상단) 엑셀 일괄 계정 추가 + 샘플 다운로드
+        #   - 사이드바가 아니라 이 탭 본문 최상단에 표시
+        # -------------------------------------------------
         st.markdown("### 📥 일괄 엑셀 계정 추가")
         st.caption("엑셀을 올리면 아래 리스트(학생 표)에 바로 반영됩니다.")
 
@@ -8014,6 +8068,8 @@ if "🏦 은행(적금)" in tabs:
     with tab_map["🏦 은행(적금)"]:
         st.subheader("🏦 은행(적금)")
 
+        bank_admin_ok = is_admin or has_admin_feature_access(my_perms, "🏦 은행(적금)", is_admin=is_admin)
+
         # -------------------------------------------------
         # 공통 유틸
         # -------------------------------------------------
@@ -8357,13 +8413,13 @@ if "🏦 은행(적금)" in tabs:
         # -------------------------------------------------
         # (관리자) 자동 만기 처리(열 때마다 한 번)
         # -------------------------------------------------
-        if is_admin:
+        if bank_admin_ok:
             _ensure_maturity_processing_once()
 
         # -------------------------------------------------
         # (A) 관리자: 적금 관리 장부 (엑셀형 표 느낌) + 최신순
         # -------------------------------------------------
-        if is_admin:
+        if bank_admin_ok:
             st.markdown("### 📒 적금 관리 장부")
 
             st.markdown(
