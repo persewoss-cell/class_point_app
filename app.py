@@ -1527,7 +1527,8 @@ def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, d
     """
     ✅ 관리자 전용: 개별 학생에게 입금/출금
     - 학생 PIN 불필요
-    - 출금은 잔액 부족이어도 적용(음수 허용)
+    - 출금은 잔액 부족이면 불가 (기존 정책 유지)
+    - (국고 반영이 필요한 경우) api_admin_add_tx_by_student_id_with_treasury()를 사용
     """
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
@@ -1556,25 +1557,16 @@ def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, d
             raise ValueError("계정을 찾지 못했습니다.")
         bal = int((snap.to_dict() or {}).get("balance", 0))
 
-        # 일반 출금은 잔액 부족이면 불가 (관리자 개별지급도 동일 규칙 유지 중이면 그대로)
+        # 출금은 잔액 부족이면 불가
         if tx_type == "withdraw" and bal < withdraw:
             raise ValueError("잔액보다 큰 출금은 불가합니다.")
 
-        # ✅ 국고 반영(같은 트랜잭션) - 반드시 학생 update/set(WRITE)보다 먼저!
-        if tre_signed != 0:
-            _treasury_apply_in_transaction(
-                transaction,
-                memo=str(treasury_memo or memo),
-                signed_amount=int(tre_signed),
-                actor=str(actor or "admin_auto"),
-            )
-
-        new_bal = bal + amount  # (관리자라도 여기서는 기존 로직 유지)
+        new_bal = bal + amount
         transaction.update(student_ref, {"balance": new_bal})
         transaction.set(
             tx_ref,
             {
-                "student_id": student_id,   # ✅ student_doc.id → student_id 로 수정
+                "student_id": str(student_id),
                 "type": tx_type,
                 "amount": amount,
                 "balance_after": new_bal,
@@ -1583,9 +1575,10 @@ def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, d
             },
         )
         return new_bal
-        
+
     try:
         new_bal = _do(db.transaction())
+        api_list_accounts_cached.clear()
         return {"ok": True, "balance": new_bal}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -8458,6 +8451,30 @@ if "💼 직업/월급" in tabs:
                             else:
                                 st.info("해제할 배정이 없습니다.")
 
+
+        # -------------------------------------------------
+        # ✅ 전체 직업 해제 (모든 직업에서 배정 학생 전부 해제)
+        # -------------------------------------------------
+        all_off_cols = st.columns([1.0, 2.0])
+        with all_off_cols[0]:
+            all_clear_chk = st.checkbox("전체 직업 해제", value=False, key="job_assign_clear_all_chk")
+        with all_off_cols[1]:
+            if st.button("🔥 전체 직업 해제", use_container_width=True, key="job_assign_clear_all_btn", disabled=(not bool(all_clear_chk))):
+                try:
+                    _rows2 = _list_job_rows()
+                    batch = db.batch()
+                    for rr in _rows2:
+                        rid2 = rr["_id"]
+                        cnt2 = max(0, int(rr.get("student_count", 0) or 0))
+                        # 빈 슬롯으로 초기화(정원 유지)
+                        empty_ids = [""] * cnt2 if cnt2 > 0 else []
+                        batch.update(db.collection("job_salary").document(rid2), {"assigned_ids": empty_ids})
+                    batch.commit()
+                    toast("전체 직업 해제 완료!", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"전체 직업 해제 실패: {e}")
+
         st.divider()
 
         # -------------------------------------------------
@@ -8507,246 +8524,253 @@ if "💼 직업/월급" in tabs:
 
         st.divider()
 
+        # -------------------------------------------------
+        # ✅ (PATCH) [숨김] 직업/월급 '목록 표' + 순서이동/삭제/정원 +/- UI
+        #   - 기능은 유지(데이터는 그대로)하되 화면에서는 보이지 않게 처리
+        #   - 직업 추가/수정, 직업 지정/회수, 월급 지급(자동/수동)은 그대로 사용
+        # -------------------------------------------------
+        if False:
         # -------------------------
-        # ✅ 선택(체크박스) 세션 상태 준비 (버튼보다 먼저!)
-        # -------------------------
-        if "job_sel" not in st.session_state:
-            st.session_state.job_sel = {}
+                # ✅ 선택(체크박스) 세션 상태 준비 (버튼보다 먼저!)
+                # -------------------------
+                if "job_sel" not in st.session_state:
+                    st.session_state.job_sel = {}
 
-        current_ids = [rr["_id"] for rr in rows]
-        for rid0 in current_ids:
-            st.session_state.job_sel.setdefault(rid0, False)
-        for rid0 in list(st.session_state.job_sel.keys()):
-            if rid0 not in current_ids:
-                st.session_state.job_sel.pop(rid0, None)
-
-        def _selected_job_ids():
-            return [rid0 for rid0 in current_ids if bool(st.session_state.job_sel.get(rid0, False))]
-
-        # -------------------------
-        # ✅ 일괄 순서 이동
-        # -------------------------
-        def _bulk_move(direction: str):
-            sel_ids = _selected_job_ids()
-            if not sel_ids:
-                st.warning("먼저 체크(선택)하세요.")
-                return
-
-            # 최신 rows 다시 읽기(순서 꼬임 방지)
-            _rows = _list_job_rows()
-            if not _rows:
-                return
-
-            # id -> index 빠른 조회
-            id_to_idx = {r["_id"]: i for i, r in enumerate(_rows)}
-            selected = set([sid for sid in sel_ids if sid in id_to_idx])
-
-            if not selected:
-                st.warning("선택된 항목을 찾지 못했어요.")
-                return
-
-            # 위로: 앞에서부터 스캔하며 '선택'이 '비선택' 앞에 있으면 swap
-            # 아래로: 뒤에서부터 스캔
-            if direction == "up":
-                scan = range(len(_rows))
-                step = -1
-            else:
-                scan = range(len(_rows) - 1, -1, -1)
-                step = 1
-
-            batch = db.batch()
-            swapped = 0
-
-            for i in scan:
-                cur = _rows[i]
-                cur_id = cur["_id"]
-                if cur_id not in selected:
-                    continue
-
-                j = i + step
-                if j < 0 or j >= len(_rows):
-                    continue
-
-                prev = _rows[j]
-                prev_id = prev["_id"]
-
-                # 선택끼리는 묶어서 이동(선택과 비선택 사이만 swap)
-                if prev_id in selected:
-                    continue
-
-                # order swap
-                a_id, a_order = cur_id, int(cur.get("order", 999999) or 999999)
-                b_id, b_order = prev_id, int(prev.get("order", 999999) or 999999)
-
-                batch.update(db.collection("job_salary").document(a_id), {"order": b_order})
-                batch.update(db.collection("job_salary").document(b_id), {"order": a_order})
-
-                # 로컬 리스트에서도 swap 반영(연쇄 이동 안정)
-                _rows[i], _rows[j] = _rows[j], _rows[i]
-                swapped += 1
-
-            if swapped > 0:
-                batch.commit()
-                toast("순서 이동 완료!", icon="✅")
-            else:
-                st.info("더 이동할 수 없습니다.")
-
-        # -------------------------
-        # ✅ 일괄 삭제 준비(확인창 띄우기)
-        # -------------------------
-        def _bulk_delete_prepare():
-            sel_ids = _selected_job_ids()
-            if not sel_ids:
-                st.warning("삭제할 항목을 체크하세요.")
-                return
-            st.session_state["_job_bulk_delete_ids"] = sel_ids
-
-        # -------------------------
-        # ✅ 상단 버튼(⬆️⬇️🗑️)
-        # -------------------------
-        btn1, btn2, btn3 = st.columns(3)
-        with btn1:
-            if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
-                _bulk_move("up")
-                st.rerun()
-        with btn2:
-            if st.button("⬇️", use_container_width=True, key="job_bulk_dn"):
-                _bulk_move("down")
-                st.rerun()
-        with btn3:
-            if st.button("🗑️", use_container_width=True, key="job_bulk_del"):
-                _bulk_delete_prepare()
-                st.rerun()
-
-        # -------------------------
-        # ✅ 일괄 삭제 확인
-        # -------------------------
-        if "_job_bulk_delete_ids" in st.session_state:
-            st.warning("체크된 직업을 삭제하시겠습니까?")
-            y, n = st.columns(2)
-            with y:
-                if st.button("예", key="job_bulk_del_yes", use_container_width=True):
-                    del_ids = list(st.session_state.get("_job_bulk_delete_ids", []))
-                    for rid0 in del_ids:
-                        db.collection("job_salary").document(rid0).delete()
+                current_ids = [rr["_id"] for rr in rows]
+                for rid0 in current_ids:
+                    st.session_state.job_sel.setdefault(rid0, False)
+                for rid0 in list(st.session_state.job_sel.keys()):
+                    if rid0 not in current_ids:
                         st.session_state.job_sel.pop(rid0, None)
-                    st.session_state.pop("_job_bulk_delete_ids", None)
-                    toast("삭제 완료", icon="🗑️")
-                    st.rerun()
-            with n:
-                if st.button("아니오", key="job_bulk_del_no", use_container_width=True):
-                    st.session_state.pop("_job_bulk_delete_ids", None)
-                    st.rerun()
 
-        # -------------------------------------------------
-        # ✅ 열 제목(헤더) - 내용 columns 비율과 동일하게 맞춰 정렬
-        # -------------------------------------------------
-        st.markdown(
-            """
-            <style>
-            .jobhdr { font-weight: 900; color:#111; padding: 6px 4px; }
-            .jobhdr-center { display:flex; align-items:center; justify-content:center; }
-            .jobhdr-left { display:flex; align-items:center; justify-content:flex-start; }
-            .jobhdr-line { border-bottom: 2px solid #ddd; margin: 6px 0 10px 0; }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+                def _selected_job_ids():
+                    return [rid0 for rid0 in current_ids if bool(st.session_state.job_sel.get(rid0, False))]
 
-        hdr = st.columns([1.1, 2.2, 1.1, 1.2, 1.4])
-        with hdr[0]:
-            st.markdown("<div class='jobhdr jobhdr-center'>선택/순</div>", unsafe_allow_html=True)
-        with hdr[1]:
-            st.markdown("<div class='jobhdr jobhdr-left'>직업</div>", unsafe_allow_html=True)
-        with hdr[2]:
-            st.markdown("<div class='jobhdr jobhdr-center'>월급</div>", unsafe_allow_html=True)
-        with hdr[3]:
-            st.markdown("<div class='jobhdr jobhdr-center'>실수령</div>", unsafe_allow_html=True)
-        with hdr[4]:
-            st.markdown("<div class='jobhdr jobhdr-center'>학생수</div>", unsafe_allow_html=True)
+                # -------------------------
+                # ✅ 일괄 순서 이동
+                # -------------------------
+                def _bulk_move(direction: str):
+                    sel_ids = _selected_job_ids()
+                    if not sel_ids:
+                        st.warning("먼저 체크(선택)하세요.")
+                        return
 
-        st.markdown("<div class='jobhdr-line'></div>", unsafe_allow_html=True)
+                    # 최신 rows 다시 읽기(순서 꼬임 방지)
+                    _rows = _list_job_rows()
+                    if not _rows:
+                        return
 
-        for i, r in enumerate(rows):
-            rid = r["_id"]
-            order = int(r["order"])
-            job = r["job"]
-            salary = int(r["salary"])
-            cnt = max(0, int(r.get("student_count", 1) or 1))
-            assigned_ids = list(r.get("assigned_ids", []) or [])
+                    # id -> index 빠른 조회
+                    id_to_idx = {r["_id"]: i for i, r in enumerate(_rows)}
+                    selected = set([sid for sid in sel_ids if sid in id_to_idx])
 
-            # assigned 길이를 student_count에 맞추기 (cnt=0이면 빈 리스트)
-            if cnt == 0:
-                assigned_ids = []
-            else:
-                if len(assigned_ids) < cnt:
-                    assigned_ids = assigned_ids + [""] * (cnt - len(assigned_ids))
-                if len(assigned_ids) > cnt:
-                    assigned_ids = assigned_ids[:cnt]
+                    if not selected:
+                        st.warning("선택된 항목을 찾지 못했어요.")
+                        return
 
-            net = _calc_net(salary, cfg)
+                    # 위로: 앞에서부터 스캔하며 '선택'이 '비선택' 앞에 있으면 swap
+                    # 아래로: 뒤에서부터 스캔
+                    if direction == "up":
+                        scan = range(len(_rows))
+                        step = -1
+                    else:
+                        scan = range(len(_rows) - 1, -1, -1)
+                        step = 1
 
-            rowc = st.columns([0.8, 1.0, 2.6, 1.3, 1.3, 1.6])
+                    batch = db.batch()
+                    swapped = 0
 
-            # ✅ 선택 체크
-            with rowc[0]:
-                st.session_state.job_sel[rid] = st.checkbox(
-                    "",
-                    value=bool(st.session_state.job_sel.get(rid, False)),
-                    key=f"job_sel_{rid}",
-                    label_visibility="collapsed",
+                    for i in scan:
+                        cur = _rows[i]
+                        cur_id = cur["_id"]
+                        if cur_id not in selected:
+                            continue
+
+                        j = i + step
+                        if j < 0 or j >= len(_rows):
+                            continue
+
+                        prev = _rows[j]
+                        prev_id = prev["_id"]
+
+                        # 선택끼리는 묶어서 이동(선택과 비선택 사이만 swap)
+                        if prev_id in selected:
+                            continue
+
+                        # order swap
+                        a_id, a_order = cur_id, int(cur.get("order", 999999) or 999999)
+                        b_id, b_order = prev_id, int(prev.get("order", 999999) or 999999)
+
+                        batch.update(db.collection("job_salary").document(a_id), {"order": b_order})
+                        batch.update(db.collection("job_salary").document(b_id), {"order": a_order})
+
+                        # 로컬 리스트에서도 swap 반영(연쇄 이동 안정)
+                        _rows[i], _rows[j] = _rows[j], _rows[i]
+                        swapped += 1
+
+                    if swapped > 0:
+                        batch.commit()
+                        toast("순서 이동 완료!", icon="✅")
+                    else:
+                        st.info("더 이동할 수 없습니다.")
+
+                # -------------------------
+                # ✅ 일괄 삭제 준비(확인창 띄우기)
+                # -------------------------
+                def _bulk_delete_prepare():
+                    sel_ids = _selected_job_ids()
+                    if not sel_ids:
+                        st.warning("삭제할 항목을 체크하세요.")
+                        return
+                    st.session_state["_job_bulk_delete_ids"] = sel_ids
+
+                # -------------------------
+                # ✅ 상단 버튼(⬆️⬇️🗑️)
+                # -------------------------
+                btn1, btn2, btn3 = st.columns(3)
+                with btn1:
+                    if st.button("⬆️", use_container_width=True, key="job_bulk_up"):
+                        _bulk_move("up")
+                        st.rerun()
+                with btn2:
+                    if st.button("⬇️", use_container_width=True, key="job_bulk_dn"):
+                        _bulk_move("down")
+                        st.rerun()
+                with btn3:
+                    if st.button("🗑️", use_container_width=True, key="job_bulk_del"):
+                        _bulk_delete_prepare()
+                        st.rerun()
+
+                # -------------------------
+                # ✅ 일괄 삭제 확인
+                # -------------------------
+                if "_job_bulk_delete_ids" in st.session_state:
+                    st.warning("체크된 직업을 삭제하시겠습니까?")
+                    y, n = st.columns(2)
+                    with y:
+                        if st.button("예", key="job_bulk_del_yes", use_container_width=True):
+                            del_ids = list(st.session_state.get("_job_bulk_delete_ids", []))
+                            for rid0 in del_ids:
+                                db.collection("job_salary").document(rid0).delete()
+                                st.session_state.job_sel.pop(rid0, None)
+                            st.session_state.pop("_job_bulk_delete_ids", None)
+                            toast("삭제 완료", icon="🗑️")
+                            st.rerun()
+                    with n:
+                        if st.button("아니오", key="job_bulk_del_no", use_container_width=True):
+                            st.session_state.pop("_job_bulk_delete_ids", None)
+                            st.rerun()
+
+                # -------------------------------------------------
+                # ✅ 열 제목(헤더) - 내용 columns 비율과 동일하게 맞춰 정렬
+                # -------------------------------------------------
+                st.markdown(
+                    """
+                    <style>
+                    .jobhdr { font-weight: 900; color:#111; padding: 6px 4px; }
+                    .jobhdr-center { display:flex; align-items:center; justify-content:center; }
+                    .jobhdr-left { display:flex; align-items:center; justify-content:flex-start; }
+                    .jobhdr-line { border-bottom: 2px solid #ddd; margin: 6px 0 10px 0; }
+                    </style>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-            # ✅ 순
-            with rowc[1]:
-                st.markdown(f"<div style='text-align:center;font-weight:900'>{order}</div>", unsafe_allow_html=True)
+                hdr = st.columns([1.1, 2.2, 1.1, 1.2, 1.4])
+                with hdr[0]:
+                    st.markdown("<div class='jobhdr jobhdr-center'>선택/순</div>", unsafe_allow_html=True)
+                with hdr[1]:
+                    st.markdown("<div class='jobhdr jobhdr-left'>직업</div>", unsafe_allow_html=True)
+                with hdr[2]:
+                    st.markdown("<div class='jobhdr jobhdr-center'>월급</div>", unsafe_allow_html=True)
+                with hdr[3]:
+                    st.markdown("<div class='jobhdr jobhdr-center'>실수령</div>", unsafe_allow_html=True)
+                with hdr[4]:
+                    st.markdown("<div class='jobhdr jobhdr-center'>학생수</div>", unsafe_allow_html=True)
 
-            # ✅ 직업
-            with rowc[2]:
-                st.markdown(f"<div style='font-weight:900'>{job}</div>", unsafe_allow_html=True)
+                st.markdown("<div class='jobhdr-line'></div>", unsafe_allow_html=True)
 
-            # ✅ 월급
-            with rowc[3]:
-                st.markdown(f"<div style='text-align:center;font-weight:900'>{salary}</div>", unsafe_allow_html=True)
+                for i, r in enumerate(rows):
+                    rid = r["_id"]
+                    order = int(r["order"])
+                    job = r["job"]
+                    salary = int(r["salary"])
+                    cnt = max(0, int(r.get("student_count", 1) or 1))
+                    assigned_ids = list(r.get("assigned_ids", []) or [])
 
-            # ✅ 실수령
-            with rowc[4]:
-                st.markdown(f"<div style='text-align:center;font-weight:900'>{net}</div>", unsafe_allow_html=True)
+                    # assigned 길이를 student_count에 맞추기 (cnt=0이면 빈 리스트)
+                    if cnt == 0:
+                        assigned_ids = []
+                    else:
+                        if len(assigned_ids) < cnt:
+                            assigned_ids = assigned_ids + [""] * (cnt - len(assigned_ids))
+                        if len(assigned_ids) > cnt:
+                            assigned_ids = assigned_ids[:cnt]
 
-            # ✅ 학생수 +/- (기존 로직 그대로)
-            with rowc[5]:
-                st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
-                a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
+                    net = _calc_net(salary, cfg)
 
-                with a1:
-                    if st.button("➖", key=f"job_cnt_minus_{rid}"):
-                        new_cnt = max(0, cnt - 1)
-                        new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
-                        db.collection("job_salary").document(rid).update(
-                            {"student_count": new_cnt, "assigned_ids": new_assigned}
+                    rowc = st.columns([0.8, 1.0, 2.6, 1.3, 1.3, 1.6])
+
+                    # ✅ 선택 체크
+                    with rowc[0]:
+                        st.session_state.job_sel[rid] = st.checkbox(
+                            "",
+                            value=bool(st.session_state.job_sel.get(rid, False)),
+                            key=f"job_sel_{rid}",
+                            label_visibility="collapsed",
                         )
-                        st.rerun()
 
-                with a2:
-                    st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
+                    # ✅ 순
+                    with rowc[1]:
+                        st.markdown(f"<div style='text-align:center;font-weight:900'>{order}</div>", unsafe_allow_html=True)
 
-                with a3:
-                    if st.button("➕", key=f"job_cnt_plus_{rid}"):
-                        new_cnt = cnt + 1
-                        new_assigned = assigned_ids + [""]
-                        db.collection("job_salary").document(rid).update(
-                            {"student_count": new_cnt, "assigned_ids": new_assigned}
-                        )
-                        st.rerun()
+                    # ✅ 직업
+                    with rowc[2]:
+                        st.markdown(f"<div style='font-weight:900'>{job}</div>", unsafe_allow_html=True)
 
-                st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown("<div style='margin:0.35rem 0; border-bottom:1px solid #eee;'></div>", unsafe_allow_html=True)
+                    # ✅ 월급
+                    with rowc[3]:
+                        st.markdown(f"<div style='text-align:center;font-weight:900'>{salary}</div>", unsafe_allow_html=True)
 
-        st.divider()
+                    # ✅ 실수령
+                    with rowc[4]:
+                        st.markdown(f"<div style='text-align:center;font-weight:900'>{net}</div>", unsafe_allow_html=True)
 
-        # -------------------------------------------------
-        # ✅ 하단: 직업 추가/수정 (하우스포인트 템플릿처럼)
-        # -------------------------------------------------
+                    # ✅ 학생수 +/- (기존 로직 그대로)
+                    with rowc[5]:
+                        st.markdown("<div class='jobcnt-wrap'>", unsafe_allow_html=True)
+                        a1, a2, a3 = st.columns([0.9, 1.0, 0.9])
+
+                        with a1:
+                            if st.button("➖", key=f"job_cnt_minus_{rid}"):
+                                new_cnt = max(0, cnt - 1)
+                                new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
+                                db.collection("job_salary").document(rid).update(
+                                    {"student_count": new_cnt, "assigned_ids": new_assigned}
+                                )
+                                st.rerun()
+
+                        with a2:
+                            st.markdown(f"<div class='jobcnt-num'>{cnt}</div>", unsafe_allow_html=True)
+
+                        with a3:
+                            if st.button("➕", key=f"job_cnt_plus_{rid}"):
+                                new_cnt = cnt + 1
+                                new_assigned = assigned_ids + [""]
+                                db.collection("job_salary").document(rid).update(
+                                    {"student_count": new_cnt, "assigned_ids": new_assigned}
+                                )
+                                st.rerun()
+
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    st.markdown("<div style='margin:0.35rem 0; border-bottom:1px solid #eee;'></div>", unsafe_allow_html=True)
+
+                st.divider()
+
+                # -------------------------------------------------
+                # ✅ 하단: 직업 추가/수정 (하우스포인트 템플릿처럼)
+                # -------------------------------------------------
+        
         st.markdown("### ➕ 직업 추가 / 수정")
 
         pick_labels = ["(새로 추가)"] + [f"{r['order']} | {r['job']} (월급 {int(r['salary'])})" for r in rows]
