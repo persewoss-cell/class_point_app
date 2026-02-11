@@ -8152,14 +8152,14 @@ if "💼 직업/월급" in tabs:
                         continue
 
                     nm = id_to_name.get(sid, "")
-                    memo = f"월급 자동지급({mkey}) {job_name}" + (f" - {nm}" if nm else "")
+                    memo = f"월급 {job_name}"
                     res = _pay_one_student(sid, net_amt, memo)
                                         # ✅ (국고 세입) 월급 공제액을 국고로 입금
                     deduction = int(max(0, gross - net_amt))
                     if deduction > 0:
                         api_add_treasury_tx(
                             admin_pin=ADMIN_PIN,
-                            memo=f"월급 공제 세입({mkey}) {job_name}",
+                            memo=f"월급 공제 세입({mkey}) {job_name}" + (f" - {nm}" if nm else ""),
                             income=deduction,
                             expense=0,
                             actor="system_salary",
@@ -8275,14 +8275,14 @@ if "💼 직업/월급" in tabs:
                 paid_cnt, err_cnt = 0, 0
                 for sid, amt, jb, gross in targets:
                     nm = id_to_name2.get(sid, "")
-                    memo = f"월급 수동지급({cur_mkey}) {jb}" + (f" - {nm}" if nm else "")
+                    memo = f"월급 {jb}"
                     res = _pay_one_student(sid, int(amt), memo)
                     # ✅ (국고 세입) 월급 공제액을 국고로 입금
                     deduction = int(max(0, int(gross) - int(amt))) if "gross" in locals() else 0
                     if deduction > 0:
                         api_add_treasury_tx(
                             admin_pin=ADMIN_PIN,
-                            memo=f"월급 공제 세입({cur_mkey}) {jb}",
+                            memo=f"월급 공제 세입({cur_mkey}) {jb}" + (f" - {nm}" if nm else ""),
                             income=deduction,
                             expense=0,
                             actor="system_salary",
