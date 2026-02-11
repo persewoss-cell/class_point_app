@@ -8181,7 +8181,7 @@ if "💼 직업/월급" in tabs:
                     if deduction > 0:
                         api_add_treasury_tx(
                             admin_pin=ADMIN_PIN,
-                            memo=f"월급 공제 세입({mkey}) 선생님" + (f" - {nm}" if nm else ""),
+                            memo=f"월급 공제 세입({mkey}) {job_name}" + (f" - {nm}" if nm else ""),
                             income=deduction,
                             expense=0,
                             actor="system_salary",
@@ -8299,7 +8299,7 @@ if "💼 직업/월급" in tabs:
                     if deduction > 0:
                         api_add_treasury_tx(
                             admin_pin=ADMIN_PIN,
-                            memo=f"월급 공제 세입({cur_mkey}) 선생님" + (f" - {nm}" if nm else ""),
+                            memo=f"월급 공제 세입({cur_mkey}) {jb}" + (f" - {nm}" if nm else ""),
                             income=deduction,
                             expense=0,
                             actor="system_salary",
