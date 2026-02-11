@@ -8075,7 +8075,7 @@ if "💼 직업/월급" in tabs:
                     "이름": stu.get("name"),
                     "직업": job_name,
                     "월급": salary,
-                    "실수령액": _calc_net(salary, get_salary_config())
+                    "실수령액": _calc_net(salary, cfg)
                 })
 
     if rows:
