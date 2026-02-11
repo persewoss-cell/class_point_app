@@ -8079,20 +8079,41 @@ if "💼 직업/월급" in tabs:
         def _month_key(dt: datetime) -> str:
             return f"{dt.year:04d}-{dt.month:02d}"
 
-        def _paylog_id(month_key: str, student_id: str) -> str:
-            return f"{month_key}_{student_id}"
+        def _paylog_id(month_key: str, student_id: str, job_id: str = "") -> str:
+            # ✅ 월급 지급 로그는 '학생당 1개'가 아니라 '학생+직업당 1개'로 기록
+            job_id = str(job_id or "").strip() or "_"
+            return f"{month_key}_{student_id}_{job_id}"
 
-        def _already_paid_this_month(month_key: str, student_id: str) -> bool:
-            snap = db.collection("payroll_log").document(_paylog_id(month_key, student_id)).get()
-            return bool(snap.exists)
+        def _already_paid_this_month(month_key: str, student_id: str, job_id: str = "", job_name: str = "") -> bool:
+            """이번 달 해당 학생/해당 직업에 대해 이미 월급이 지급되었는지 확인
+            - 신규: payroll_log/{YYYY-MM}_{studentId}_{jobId}
+            - 레거시(호환): payroll_log/{YYYY-MM}_{studentId} 가 있으면, 저장된 job 이름이 같을 때만 True
+            """
+            # 1) 신규 키
+            snap = db.collection("payroll_log").document(_paylog_id(month_key, student_id, job_id)).get()
+            if bool(snap.exists):
+                return True
 
-        def _write_paylog(month_key: str, student_id: str, amount: int, job_name: str, method: str):
-            db.collection("payroll_log").document(_paylog_id(month_key, student_id)).set(
+            # 2) 레거시 키(기존 데이터 호환)
+            legacy_id = f"{month_key}_{student_id}"
+            legacy = db.collection("payroll_log").document(legacy_id).get()
+            if legacy.exists:
+                ld = legacy.to_dict() or {}
+                legacy_job = str(ld.get("job", "") or "")
+                # 레거시는 "학생당 1개"로 덮어쓰던 구조였으므로,
+                # 현재 지급하려는 직업과 이름이 같을 때만 '지급됨'으로 간주
+                if legacy_job and (legacy_job == str(job_name or "")):
+                    return True
+            return False
+
+        def _write_paylog(month_key: str, student_id: str, amount: int, job_name: str, method: str, job_id: str = ""):
+            db.collection("payroll_log").document(_paylog_id(month_key, student_id, job_id)).set(
                 {
                     "month": month_key,
                     "student_id": student_id,
                     "amount": int(amount),
                     "job": str(job_name or ""),
+                    "job_id": str(job_id or ""),
                     "method": str(method or ""),  # "auto" / "manual"
                     "paid_at": firestore.SERVER_TIMESTAMP,
                 },
@@ -8133,6 +8154,7 @@ if "💼 직업/월급" in tabs:
 
             for d in q:
                 x = d.to_dict() or {}
+                job_id = str(d.id)
                 job_name = str(x.get("job", "") or "")
                 gross = int(x.get("salary", 0) or 0)
                 net_amt = int(_calc_net(gross, cfg) or 0)
@@ -8147,7 +8169,7 @@ if "💼 직업/월급" in tabs:
                         continue
 
                     # ✅ 이번 달에 수동/자동 지급 기록이 있으면 자동 지급은 패스
-                    if _already_paid_this_month(mkey, sid):
+                    if _already_paid_this_month(mkey, sid, job_id=job_id, job_name=job_name):
                         skip_cnt += 1
                         continue
 
@@ -8159,13 +8181,13 @@ if "💼 직업/월급" in tabs:
                     if deduction > 0:
                         api_add_treasury_tx(
                             admin_pin=ADMIN_PIN,
-                            memo=f"월급 공제 세입({mkey}) {job_name}" + (f" - {nm}" if nm else ""),
+                            memo=f"월급 공제 세입({mkey}) 선생님" + (f" - {nm}" if nm else ""),
                             income=deduction,
                             expense=0,
                             actor="system_salary",
                         )
                     if res.get("ok"):
-                        _write_paylog(mkey, sid, net_amt, job_name, method="auto")
+                        _write_paylog(mkey, sid, net_amt, job_name, method="auto", job_id=job_id)
                         paid_cnt += 1
                     else:
                         err_cnt += 1
@@ -8231,15 +8253,10 @@ if "💼 직업/월급" in tabs:
                 for sid in list(x.get("assigned_ids", []) or []):
                     sid = str(sid or "").strip()
                     if sid:
-                        targets.append((sid, net_amt, job_name, gross))
+                        targets.append((sid, net_amt, job_name, gross, str(d.id)))
+            # ✅ 여러 직업 배정 허용: (학생+직업) 단위로 각각 지급
 
-            # 중복 학생(여러 직업에 배정되는 경우) 방지: 마지막 것만 남김
-            dedup = {}
-            for sid, amt, jb, gross in targets:
-                dedup[sid] = (amt, jb, gross)
-            targets = [(sid, v[0], v[1], v[2]) for sid, v in dedup.items()]
-
-            already_any = any(_already_paid_this_month(cur_mkey, sid) for sid, *_ in targets)
+            already_any = any(_already_paid_this_month(cur_mkey, sid, job_id=jid, job_name=jb) for sid, _, jb, _, jid in targets)
 
             if st.button("💸 수동지급(이번 달 즉시 지급)", use_container_width=True, key="payroll_manual_btn"):
                 # 이미 지급된 적 있으면 확인창 띄우기
@@ -8273,7 +8290,7 @@ if "💼 직업/월급" in tabs:
                 id_to_name2 = {a.get("student_id"): a.get("name") for a in accs2 if a.get("student_id")}
 
                 paid_cnt, err_cnt = 0, 0
-                for sid, amt, jb, gross in targets:
+                for sid, amt, jb, gross, job_id2 in targets:
                     nm = id_to_name2.get(sid, "")
                     memo = f"월급 {jb}"
                     res = _pay_one_student(sid, int(amt), memo)
@@ -8282,7 +8299,7 @@ if "💼 직업/월급" in tabs:
                     if deduction > 0:
                         api_add_treasury_tx(
                             admin_pin=ADMIN_PIN,
-                            memo=f"월급 공제 세입({cur_mkey}) {jb}" + (f" - {nm}" if nm else ""),
+                            memo=f"월급 공제 세입({cur_mkey}) 선생님" + (f" - {nm}" if nm else ""),
                             income=deduction,
                             expense=0,
                             actor="system_salary",
@@ -8290,7 +8307,7 @@ if "💼 직업/월급" in tabs:
 
                     if res.get("ok"):
                         # ✅ 수동지급도 이번달 지급 기록 남김(자동 패스 조건 충족)
-                        _write_paylog(cur_mkey, sid, int(amt), jb, method="manual")
+                        _write_paylog(cur_mkey, sid, int(amt), jb, method="manual", job_id=job_id2)
                         paid_cnt += 1
                     else:
                         err_cnt += 1
