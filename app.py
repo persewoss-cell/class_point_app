@@ -8349,6 +8349,164 @@ if "💼 직업/월급" in tabs:
         st.markdown("### 📋 직업/월급 목록")
         st.caption("• 아래에 직업을 추가/수정하면 이 리스트에 반영됩니다. • 체크 후 ⬆️⬇️🗑️ 버튼으로 순서 이동/삭제가 됩니다.")
 
+        # -------------------------------------------------
+        # ✅ (PATCH) 직업 지정/회수 UI (계정정보/활성화 탭의 권한 부여 방식과 동일 UX)
+        #   - 기존 데이터 구조(job_salary.assigned_ids / student_count) 유지
+        #   - 기존 월급 자동/수동지급/공제/국고 로직은 그대로 사용됨
+        # -------------------------------------------------
+        st.markdown("### 🧩 직업 지정 / 회수")
+        st.caption("직업을 선택한 뒤, 학생을 선택하고 ‘고용/해제’ 버튼을 누르세요. (직업별 정원(student_count) 내에서 배정됩니다.)")
+
+        # 직업 선택
+        job_pick_labels = [f"{r['order']} | {r['job']} (월급 {int(r['salary'])})" for r in rows]
+        job_pick_map = {lab: r["_id"] for lab, r in zip(job_pick_labels, rows)}
+
+        assign_c1, assign_c2 = st.columns([1.2, 2.0])
+        with assign_c1:
+            sel_job_label = st.selectbox("부여할 직업 선택", job_pick_labels, key="job_assign_pick2") if job_pick_labels else None
+        with assign_c2:
+            sel_students_labels = st.multiselect("대상 학생 선택(복수)", [lab for lab in acc_options if lab != "(선택 없음)"], key="job_assign_students2")
+
+        btn1, btn2 = st.columns([1, 1])
+        with btn1:
+            if st.button("➕ 고용", use_container_width=True, key="job_assign_hire_btn2"):
+                if not sel_job_label:
+                    st.warning("먼저 직업을 선택하세요.")
+                elif not sel_students_labels:
+                    st.warning("대상 학생을 선택하세요.")
+                else:
+                    rid = job_pick_map.get(sel_job_label)
+                    if rid:
+                        ref = db.collection("job_salary").document(rid)
+                        snap = ref.get()
+                        if snap.exists:
+                            x = snap.to_dict() or {}
+                            cnt = max(0, int(x.get("student_count", 1) or 1))
+                            assigned = list(x.get("assigned_ids", []) or [])
+
+                            # 길이 정규화
+                            if cnt == 0:
+                                assigned = []
+                            else:
+                                if len(assigned) < cnt:
+                                    assigned = assigned + [""] * (cnt - len(assigned))
+                                if len(assigned) > cnt:
+                                    assigned = assigned[:cnt]
+
+                            changed = False
+                            full = 0
+                            for lab in sel_students_labels:
+                                sid = label_to_id.get(lab, "")
+                                if not sid:
+                                    continue
+                                # 이미 배정되어 있으면 스킵
+                                if sid in assigned:
+                                    continue
+                                # 빈 자리 찾기
+                                try:
+                                    k = assigned.index("")
+                                except ValueError:
+                                    k = -1
+                                if k == -1:
+                                    full += 1
+                                    continue
+                                assigned[k] = sid
+                                changed = True
+
+                            if changed:
+                                ref.update({"assigned_ids": assigned})
+                                toast("고용 완료!", icon="✅")
+                                if full > 0:
+                                    st.warning(f"정원이 가득 차서 {full}명은 배정되지 않았어요. (학생수/정원 증가 후 다시 시도)")
+                                st.rerun()
+                            else:
+                                st.info("변경된 내용이 없습니다. (이미 배정되었거나 정원이 가득 찼을 수 있어요.)")
+
+        with btn2:
+            if st.button("➖ 해제", use_container_width=True, key="job_assign_fire_btn2"):
+                if not sel_job_label:
+                    st.warning("먼저 직업을 선택하세요.")
+                elif not sel_students_labels:
+                    st.warning("대상 학생을 선택하세요.")
+                else:
+                    rid = job_pick_map.get(sel_job_label)
+                    if rid:
+                        ref = db.collection("job_salary").document(rid)
+                        snap = ref.get()
+                        if snap.exists:
+                            x = snap.to_dict() or {}
+                            cnt = max(0, int(x.get("student_count", 1) or 1))
+                            assigned = list(x.get("assigned_ids", []) or [])
+
+                            # 길이 정규화
+                            if cnt == 0:
+                                assigned = []
+                            else:
+                                if len(assigned) < cnt:
+                                    assigned = assigned + [""] * (cnt - len(assigned))
+                                if len(assigned) > cnt:
+                                    assigned = assigned[:cnt]
+
+                            sel_ids = [label_to_id.get(lab, "") for lab in sel_students_labels]
+                            sel_ids = [sid for sid in sel_ids if sid]
+
+                            new_assigned = [("" if sid in sel_ids else sid) for sid in assigned]
+                            if new_assigned != assigned:
+                                ref.update({"assigned_ids": new_assigned})
+                                toast("해제 완료!", icon="✅")
+                                st.rerun()
+                            else:
+                                st.info("해제할 배정이 없습니다.")
+
+        st.divider()
+
+        # -------------------------------------------------
+        # ✅ (PATCH) 직업 현황(학생 기준 표) — 학생이 직업 여러 개면 여러 행으로 표시
+        # -------------------------------------------------
+        st.markdown("### 👥 직업 현황")
+        status_rows = []
+        # student_id -> (no, name) 빠른 조회
+        id_to_no_name = {r["student_id"]: (r["no"], r["name"]) for r in acc_rows}
+
+        for r in rows:
+            rid = r["_id"]
+            job = r["job"]
+            salary = int(r["salary"])
+            net = int(_calc_net(salary, cfg) or 0)
+            cnt = max(0, int(r.get("student_count", 1) or 1))
+            assigned_ids = list(r.get("assigned_ids", []) or [])
+
+            # 길이 정규화
+            if cnt == 0:
+                assigned_ids = []
+            else:
+                if len(assigned_ids) < cnt:
+                    assigned_ids = assigned_ids + [""] * (cnt - len(assigned_ids))
+                if len(assigned_ids) > cnt:
+                    assigned_ids = assigned_ids[:cnt]
+
+            for sid in assigned_ids:
+                if not sid:
+                    continue
+                no, nm = id_to_no_name.get(sid, (999999, id_to_label.get(sid, "")))
+                status_rows.append(
+                    {"번호": int(no) if str(no).isdigit() else no, "이름": nm, "직업": job, "월급": salary, "실수령액": net}
+                )
+
+        if status_rows:
+            df_status = pd.DataFrame(status_rows)
+            # 번호 정렬(문자 섞일 수 있어 안전 처리)
+            try:
+                df_status["번호_정렬"] = pd.to_numeric(df_status["번호"], errors="coerce").fillna(999999).astype(int)
+                df_status = df_status.sort_values(["번호_정렬", "이름", "직업"], kind="mergesort").drop(columns=["번호_정렬"])
+            except Exception:
+                df_status = df_status.sort_values(["번호", "이름", "직업"], kind="mergesort")
+            st.dataframe(df_status[["번호", "이름", "직업", "월급", "실수령액"]], use_container_width=True, hide_index=True)
+        else:
+            st.info("아직 직업이 배정된 학생이 없습니다.")
+
+        st.divider()
+
         # -------------------------
         # ✅ 선택(체크박스) 세션 상태 준비 (버튼보다 먼저!)
         # -------------------------
@@ -8480,135 +8638,7 @@ if "💼 직업/월급" in tabs:
                     st.session_state.pop("_job_bulk_delete_ids", None)
                     st.rerun()
 
-        
-# -------------------------------------------------
-# ✅ (PATCH) 직업 지정/회수 UI (권한부여 화면처럼)
-#  - 기존 지급/공제/국고/로그 로직은 그대로 두고,
-#  - 배정은 job_salary.assigned_ids만 안전하게 갱신합니다.
-# -------------------------------------------------
-with st.expander("👥 직업 지정 / 회수", expanded=False):
-    # 직업 선택(순서 포함)
-    job_pick_labels = [f"{r['order']} | {r['job']} (월급 {int(r['salary']):,})" for r in rows]
-    job_pick_map = {lab: r for lab, r in zip(job_pick_labels, rows)}
-
-    c1, c2 = st.columns([2.2, 3.8])
-    with c1:
-        pick_job_lab = st.selectbox("직업 선택", job_pick_labels, key="job_assign_pick_job")
-    with c2:
-        # 학생 선택(번호+이름) — 기존 acc_rows 기준
-        stu_labs = [f"{r['no']} {r['name']}" for r in acc_rows]
-        pick_stu_labs = st.multiselect("대상 학생 선택(복수 가능)", stu_labs, key="job_assign_pick_students")
-
-    sel_row = job_pick_map.get(pick_job_lab)
-    if sel_row:
-        rid = sel_row["_id"]
-        cnt = int(sel_row.get("student_count", 1) or 1)
-
-        # 선택 학생 라벨 -> student_id
-        lab_to_sid = {f"{r['no']} {r['name']}": r["student_id"] for r in acc_rows}
-        sel_sids = [lab_to_sid.get(lab, "") for lab in pick_stu_labs]
-        sel_sids = [s for s in sel_sids if s]
-
-        b1, b2 = st.columns(2)
-
-        # ➕ 고용
-        with b1:
-            if st.button("➕ 고용(직업 부여)", use_container_width=True, key="job_assign_hire_btn"):
-                snap = db.collection("job_salary").document(rid).get()
-                cur = snap.to_dict() or {}
-                cur_cnt = int(cur.get("student_count", cnt) or cnt)
-                cur_ids = list(cur.get("assigned_ids", []) or [])
-
-                # 길이 보정(기존 로직과 동일)
-                if len(cur_ids) < cur_cnt:
-                    cur_ids = cur_ids + [""] * (cur_cnt - len(cur_ids))
-                if len(cur_ids) > cur_cnt:
-                    cur_ids = cur_ids[:cur_cnt]
-
-                overflow = 0
-                changed = False
-                for sid in sel_sids:
-                    if sid in cur_ids:
-                        continue
-                    try:
-                        i0 = cur_ids.index("")
-                        cur_ids[i0] = sid
-                        changed = True
-                    except ValueError:
-                        overflow += 1
-
-                if overflow > 0:
-                    st.warning(f"배정 가능한 자리(학생 수)가 부족해서 {overflow}명은 부여하지 못했어요. (필요하면 학생 수를 늘려주세요)")
-                if changed:
-                    db.collection("job_salary").document(rid).update({"assigned_ids": cur_ids})
-                    toast("직업 부여 완료!", icon="✅")
-                    api_list_accounts_cached.clear()
-                    st.rerun()
-                else:
-                    st.info("변경 사항이 없어요. (이미 배정된 학생이거나 빈 자리가 없어요)")
-
-        # ➖ 해제
-        with b2:
-            if st.button("➖ 해제(직업 회수)", use_container_width=True, key="job_assign_fire_btn"):
-                snap = db.collection("job_salary").document(rid).get()
-                cur = snap.to_dict() or {}
-                cur_cnt = int(cur.get("student_count", cnt) or cnt)
-                cur_ids = list(cur.get("assigned_ids", []) or [])
-
-                if len(cur_ids) < cur_cnt:
-                    cur_ids = cur_ids + [""] * (cur_cnt - len(cur_ids))
-                if len(cur_ids) > cur_cnt:
-                    cur_ids = cur_ids[:cur_cnt]
-
-                changed = False
-                for i, v in enumerate(cur_ids):
-                    if v in sel_sids:
-                        cur_ids[i] = ""
-                        changed = True
-
-                if changed:
-                    db.collection("job_salary").document(rid).update({"assigned_ids": cur_ids})
-                    toast("직업 회수 완료!", icon="🗑️")
-                    api_list_accounts_cached.clear()
-                    st.rerun()
-                else:
-                    st.info("해제할 배정이 없어요.")
-
-# -------------------------------------------------
-# ✅ (PATCH) 직업 부여 현황(학생 기준 표)
-# -------------------------------------------------
-st.markdown("### 📌 직업 부여 현황(학생 기준)")
-status_rows = []
-for r in rows:
-    job = str(r.get("job", "") or "")
-    salary = int(r.get("salary", 0) or 0)
-    net = int(_calc_net(salary, cfg) or 0)
-    assigned_ids = list(r.get("assigned_ids", []) or [])
-    for sid in assigned_ids:
-        sid = str(sid or "").strip()
-        if not sid:
-            continue
-        lab = id_to_label.get(sid, "")
-        # lab: "번호 이름"
-        try:
-            no_str, nm = lab.split(" ", 1)
-            no = int(no_str)
-        except Exception:
-            no = 999999
-            nm = lab or ""
-        status_rows.append({"번호": no, "이름": nm, "직업": job, "월급": salary, "실수령액": net})
-
-if status_rows:
-    df_status = pd.DataFrame(status_rows)
-    try:
-        df_status = df_status.sort_values(["번호", "이름", "직업"]).reset_index(drop=True)
-    except Exception:
-        pass
-    st.dataframe(df_status, use_container_width=True, hide_index=True)
-else:
-    st.info("직업이 배정된 학생이 없습니다.")
-
-# -------------------------------------------------
+        # -------------------------------------------------
         # ✅ 열 제목(헤더) - 내용 columns 비율과 동일하게 맞춰 정렬
         # -------------------------------------------------
         st.markdown(
@@ -8623,7 +8653,7 @@ else:
             unsafe_allow_html=True,
         )
 
-        hdr = st.columns([1.1, 2.2, 1.1, 1.2, 1.4, 4.0])
+        hdr = st.columns([1.1, 2.2, 1.1, 1.2, 1.4])
         with hdr[0]:
             st.markdown("<div class='jobhdr jobhdr-center'>선택/순</div>", unsafe_allow_html=True)
         with hdr[1]:
@@ -8634,8 +8664,6 @@ else:
             st.markdown("<div class='jobhdr jobhdr-center'>실수령</div>", unsafe_allow_html=True)
         with hdr[4]:
             st.markdown("<div class='jobhdr jobhdr-center'>학생수</div>", unsafe_allow_html=True)
-        with hdr[5]:
-            st.markdown("<div class='jobhdr jobhdr-left'>배정 계정</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='jobhdr-line'></div>", unsafe_allow_html=True)
 
@@ -8658,7 +8686,7 @@ else:
 
             net = _calc_net(salary, cfg)
 
-            rowc = st.columns([0.8, 1.0, 2.6, 1.3, 1.3, 1.6, 4.0])
+            rowc = st.columns([0.8, 1.0, 2.6, 1.3, 1.3, 1.6])
 
             # ✅ 선택 체크
             with rowc[0]:
@@ -8712,17 +8740,7 @@ else:
                         st.rerun()
 
                 st.markdown("</div>", unsafe_allow_html=True)
-
-            
-# ✅ 배정 계정(표시만) — 배정/회수는 위의 '직업 지정/회수'에서 합니다.
-with rowc[6]:
-    labels = [id_to_label.get(sid, "") for sid in assigned_ids if str(sid or "").strip()]
-    labels = [lab for lab in labels if lab and lab != "(선택 없음)"]
-    st.markdown(
-        "<div style='font-weight:700'>" + (", ".join(labels) if labels else "-") + "</div>",
-        unsafe_allow_html=True
-    )
-st.markdown("<div style='margin:0.35rem 0; border-bottom:1px solid #eee;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin:0.35rem 0; border-bottom:1px solid #eee;'></div>", unsafe_allow_html=True)
 
         st.divider()
 
