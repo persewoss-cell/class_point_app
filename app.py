@@ -558,6 +558,29 @@ div[data-testid="stExpander"] > div{
     margin-bottom: 0.35rem;
 }
 
+/* =========================
+   헤더(제목 줄) 전체 중앙정렬
+   ========================= */
+div[data-testid="stDataFrame"] thead th,
+div[data-testid="stDataEditor"] thead th {
+    text-align: center !important;
+}
+
+/* =========================
+   번호 / 이름 컬럼만 중앙정렬
+   ========================= */
+
+/* 번호 컬럼 (첫 번째 컬럼) */
+div[data-testid="stDataFrame"] tbody td:nth-child(1),
+div[data-testid="stDataEditor"] tbody td:nth-child(1) {
+    text-align: center !important;
+}
+
+/* 이름 컬럼 (두 번째 컬럼) */
+div[data-testid="stDataFrame"] tbody td:nth-child(2),
+div[data-testid="stDataEditor"] tbody td:nth-child(2) {
+    text-align: center !important;
+}
     </style>
     """,
     unsafe_allow_html=True,
