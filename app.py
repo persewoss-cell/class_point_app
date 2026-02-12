@@ -4577,14 +4577,15 @@ if "🏦 내 통장" in tabs:
             except Exception:
                 credit_score, credit_grade = 0, 10
 
-            # 4) 투자 원금(종목별) + 합계
-            invest_text, invest_principal_total = "없음", 0
+            # 4) 투자 현재가치(종목별) + 합계
+            #    - 총자산과 '투자 금액' 표기는 원금이 아니라 '현재 주가 기준'으로 반영
+            invest_text, invest_value_total = "없음", 0
             try:
-                invest_text, invest_principal_total = _get_invest_principal_by_student_id(str(student_id))
+                invest_text, invest_value_total = _get_invest_summary_by_student_id(str(student_id))
             except Exception:
-                invest_text, invest_principal_total = "없음", 0
+                invest_text, invest_value_total = "없음", 0
 
-            asset_total = int(balance + total_savings_principal + invest_principal_total)
+            asset_total = int(balance + total_savings_principal + invest_value_total)
 
             st.markdown(f"## 🧾 {login_name} 통장")
 
