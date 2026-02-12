@@ -23,21 +23,28 @@ APP_TITLE = "학급 경제 시스템"
 # - 이미 Styler면 그대로 출력
 # =========================
 def _render_df(df, **kwargs):
+    """✅ 표 출력 공용 래퍼
+    - DataFrame이면: (가능한 범위에서) 헤더 중앙정렬 + 앞 2개 컬럼(보통 번호/이름) 중앙정렬을 적용해 출력
+    - Styler(또는 DataFrame이 아닌 객체)이면: 그대로 출력
+    주의: column_config가 있으면 Streamlit이 DataFrame을 직접 렌더링해야 하므로 Styler를 적용하지 않습니다.
+    """
     import pandas as pd
 
-    # Streamlit은 Styler도 st.dataframe에 직접 전달 가능
-    # (Styler는 보통 .data 속성을 가짐)
+    # 1) Styler(또는 유사 객체)면 그대로 출력
     if hasattr(df, "data") and not isinstance(df, pd.DataFrame):
-        kwargs.pop("hide_index", None)  # Styler에는 hide_index 인자가 없음
-        return _render_df(df, **kwargs)
+        # Styler는 hide_index / column_config를 직접 지원하지 않으므로 제거
+        kwargs.pop("hide_index", None)
+        kwargs.pop("column_config", None)
+        return st.dataframe(df, **kwargs)
 
-    # DataFrame 처리
+    # 2) DataFrame이면 필요 시 Styler 적용
     if isinstance(df, pd.DataFrame):
-        # column_config 등 DataFrame 전용 옵션이 들어오면 Styler와 충돌할 수 있어 그대로 출력
+        # column_config가 있으면 DataFrame을 그대로 출력(Styler와 충돌 가능)
         if "column_config" in kwargs:
-            return _render_df(df, **kwargs)
+            return st.dataframe(df, **kwargs)
 
         hide_index = bool(kwargs.pop("hide_index", False))
+
         sty = df.style
 
         if hide_index:
@@ -55,16 +62,16 @@ def _render_df(df, **kwargs):
             overwrite=False,
         )
 
-        # 앞 2개 컬럼(대개 번호/이름) 중앙정렬
+        # 앞 2개 컬럼 중앙정렬(컬럼이 2개 미만이면 있는 만큼만)
         cols = df.columns.tolist()[:2]
         if cols:
             sty = sty.set_properties(subset=cols, **{"text-align": "center"})
 
-        return _render_df(sty, **kwargs)
+        return st.dataframe(sty, **kwargs)
 
-    # 그 외 타입은 그대로
+    # 3) 그 외 타입은 그대로
     kwargs.pop("hide_index", None)
-    return _render_df(df, **kwargs)
+    return st.dataframe(df, **kwargs)
 
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
