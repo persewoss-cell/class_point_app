@@ -10,57 +10,62 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
-# =========================
-# DataFrame 표시 공통(헤더 + 번호/이름 중앙정렬)
-# - Streamlit DOM/CSS가 버전마다 달라서, 전역 CSS 대신 Styler로 안전하게 처리
-# =========================
-def _df_center_no_name_header(df: pd.DataFrame) -> "pd.io.formats.style.Styler":
-    """헤더 전체 + (앞 2개 컬럼: 보통 번호/이름) 중앙정렬 Styler 반환"""
-    if df is None:
-        df = pd.DataFrame()
-    # ✅ 문자열 컬럼이 섞여도 깨지지 않게 스타일만 적용
-    sty = df.style
-
-    # 헤더 중앙
-    sty = sty.set_table_styles(
-        [
-            {"selector": "th", "props": [("text-align", "center")]},
-        ],
-        overwrite=False,
-    )
-
-    # 앞 2개 컬럼(번호/이름) 중앙
-    try:
-        cols = list(df.columns)
-        target_cols = cols[:2] if len(cols) >= 2 else cols
-        if target_cols:
-            sty = sty.set_properties(subset=target_cols, **{"text-align": "center"})
-    except Exception:
-        pass
-
-    return sty
-
-
-def _render_df(df, **kwargs):
-    """✅ st.dataframe 공용 렌더러
-    - DataFrame이면: 헤더 전체 + (앞 2개 컬럼: 보통 번호/이름)만 중앙정렬 Styler 적용
-    - 이미 Styler면: 그대로 출력
-    """
-    # pandas Styler는 `.data` 속성을 가짐
-    if hasattr(df, "data") and hasattr(df, "set_table_styles"):
-        return st.dataframe(df, **kwargs)
-
-    if isinstance(df, pd.DataFrame):
-        return st.dataframe(_df_center_no_name_header(df), **kwargs)
-
-    # 예외 케이스: 그냥 출력
-    return st.dataframe(df, **kwargs)
-
 
 # =========================
 # 설정
 # =========================
 APP_TITLE = "학급 경제 시스템"
+
+# =========================
+# ✅ DataFrame 표 렌더링 공용 래퍼 (헤더 + 앞 2컬럼 중앙정렬)
+# - _render_df()을 직접 쓰던 곳을 _render_df()로 바꿔 사용
+# - DataFrame이면 Styler로 헤더/앞 2컬럼 중앙정렬
+# - 이미 Styler면 그대로 출력
+# =========================
+def _render_df(df, **kwargs):
+    import pandas as pd
+
+    # Streamlit은 Styler도 st.dataframe에 직접 전달 가능
+    # (Styler는 보통 .data 속성을 가짐)
+    if hasattr(df, "data") and not isinstance(df, pd.DataFrame):
+        kwargs.pop("hide_index", None)  # Styler에는 hide_index 인자가 없음
+        return _render_df(df, **kwargs)
+
+    # DataFrame 처리
+    if isinstance(df, pd.DataFrame):
+        # column_config 등 DataFrame 전용 옵션이 들어오면 Styler와 충돌할 수 있어 그대로 출력
+        if "column_config" in kwargs:
+            return _render_df(df, **kwargs)
+
+        hide_index = bool(kwargs.pop("hide_index", False))
+        sty = df.style
+
+        if hide_index:
+            try:
+                sty = sty.hide(axis="index")
+            except Exception:
+                try:
+                    sty = sty.hide_index()
+                except Exception:
+                    pass
+
+        # 헤더 중앙정렬
+        sty = sty.set_table_styles(
+            [{"selector": "th", "props": [("text-align", "center")]}],
+            overwrite=False,
+        )
+
+        # 앞 2개 컬럼(대개 번호/이름) 중앙정렬
+        cols = df.columns.tolist()[:2]
+        if cols:
+            sty = sty.set_properties(subset=cols, **{"text-align": "center"})
+
+        return _render_df(sty, **kwargs)
+
+    # 그 외 타입은 그대로
+    kwargs.pop("hide_index", None)
+    return _render_df(df, **kwargs)
+
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
