@@ -3476,14 +3476,13 @@ ALL_TABS = [
     "💳 신용등급",
     "🏦 은행(적금)",
     "📈 투자",
-    "📈 투자(관리자)",
     "👥 계정 정보/활성화",
 ]
 
 def tab_visible(tab_name: str):
-    # 관리자: 전부 표시 (단, '📈 투자(관리자)'는 학생용 추가 탭이므로 관리자에게는 숨김)
+    # 관리자: 전부 표시
     if is_admin:
-        return tab_name != "📈 투자(관리자)"
+        return True
 
     # 학생 기본 탭(항상 표시)
     if tab_name in ("🏦 내 통장", "📈 투자", "🛒 구입/벌금"):
@@ -5518,93 +5517,106 @@ if "admin::🏦 내 통장" in tabs:
 
 
 # =========================
-# (학생) 📈 투자(관리자) — 별도 탭 (admin::📈 투자)
+# 📈 투자 (공용 렌더: 관리자 탭과 투자(관리자) 탭을 동일 코드로 처리)
 # =========================
-if "admin::📈 투자" in tabs:
-    with tab_map["admin::📈 투자"]:
-        st.subheader("📈 투자(관리자)")
-        if is_admin:
-            st.info("관리자 모드에서는 상단 '📈 투자' 탭에서 사용합니다.")
-        else:
-            inv_admin_ok = True
-
-        INV_PROD_COL = "invest_products"
-        INV_HIST_COL = "invest_price_history"
-        INV_LEDGER_COL = "invest_ledger"
-
-        # -------------------------
-        # 유틸(함수 대신 안전하게 inline)
-        # -------------------------
-        days_ko = ["월", "화", "수", "목", "금", "토", "일"]
-
-        def _as_price1(v):
-            try:
-                return float(f"{float(v):.1f}")
-            except Exception:
-                return 0.0
-
-        def _ts_to_dt(v):
-            if v is None:
-                return None
-            if isinstance(v, datetime):
-                return v
-            try:
-                if hasattr(v, "to_datetime"):
-                    out = v.to_datetime()
-                    if isinstance(out, datetime):
-                        return out
-            except Exception:
-                pass
+# =========================
+# 📈 투자 (공용 렌더: 관리자 탭과 투자(관리자) 탭을 동일 코드로 처리)
+# =========================
+def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, my_student_id, login_name, login_pin):
+    """관리자 투자 화면을 동일하게 렌더링(권한 학생의 투자(관리자) 탭에서도 동일 UI/기능)."""
+    # ✅ 이 함수 내부에서는 is_admin 값을 force_is_admin으로 "가상" 설정해서
+    #    관리자 화면 분기(학생용 UI 숨김 등)가 관리자와 동일하게 동작하게 한다.
+    is_admin = bool(force_is_admin)
+    inv_admin_ok = bool(inv_admin_ok_flag)  # ✅ 관리자 기능 실행 허용 여부(권한)
+    
+    INV_PROD_COL = "invest_products"
+    INV_HIST_COL = "invest_price_history"
+    INV_LEDGER_COL = "invest_ledger"
+    
+    # -------------------------
+    # 유틸(함수 대신 안전하게 inline)
+    # -------------------------
+    days_ko = ["월", "화", "수", "목", "금", "토", "일"]
+    
+    def _as_price1(v):
+        try:
+            return float(f"{float(v):.1f}")
+        except Exception:
+            return 0.0
+    
+    def _ts_to_dt(v):
+        if v is None:
             return None
-
-        def _fmt_kor_date_md(dt_obj):
-            if not dt_obj:
-                return "-"
-            try:
-                dt_kst = dt_obj.astimezone(KST)
-            except Exception:
-                dt_kst = dt_obj
-            try:
-                wd = days_ko[int(dt_kst.weekday())]
-            except Exception:
-                wd = ""
-            return f"{dt_kst.month}월 {dt_kst.day}일({wd})"
-
-        # -------------------------
-        # 권한: 지급(회수) 가능?
-        # - 관리자 or 직업 '투자증권'
-        # -------------------------
-        def _can_redeem(actor_student_id: str) -> bool:
-            if inv_admin_ok:
-                return True
-            try:
-                if not actor_student_id:
-                    return False
-                snap = db.collection("students").document(str(actor_student_id)).get()
-                if not snap.exists:
-                    return False
-                rid = str((snap.to_dict() or {}).get("role_id", "") or "")
-                if not rid:
-                    return False
-                roles = api_list_roles_cached()
-                for r in roles:
-                    if str(r.get("role_id")) == rid:
-                        return str(r.get("role_name", "") or "") == "투자증권"
+        if isinstance(v, datetime):
+            return v
+        try:
+            if hasattr(v, "to_datetime"):
+                out = v.to_datetime()
+                if isinstance(out, datetime):
+                    return out
+        except Exception:
+            pass
+        return None
+    
+    def _fmt_kor_date_md(dt_obj):
+        if not dt_obj:
+            return "-"
+        try:
+            dt_kst = dt_obj.astimezone(KST)
+        except Exception:
+            dt_kst = dt_obj
+        try:
+            wd = days_ko[int(dt_kst.weekday())]
+        except Exception:
+            wd = ""
+        return f"{dt_kst.month}월 {dt_kst.day}일({wd})"
+    
+    # -------------------------
+    # 권한: 지급(회수) 가능?
+    # - 관리자 or 직업 '투자증권'
+    # -------------------------
+    def _can_redeem(actor_student_id: str) -> bool:
+        if inv_admin_ok:
+            return True
+        try:
+            if not actor_student_id:
                 return False
-            except Exception:
+            snap = db.collection("students").document(str(actor_student_id)).get()
+            if not snap.exists:
                 return False
-
-        # -------------------------
-        # 장부 로드
-        # -------------------------
-        def _load_ledger(for_student_id: str | None):
+            rid = str((snap.to_dict() or {}).get("role_id", "") or "")
+            if not rid:
+                return False
+            roles = api_list_roles_cached()
+            for r in roles:
+                if str(r.get("role_id")) == rid:
+                    return str(r.get("role_name", "") or "") == "투자증권"
+            return False
+        except Exception:
+            return False
+    
+    # -------------------------
+    # 장부 로드
+    # -------------------------
+    def _load_ledger(for_student_id: str | None):
+        try:
+            q = (
+                db.collection(INV_LEDGER_COL)
+                .order_by("buy_at", direction=firestore.Query.DESCENDING)
+                .limit(400)
+                .stream()
+            )
+            rows = []
+            for d in q:
+                x = d.to_dict() or {}
+                if for_student_id and str(x.get("student_id")) != str(for_student_id):
+                    continue
+                rows.append({**x, "_doc_id": d.id})
+            return rows
+        except Exception:
+            # fallback(인덱스 등)
             try:
-                q = (
-                    db.collection(INV_LEDGER_COL)
-                    .order_by("buy_at", direction=firestore.Query.DESCENDING)
-                    .limit(400)
-                    .stream()
-                )
+                q = db.collection(INV_LEDGER_COL).limit(400).stream()
                 rows = []
                 for d in q:
                     x = d.to_dict() or {}
@@ -5613,542 +5625,747 @@ if "admin::📈 투자" in tabs:
                     rows.append({**x, "_doc_id": d.id})
                 return rows
             except Exception:
-                # fallback(인덱스 등)
-                try:
-                    q = db.collection(INV_LEDGER_COL).limit(400).stream()
-                    rows = []
-                    for d in q:
-                        x = d.to_dict() or {}
-                        if for_student_id and str(x.get("student_id")) != str(for_student_id):
-                            continue
-                        rows.append({**x, "_doc_id": d.id})
-                    return rows
-                except Exception:
-                    return []
-
-        # -------------------------
-        # 주가 변동 내역 로드 (표용)
-        # -------------------------
-        def _get_history(product_id: str, limit=120):
-            pid = str(product_id)
-            out = []
-            # 1) 인덱스 OK일 때
-            try:
-                q = (
-                    db.collection(INV_HIST_COL)
-                    .where(filter=FieldFilter("product_id", "==", pid))
-                    .order_by("created_at", direction=firestore.Query.DESCENDING)
-                    .limit(int(limit))
-                    .stream()
-                )
-                for d in q:
-                    x = d.to_dict() or {}
-                    out.append(
-                        {
-                            "created_at": x.get("created_at"),
-                            "reason": str(x.get("reason", "") or "").strip(),
-                            "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
-                            "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
-                        }
-                    )
-                return out
-            except Exception:
-                pass
-
-            # 2) fallback
-            try:
-                q = (
-                    db.collection(INV_HIST_COL)
-                    .where(filter=FieldFilter("product_id", "==", pid))
-                    .limit(int(limit))
-                    .stream()
-                )
-                for d in q:
-                    x = d.to_dict() or {}
-                    out.append(
-                        {
-                            "created_at": x.get("created_at"),
-                            "reason": str(x.get("reason", "") or "").strip(),
-                            "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
-                            "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
-                        }
-                    )
-                out.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
-                return out
-            except Exception:
                 return []
-
-        # -------------------------
-        # 종목 로드
-        # -------------------------
-        def _get_products(active_only=True):
-            try:
-                q = db.collection(INV_PROD_COL)
-                if active_only:
-                    q = q.where(filter=FieldFilter("is_active", "==", True))
-                docs = q.stream()
-                out = []
-                for d in docs:
-                    x = d.to_dict() or {}
-                    nm = str(x.get("name", "") or "").strip()
-                    if not nm:
-                        continue
-                    out.append(
-                        {
-                            "product_id": d.id,
-                            "name": nm,
-                            "current_price": _as_price1(x.get("current_price", 0.0)),
-                            "is_active": bool(x.get("is_active", True)),
-                        }
-                    )
-                out.sort(key=lambda r: r["name"])
-                return out
-            except Exception:
-                return []
-
-        # -------------------------
-        # 회수 계산(÷10)
-        # -------------------------
-        def _calc_redeem_amount(invest_amount: int, buy_price: float, sell_price: float):
-            invest_amount = int(invest_amount or 0)
-            buy_price = _as_price1(buy_price)
-            sell_price = _as_price1(sell_price)
-            diff = _as_price1(sell_price - buy_price)
-
-            # diff <= -100 : 전액 손실
-            if diff <= -100:
-                profit = -invest_amount
-                redeem_amt = 0
-            else:
-                profit = invest_amount * float(diff) / 10.0  # ✅ 나누기 10
-                redeem_amt = invest_amount + profit
-                if redeem_amt < 0:
-                    redeem_amt = 0
-
-            return diff, profit, int(round(redeem_amt))
-
-        # -------------------------------------------------
-        # 1) (상단) 종목 및 주가 변동
-        # -------------------------------------------------
-        st.markdown("### 📈 종목 및 주가 변동")
-
-        # (사용자) 상단 요약: 현재 잔액 / 투자 총액
-        if not is_admin:
-            cur_bal = 0
-            try:
-                if my_student_id:
-                    s = db.collection("students").document(str(my_student_id)).get()
-                    if s.exists:
-                        cur_bal = int((s.to_dict() or {}).get("balance", 0) or 0)
-            except Exception:
-                cur_bal = 0
-
-            inv_total = 0
-            try:
-                my_rows = _load_ledger(my_student_id)
-                inv_total = sum(
-                    int(r.get("invest_amount", 0) or 0)
-                    for r in my_rows
-                    if not bool(r.get("redeemed", False))
-                )
-            except Exception:
-                inv_total = 0
-
-            cA, cB = st.columns(2, gap="small")
-            with cA:
-                st.markdown(f"**현재 잔액:** {cur_bal}드림")
-            with cB:
-                st.markdown(f"**투자 총액:** {inv_total}드림")
-            st.divider()
-
-        products = _get_products(active_only=True)
-        if not products:
-            st.info("등록된 투자 종목이 없습니다. (관리자) 아래에서 종목을 먼저 추가해 주세요.")
-        else:
-            for p in products:
-                nm = p["name"]
-                cur = p["current_price"]
-                st.markdown(f"- **{nm}** (현재주가 **{cur:.1f}**)")
-
-                if inv_admin_ok:
-                    with st.expander(f"{nm} 주가 변동 반영", expanded=False):
-                        c1, c2, c3 = st.columns([3.2, 2.2, 1.2], gap="small")
-                        with c1:
-                            reason = st.text_input("변동 사유", key=f"inv_reason_{p['product_id']}")
-                        with c2:
-                            new_price = st.number_input(
-                                "주가",
-                                min_value=0.0,
-                                max_value=999.9,
-                                step=0.1,
-                                format="%.1f",
-                                value=float(cur),
-                                key=f"inv_price_{p['product_id']}",
-                            )
-                        with c3:
-                            save_btn = st.button("저장", use_container_width=True, key=f"inv_save_{p['product_id']}")
-
-                        if save_btn:
-                            reason2 = str(reason or "").strip()
-                            if not reason2:
-                                st.warning("변동 사유를 입력해 주세요.")
-                            else:
-                                try:
-                                    payload = {
-                                        "product_id": p["product_id"],
-                                        "reason": reason2,
-                                        "price_before": _as_price1(cur),
-                                        "price_after": _as_price1(new_price),
-                                        "created_at": firestore.SERVER_TIMESTAMP,
-                                    }
-                                    db.collection(INV_HIST_COL).document().set(payload)
-                                    db.collection(INV_PROD_COL).document(p["product_id"]).set(
-                                        {"current_price": _as_price1(new_price), "updated_at": firestore.SERVER_TIMESTAMP},
-                                        merge=True,
-                                    )
-                                    toast("주가가 반영되었습니다.", icon="✅")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"저장 실패: {e}")
-
-                        # 변동 내역(표)
-                        hist = _get_history(p["product_id"], limit=120)
-                        if hist:
-                            rows = []
-                            for h in hist:
-                                dt = _ts_to_dt(h.get("created_at"))
-                                pb = float(h.get("price_before", 0.0) or 0.0)
-                                pa = float(h.get("price_after", 0.0) or 0.0)
-                                diff = round(pa - pb, 1)
-
-                                # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
-                                def _fmt_kor_datetime(dt_obj):
-                                    if not dt_obj:
-                                        return "-"
-                                    try:
-                                        dt_kst = dt_obj.astimezone(KST)
-                                    except Exception:
-                                        dt_kst = dt_obj
-
-                                    hour = dt_kst.hour
-                                    ampm = "오전" if hour < 12 else "오후"
-                                    hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
-                                    return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
-
-                                # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
-                                if diff > 0:
-                                    diff_view = f"<span style='color:red'>▲ +{diff:.1f}</span>"
-                                elif diff < 0:
-                                    diff_view = f"<span style='color:blue'>▼ {diff:.1f}</span>"
-                                else:
-                                    diff_view = "-"
-
-                                rows.append(
-                                    {
-                                        "변동일시": _fmt_kor_datetime(dt),
-                                        "변동사유": h.get("reason", "") or "",
-                                        "주가": f"{pa:.1f}",          # ✅ '변동 후' → '주가'
-                                        "주가 등락": diff_view,
-                                    }
-                                )
-
-                            df = pd.DataFrame(rows)
-
-                            # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                            left, right = st.columns([1.7, 2.2], gap="large")
-
-                            with left:
-                                st.markdown(
-                                    df.to_html(escape=False, index=False),
-                                    unsafe_allow_html=True,
-                                )
-
-                            with right:
-                                # 가로: 변동사유 / 세로: 변동 후(주가)
-                                chart_rows = []
-
-                                # ✅ 초기주가 1점 추가
-                                # - 변동 기록이 있으면: 가장 오래된 기록의 price_before가 '초기주가'
-                                # - 변동 기록이 없으면: 현재주가를 초기로 표시
-                                init_price = None
-                                if hist:
-                                    oldest = hist[-1]  # hist는 최신순이라 마지막이 가장 오래됨
-                                    init_price = float(oldest.get("price_before", 0.0) or 0.0)
-                                if init_price is None:
-                                    init_price = float(p.get("current_price", 0.0) or 0.0)
-
-                                chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
-
-                                # ✅ 이후 변동(오래된→최신)
-                                for h2 in reversed(hist):
-                                    reason2 = str(h2.get("reason", "") or "").strip() or "-"
-                                    pa2 = float(h2.get("price_after", 0.0) or 0.0)
-                                    chart_rows.append({"변동사유": reason2, "변동 후": round(pa2, 1)})
-
-                                cdf = pd.DataFrame(chart_rows)
-
-                                if not cdf.empty:
-                                    order = cdf["변동사유"].tolist()
-
-                                    chart = (
-                                        alt.Chart(cdf)
-                                        .mark_line(point=True)
-                                        .encode(
-                                            x=alt.X(
-                                                "변동사유:N",
-                                                sort=order,
-                                                title=None,
-                                                axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
-                                            ),
-                                            y=alt.Y(
-                                                "변동 후:Q",
-                                                title=None,
-                                                scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
-                                            ),
-                                            tooltip=["변동사유", "변동 후"],
-                                        )
-                                        .properties(height=260)
-                                    )
-                                    st.altair_chart(chart, use_container_width=True)
-                                else:
-                                    st.caption("그래프 데이터가 없습니다.")
-
-                        else:
-                            st.caption("아직 주가 변동 기록이 없습니다.")
-
-                else:
-                    with st.expander(f"{nm} 주가 변동 내역", expanded=False):
-                        # 변동 내역(표)
-                        hist = _get_history(p["product_id"], limit=120)
-                        if hist:
-                            rows = []
-                            for h in hist:
-                                dt = _ts_to_dt(h.get("created_at"))
-                                pb = float(h.get("price_before", 0.0) or 0.0)
-                                pa = float(h.get("price_after", 0.0) or 0.0)
-                                diff = round(pa - pb, 1)
-
-                                # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
-                                def _fmt_kor_datetime(dt_obj):
-                                    if not dt_obj:
-                                        return "-"
-                                    try:
-                                        dt_kst = dt_obj.astimezone(KST)
-                                    except Exception:
-                                        dt_kst = dt_obj
-
-                                    hour = dt_kst.hour
-                                    ampm = "오전" if hour < 12 else "오후"
-                                    hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
-                                    return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
-
-                                # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
-                                if diff > 0:
-                                    diff_view = f"<span style='color:red'>▲ +{diff:.1f}</span>"
-                                elif diff < 0:
-                                    diff_view = f"<span style='color:blue'>▼ {diff:.1f}</span>"
-                                else:
-                                    diff_view = "-"
-
-                                rows.append(
-                                    {
-                                        "변동일시": _fmt_kor_datetime(dt),
-                                        "변동사유": h.get("reason", "") or "",
-                                        "주가": f"{pa:.1f}",          # ✅ '변동 후' → '주가'
-                                        "주가 등락": diff_view,
-                                    }
-                                )
-
-                            df = pd.DataFrame(rows)
-
-                            # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                            left, right = st.columns([1.7,2.2], gap="large")
-
-                            with left:
-                                st.markdown(
-                                    df.to_html(escape=False, index=False),
-                                    unsafe_allow_html=True,
-                                )
-
-                            with right:
-                                # 가로: 변동사유 / 세로: 변동 후(주가)
-                                chart_rows = []
-
-                                # ✅ 초기주가 1점 추가
-                                # - 변동 기록이 있으면: 가장 오래된 기록의 price_before가 '초기주가'
-                                # - 변동 기록이 없으면: 현재주가를 초기로 표시
-                                init_price = None
-                                if hist:
-                                    oldest = hist[-1]  # hist는 최신순이라 마지막이 가장 오래됨
-                                    init_price = float(oldest.get("price_before", 0.0) or 0.0)
-                                if init_price is None:
-                                    init_price = float(p.get("current_price", 0.0) or 0.0)
-
-                                chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
-
-                                # ✅ 이후 변동(오래된→최신)
-                                for h2 in reversed(hist):
-                                    reason2 = str(h2.get("reason", "") or "").strip() or "-"
-                                    pa2 = float(h2.get("price_after", 0.0) or 0.0)
-                                    chart_rows.append({"변동사유": reason2, "변동 후": round(pa2, 1)})
-
-                                cdf = pd.DataFrame(chart_rows)
-
-                                if not cdf.empty:
-                                    order = cdf["변동사유"].tolist()
-
-                                    chart = (
-                                        alt.Chart(cdf)
-                                        .mark_line(point=True)
-                                        .encode(
-                                            x=alt.X(
-                                                "변동사유:N",
-                                                sort=order,
-                                                title=None,
-                                                axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
-                                            ),
-                                            y=alt.Y(
-                                                "변동 후:Q",
-                                                title=None,
-                                                scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
-                                            ),
-                                            tooltip=["변동사유", "변동 후"],
-                                        )
-                                        .properties(height=260)
-                                    )
-                                    st.altair_chart(chart, use_container_width=True)
-                                else:
-                                    st.caption("그래프 데이터가 없습니다.")
-
-                        else:
-                            st.caption("아직 주가 변동 기록이 없습니다.")
-
-        st.divider()
-
-        # -------------------------------------------------
-        # 2) 투자 상품 관리 장부
-        # -------------------------------------------------
-        st.markdown("### 🧾 투자 상품 관리 장부")
-
-        ledger_rows = _load_ledger(None if is_admin else my_student_id)
-
-        view_rows = []
-        for x in ledger_rows:
-            redeemed = bool(x.get("redeemed", False))
-            view_rows.append(
-                {
-                    "번호": int(x.get("no", 0) or 0),
-                    "이름": str(x.get("name", "") or ""),
-                    "종목": str(x.get("product_name", "") or ""),
-                    "매입일자": str(x.get("buy_date_label", "") or ""),
-                    "매입 주가": f"{_as_price1(x.get('buy_price', 0.0)):.1f}",
-                    "투자 금액": int(x.get("invest_amount", 0) or 0),
-                    "지급완료": "✅" if redeemed else "",
-                    "매수일자": str(x.get("sell_date_label", "") or ""),
-                    "매수 주가": f"{_as_price1(x.get('sell_price', 0.0)):.1f}" if redeemed else "",
-                    "주가차이": f"{_as_price1(x.get('diff', 0.0)):.1f}" if redeemed else "",
-                    "수익/손실금": int(round(float(x.get("profit", 0.0) or 0.0))) if redeemed else "",
-                    "찾을 금액": int(x.get("redeem_amount", 0) or 0) if redeemed else "",
-                    "_doc_id": x.get("_doc_id"),
-                    "_student_id": x.get("student_id"),
-                    "_product_id": x.get("product_id"),
-                    "_buy_price": x.get("buy_price"),
-                    "_invest_amount": x.get("invest_amount"),
-                }
+    
+    # -------------------------
+    # 주가 변동 내역 로드 (표용)
+    # -------------------------
+    def _get_history(product_id: str, limit=120):
+        pid = str(product_id)
+        out = []
+        # 1) 인덱스 OK일 때
+        try:
+            q = (
+                db.collection(INV_HIST_COL)
+                .where(filter=FieldFilter("product_id", "==", pid))
+                .order_by("created_at", direction=firestore.Query.DESCENDING)
+                .limit(int(limit))
+                .stream()
             )
-
-        if view_rows:
-            st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
-                         use_container_width=True, hide_index=True)
+            for d in q:
+                x = d.to_dict() or {}
+                out.append(
+                    {
+                        "created_at": x.get("created_at"),
+                        "reason": str(x.get("reason", "") or "").strip(),
+                        "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
+                        "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
+                    }
+                )
+            return out
+        except Exception:
+            pass
+    
+        # 2) fallback
+        try:
+            q = (
+                db.collection(INV_HIST_COL)
+                .where(filter=FieldFilter("product_id", "==", pid))
+                .limit(int(limit))
+                .stream()
+            )
+            for d in q:
+                x = d.to_dict() or {}
+                out.append(
+                    {
+                        "created_at": x.get("created_at"),
+                        "reason": str(x.get("reason", "") or "").strip(),
+                        "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
+                        "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
+                    }
+                )
+            out.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+            return out
+        except Exception:
+            return []
+    
+    # -------------------------
+    # 종목 로드
+    # -------------------------
+    def _get_products(active_only=True):
+        try:
+            q = db.collection(INV_PROD_COL)
+            if active_only:
+                q = q.where(filter=FieldFilter("is_active", "==", True))
+            docs = q.stream()
+            out = []
+            for d in docs:
+                x = d.to_dict() or {}
+                nm = str(x.get("name", "") or "").strip()
+                if not nm:
+                    continue
+                out.append(
+                    {
+                        "product_id": d.id,
+                        "name": nm,
+                        "current_price": _as_price1(x.get("current_price", 0.0)),
+                        "is_active": bool(x.get("is_active", True)),
+                    }
+                )
+            out.sort(key=lambda r: r["name"])
+            return out
+        except Exception:
+            return []
+    
+    # -------------------------
+    # 회수 계산(÷10)
+    # -------------------------
+    def _calc_redeem_amount(invest_amount: int, buy_price: float, sell_price: float):
+        invest_amount = int(invest_amount or 0)
+        buy_price = _as_price1(buy_price)
+        sell_price = _as_price1(sell_price)
+        diff = _as_price1(sell_price - buy_price)
+    
+        # diff <= -100 : 전액 손실
+        if diff <= -100:
+            profit = -invest_amount
+            redeem_amt = 0
         else:
-            st.caption("투자 내역이 없습니다.")
-
-        # -------------------------------------------------
-        # 2-1) 지급(회수) 처리
-        # -------------------------------------------------
-        pending = [x for x in view_rows if not any([x.get("지급완료") == "✅"])]
-        if pending:
-            st.markdown("#### 💸 투자 회수(지급)")
-            can_redeem_now = _can_redeem(my_student_id)
-            if (not is_admin) and (not can_redeem_now):
-                st.info("투자 회수는 관리자 또는 '투자증권' 직업 학생만 할 수 있어요.")
-            else:
-                for x in pending[:100]:
-                    doc_id = str(x.get("_doc_id", "") or "")
-                    sid = str(x.get("_student_id", "") or "")
-                    pid = str(x.get("_product_id", "") or "")
-                    buy_price = _as_price1(x.get("_buy_price", 0.0))
-                    invest_amt = int(x.get("_invest_amount", 0) or 0)
-                    prod_name = str(x.get("종목", "") or "")
-
-                    # 현재 주가 찾기
-                    cur_price = buy_price
-                    for p in products:
-                        if str(p["product_id"]) == pid:
-                            cur_price = _as_price1(p["current_price"])
-                            break
-
-                    diff, profit, redeem_amt = _calc_redeem_amount(invest_amt, buy_price, cur_price)
-
-                    c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
-                    with c1:
-                        st.markdown(f"**{x.get('번호','')}**")
-                    with c2:
-                        st.markdown(f"{x.get('이름','')}")
-                        st.caption(prod_name)
-                    with c3:
-                        st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
-                        st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
-                    with c4:
-                        if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
-
-                            sell_dt = datetime.now(tz=KST)
-                            sell_label = _fmt_kor_date_md(sell_dt)
-                            memo = f"투자 회수({prod_name})"
-
-                            if inv_admin_ok:
-                                res = api_admin_add_tx_by_student_id(
-                                    admin_pin=ADMIN_PIN,
-                                    student_id=sid,
-                                    memo=memo,
-                                    deposit=int(redeem_amt),
-                                    withdraw=0,
-                                )
-                            else:
-                                res = api_broker_deposit_by_student_id(
-                                    actor_student_id=my_student_id,
-                                    student_id=sid,
-                                    memo=memo,
-                                    deposit=int(redeem_amt),
-                                )
-
-                            if res.get("ok"):
-                                try:
-                                    db.collection(INV_LEDGER_COL).document(doc_id).set(
-                                        {
-                                            "redeemed": True,
-                                            "sell_at": firestore.SERVER_TIMESTAMP,
-                                            "sell_date_label": sell_label,
-                                            "sell_price": _as_price1(cur_price),
-                                            "diff": _as_price1(diff),
-                                            "profit": float(profit),
-                                            "redeem_amount": int(redeem_amt),
-                                        },
-                                        merge=True,
-                                    )
-                                    toast("지급 완료!", icon="✅")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"장부 업데이트 실패: {e}")
-                            else:
-                                st.error(res.get("error", "지급 실패"))
-
+            profit = invest_amount * float(diff) / 10.0  # ✅ 나누기 10
+            redeem_amt = invest_amount + profit
+            if redeem_amt < 0:
+                redeem_amt = 0
+    
+        return diff, profit, int(round(redeem_amt))
+    
+    # -------------------------------------------------
+    # 1) (상단) 종목 및 주가 변동
+    # -------------------------------------------------
+    st.markdown("### 📈 종목 및 주가 변동")
+    
+    # (사용자) 상단 요약: 현재 잔액 / 투자 총액
+    if not is_admin:
+        cur_bal = 0
+        try:
+            if my_student_id:
+                s = db.collection("students").document(str(my_student_id)).get()
+                if s.exists:
+                    cur_bal = int((s.to_dict() or {}).get("balance", 0) or 0)
+        except Exception:
+            cur_bal = 0
+    
+        inv_total = 0
+        try:
+            my_rows = _load_ledger(my_student_id)
+            inv_total = sum(
+                int(r.get("invest_amount", 0) or 0)
+                for r in my_rows
+                if not bool(r.get("redeemed", False))
+            )
+        except Exception:
+            inv_total = 0
+    
+        cA, cB = st.columns(2, gap="small")
+        with cA:
+            st.markdown(f"**현재 잔액:** {cur_bal}드림")
+        with cB:
+            st.markdown(f"**투자 총액:** {inv_total}드림")
         st.divider()
-
+    
+    products = _get_products(active_only=True)
+    if not products:
+        st.info("등록된 투자 종목이 없습니다. (관리자) 아래에서 종목을 먼저 추가해 주세요.")
+    else:
+        for p in products:
+            nm = p["name"]
+            cur = p["current_price"]
+            st.markdown(f"- **{nm}** (현재주가 **{cur:.1f}**)")
+    
+            if inv_admin_ok:
+                with st.expander(f"{nm} 주가 변동 반영", expanded=False):
+                    c1, c2, c3 = st.columns([3.2, 2.2, 1.2], gap="small")
+                    with c1:
+                        reason = st.text_input("변동 사유", key=f"inv_reason_{p['product_id']}")
+                    with c2:
+                        new_price = st.number_input(
+                            "주가",
+                            min_value=0.0,
+                            max_value=999.9,
+                            step=0.1,
+                            format="%.1f",
+                            value=float(cur),
+                            key=f"inv_price_{p['product_id']}",
+                        )
+                    with c3:
+                        save_btn = st.button("저장", use_container_width=True, key=f"inv_save_{p['product_id']}")
+    
+                    if save_btn:
+                        reason2 = str(reason or "").strip()
+                        if not reason2:
+                            st.warning("변동 사유를 입력해 주세요.")
+                        else:
+                            try:
+                                payload = {
+                                    "product_id": p["product_id"],
+                                    "reason": reason2,
+                                    "price_before": _as_price1(cur),
+                                    "price_after": _as_price1(new_price),
+                                    "created_at": firestore.SERVER_TIMESTAMP,
+                                }
+                                db.collection(INV_HIST_COL).document().set(payload)
+                                db.collection(INV_PROD_COL).document(p["product_id"]).set(
+                                    {"current_price": _as_price1(new_price), "updated_at": firestore.SERVER_TIMESTAMP},
+                                    merge=True,
+                                )
+                                toast("주가가 반영되었습니다.", icon="✅")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"저장 실패: {e}")
+    
+                    # 변동 내역(표)
+                    hist = _get_history(p["product_id"], limit=120)
+                    if hist:
+                        rows = []
+                        for h in hist:
+                            dt = _ts_to_dt(h.get("created_at"))
+                            pb = float(h.get("price_before", 0.0) or 0.0)
+                            pa = float(h.get("price_after", 0.0) or 0.0)
+                            diff = round(pa - pb, 1)
+    
+                            # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
+                            def _fmt_kor_datetime(dt_obj):
+                                if not dt_obj:
+                                    return "-"
+                                try:
+                                    dt_kst = dt_obj.astimezone(KST)
+                                except Exception:
+                                    dt_kst = dt_obj
+    
+                                hour = dt_kst.hour
+                                ampm = "오전" if hour < 12 else "오후"
+                                hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
+                                return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
+    
+                            # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
+                            if diff > 0:
+                                diff_view = f"<span style='color:red'>▲ +{diff:.1f}</span>"
+                            elif diff < 0:
+                                diff_view = f"<span style='color:blue'>▼ {diff:.1f}</span>"
+                            else:
+                                diff_view = "-"
+    
+                            rows.append(
+                                {
+                                    "변동일시": _fmt_kor_datetime(dt),
+                                    "변동사유": h.get("reason", "") or "",
+                                    "주가": f"{pa:.1f}",          # ✅ '변동 후' → '주가'
+                                    "주가 등락": diff_view,
+                                }
+                            )
+    
+                        df = pd.DataFrame(rows)
+    
+                        # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
+                        left, right = st.columns([1.7, 2.2], gap="large")
+    
+                        with left:
+                            st.markdown(
+                                df.to_html(escape=False, index=False),
+                                unsafe_allow_html=True,
+                            )
+    
+                        with right:
+                            # 가로: 변동사유 / 세로: 변동 후(주가)
+                            chart_rows = []
+    
+                            # ✅ 초기주가 1점 추가
+                            # - 변동 기록이 있으면: 가장 오래된 기록의 price_before가 '초기주가'
+                            # - 변동 기록이 없으면: 현재주가를 초기로 표시
+                            init_price = None
+                            if hist:
+                                oldest = hist[-1]  # hist는 최신순이라 마지막이 가장 오래됨
+                                init_price = float(oldest.get("price_before", 0.0) or 0.0)
+                            if init_price is None:
+                                init_price = float(p.get("current_price", 0.0) or 0.0)
+    
+                            chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
+    
+                            # ✅ 이후 변동(오래된→최신)
+                            for h2 in reversed(hist):
+                                reason2 = str(h2.get("reason", "") or "").strip() or "-"
+                                pa2 = float(h2.get("price_after", 0.0) or 0.0)
+                                chart_rows.append({"변동사유": reason2, "변동 후": round(pa2, 1)})
+    
+                            cdf = pd.DataFrame(chart_rows)
+    
+                            if not cdf.empty:
+                                order = cdf["변동사유"].tolist()
+    
+                                chart = (
+                                    alt.Chart(cdf)
+                                    .mark_line(point=True)
+                                    .encode(
+                                        x=alt.X(
+                                            "변동사유:N",
+                                            sort=order,
+                                            title=None,
+                                            axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
+                                        ),
+                                        y=alt.Y(
+                                            "변동 후:Q",
+                                            title=None,
+                                            scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
+                                        ),
+                                        tooltip=["변동사유", "변동 후"],
+                                    )
+                                    .properties(height=260)
+                                )
+                                st.altair_chart(chart, use_container_width=True)
+                            else:
+                                st.caption("그래프 데이터가 없습니다.")
+    
+                    else:
+                        st.caption("아직 주가 변동 기록이 없습니다.")
+    
+            else:
+                with st.expander(f"{nm} 주가 변동 내역", expanded=False):
+                    # 변동 내역(표)
+                    hist = _get_history(p["product_id"], limit=120)
+                    if hist:
+                        rows = []
+                        for h in hist:
+                            dt = _ts_to_dt(h.get("created_at"))
+                            pb = float(h.get("price_before", 0.0) or 0.0)
+                            pa = float(h.get("price_after", 0.0) or 0.0)
+                            diff = round(pa - pb, 1)
+    
+                            # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
+                            def _fmt_kor_datetime(dt_obj):
+                                if not dt_obj:
+                                    return "-"
+                                try:
+                                    dt_kst = dt_obj.astimezone(KST)
+                                except Exception:
+                                    dt_kst = dt_obj
+    
+                                hour = dt_kst.hour
+                                ampm = "오전" if hour < 12 else "오후"
+                                hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
+                                return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
+    
+                            # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
+                            if diff > 0:
+                                diff_view = f"<span style='color:red'>▲ +{diff:.1f}</span>"
+                            elif diff < 0:
+                                diff_view = f"<span style='color:blue'>▼ {diff:.1f}</span>"
+                            else:
+                                diff_view = "-"
+    
+                            rows.append(
+                                {
+                                    "변동일시": _fmt_kor_datetime(dt),
+                                    "변동사유": h.get("reason", "") or "",
+                                    "주가": f"{pa:.1f}",          # ✅ '변동 후' → '주가'
+                                    "주가 등락": diff_view,
+                                }
+                            )
+    
+                        df = pd.DataFrame(rows)
+    
+                        # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
+                        left, right = st.columns([1.7,2.2], gap="large")
+    
+                        with left:
+                            st.markdown(
+                                df.to_html(escape=False, index=False),
+                                unsafe_allow_html=True,
+                            )
+    
+                        with right:
+                            # 가로: 변동사유 / 세로: 변동 후(주가)
+                            chart_rows = []
+    
+                            # ✅ 초기주가 1점 추가
+                            # - 변동 기록이 있으면: 가장 오래된 기록의 price_before가 '초기주가'
+                            # - 변동 기록이 없으면: 현재주가를 초기로 표시
+                            init_price = None
+                            if hist:
+                                oldest = hist[-1]  # hist는 최신순이라 마지막이 가장 오래됨
+                                init_price = float(oldest.get("price_before", 0.0) or 0.0)
+                            if init_price is None:
+                                init_price = float(p.get("current_price", 0.0) or 0.0)
+    
+                            chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
+    
+                            # ✅ 이후 변동(오래된→최신)
+                            for h2 in reversed(hist):
+                                reason2 = str(h2.get("reason", "") or "").strip() or "-"
+                                pa2 = float(h2.get("price_after", 0.0) or 0.0)
+                                chart_rows.append({"변동사유": reason2, "변동 후": round(pa2, 1)})
+    
+                            cdf = pd.DataFrame(chart_rows)
+    
+                            if not cdf.empty:
+                                order = cdf["변동사유"].tolist()
+    
+                                chart = (
+                                    alt.Chart(cdf)
+                                    .mark_line(point=True)
+                                    .encode(
+                                        x=alt.X(
+                                            "변동사유:N",
+                                            sort=order,
+                                            title=None,
+                                            axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
+                                        ),
+                                        y=alt.Y(
+                                            "변동 후:Q",
+                                            title=None,
+                                            scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
+                                        ),
+                                        tooltip=["변동사유", "변동 후"],
+                                    )
+                                    .properties(height=260)
+                                )
+                                st.altair_chart(chart, use_container_width=True)
+                            else:
+                                st.caption("그래프 데이터가 없습니다.")
+    
+                    else:
+                        st.caption("아직 주가 변동 기록이 없습니다.")
+    
+    st.divider()
+    
+    # -------------------------------------------------
+    # 2) 투자 상품 관리 장부
+    # -------------------------------------------------
+    st.markdown("### 🧾 투자 상품 관리 장부")
+    
+    ledger_rows = _load_ledger(None if is_admin else my_student_id)
+    
+    view_rows = []
+    for x in ledger_rows:
+        redeemed = bool(x.get("redeemed", False))
+        view_rows.append(
+            {
+                "번호": int(x.get("no", 0) or 0),
+                "이름": str(x.get("name", "") or ""),
+                "종목": str(x.get("product_name", "") or ""),
+                "매입일자": str(x.get("buy_date_label", "") or ""),
+                "매입 주가": f"{_as_price1(x.get('buy_price', 0.0)):.1f}",
+                "투자 금액": int(x.get("invest_amount", 0) or 0),
+                "지급완료": "✅" if redeemed else "",
+                "매수일자": str(x.get("sell_date_label", "") or ""),
+                "매수 주가": f"{_as_price1(x.get('sell_price', 0.0)):.1f}" if redeemed else "",
+                "주가차이": f"{_as_price1(x.get('diff', 0.0)):.1f}" if redeemed else "",
+                "수익/손실금": int(round(float(x.get("profit", 0.0) or 0.0))) if redeemed else "",
+                "찾을 금액": int(x.get("redeem_amount", 0) or 0) if redeemed else "",
+                "_doc_id": x.get("_doc_id"),
+                "_student_id": x.get("student_id"),
+                "_product_id": x.get("product_id"),
+                "_buy_price": x.get("buy_price"),
+                "_invest_amount": x.get("invest_amount"),
+            }
+        )
+    
+    if view_rows:
+        st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
+                     use_container_width=True, hide_index=True)
+    else:
+        st.caption("투자 내역이 없습니다.")
+    
+    # -------------------------------------------------
+    # 2-1) 지급(회수) 처리
+    # -------------------------------------------------
+    pending = [x for x in view_rows if not any([x.get("지급완료") == "✅"])]
+    if pending:
+        st.markdown("#### 💸 투자 회수(지급)")
+        can_redeem_now = _can_redeem(my_student_id)
+        if (not is_admin) and (not can_redeem_now):
+            st.info("투자 회수는 관리자 또는 '투자증권' 직업 학생만 할 수 있어요.")
+        else:
+            for x in pending[:100]:
+                doc_id = str(x.get("_doc_id", "") or "")
+                sid = str(x.get("_student_id", "") or "")
+                pid = str(x.get("_product_id", "") or "")
+                buy_price = _as_price1(x.get("_buy_price", 0.0))
+                invest_amt = int(x.get("_invest_amount", 0) or 0)
+                prod_name = str(x.get("종목", "") or "")
+    
+                # 현재 주가 찾기
+                cur_price = buy_price
+                for p in products:
+                    if str(p["product_id"]) == pid:
+                        cur_price = _as_price1(p["current_price"])
+                        break
+    
+                diff, profit, redeem_amt = _calc_redeem_amount(invest_amt, buy_price, cur_price)
+    
+                c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
+                with c1:
+                    st.markdown(f"**{x.get('번호','')}**")
+                with c2:
+                    st.markdown(f"{x.get('이름','')}")
+                    st.caption(prod_name)
+                with c3:
+                    st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
+                    st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
+                with c4:
+                    if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
+    
+                        sell_dt = datetime.now(tz=KST)
+                        sell_label = _fmt_kor_date_md(sell_dt)
+                        memo = f"투자 회수({prod_name})"
+    
+                        if inv_admin_ok:
+                            res = api_admin_add_tx_by_student_id(
+                                admin_pin=ADMIN_PIN,
+                                student_id=sid,
+                                memo=memo,
+                                deposit=int(redeem_amt),
+                                withdraw=0,
+                            )
+                        else:
+                            res = api_broker_deposit_by_student_id(
+                                actor_student_id=my_student_id,
+                                student_id=sid,
+                                memo=memo,
+                                deposit=int(redeem_amt),
+                            )
+    
+                        if res.get("ok"):
+                            try:
+                                db.collection(INV_LEDGER_COL).document(doc_id).set(
+                                    {
+                                        "redeemed": True,
+                                        "sell_at": firestore.SERVER_TIMESTAMP,
+                                        "sell_date_label": sell_label,
+                                        "sell_price": _as_price1(cur_price),
+                                        "diff": _as_price1(diff),
+                                        "profit": float(profit),
+                                        "redeem_amount": int(redeem_amt),
+                                    },
+                                    merge=True,
+                                )
+                                toast("지급 완료!", icon="✅")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"장부 업데이트 실패: {e}")
+                        else:
+                            st.error(res.get("error", "지급 실패"))
+    
+    st.divider()
+    
+    # -------------------------------------------------
+    # 3) (사용자) 투자 실행
+    # -------------------------------------------------
+    if not is_admin:
+        st.markdown("### 💳 투자하기")
+    
+        inv_ok2 = True
+        try:
+            snap = db.collection("students").document(str(my_student_id)).get()
+            if snap.exists:
+                inv_ok2 = bool((snap.to_dict() or {}).get("invest_enabled", True))
+        except Exception:
+            inv_ok2 = True
+    
+        if not inv_ok2:
+            st.warning("이 계정은 현재 투자 기능이 비활성화되어 있어요.")
+        elif not products:
+            st.info("투자 종목이 아직 없어요. 관리자에게 종목 추가를 요청해 주세요.")
+        else:
+            prod_labels = [f"{p['name']} (현재 {p['current_price']:.1f})" for p in products]
+            by_label = {lab: p for lab, p in zip(prod_labels, products)}
+    
+            sel_lab = st.selectbox("투자 종목 선택", prod_labels, key="inv_user_sel_prod")
+            sel_prod = by_label.get(sel_lab)
+    
+            amt = st.number_input("투자 금액", min_value=0, step=10, value=0, key="inv_user_amt")
+            if st.button("투자", use_container_width=True, key="inv_user_btn"):
+                if int(amt) <= 0:
+                    st.warning("투자 금액을 입력해 주세요.")
+                else:
+                    st.session_state["inv_user_confirm"] = True
+    
+            if st.session_state.get("inv_user_confirm", False):
+                st.warning("정말로 투자할까요?")
+                y, n = st.columns(2)
+                with y:
+                    if st.button("예", use_container_width=True, key="inv_user_yes"):
+                        st.session_state["inv_user_confirm"] = False
+    
+                        memo = f"투자 매입({sel_prod['name']})"
+                        res = api_add_tx(login_name, login_pin, memo=memo, deposit=0, withdraw=int(amt))
+                        if res.get("ok"):
+                            try:
+                                sd = fs_auth_student(login_name, login_pin)
+                                sdata = sd.to_dict() or {}
+                                no = int(sdata.get("no", 0) or 0)
+    
+                                buy_dt = datetime.now(tz=KST)
+                                buy_label = _fmt_kor_date_md(buy_dt)
+    
+                                db.collection(INV_LEDGER_COL).document().set(
+                                    {
+                                        "student_id": sd.id,
+                                        "no": no,
+                                        "name": str(sdata.get("name", "") or ""),
+                                        "product_id": sel_prod["product_id"],
+                                        "product_name": sel_prod["name"],
+                                        "buy_at": firestore.SERVER_TIMESTAMP,
+                                        "buy_date_label": buy_label,
+                                        "buy_price": _as_price1(sel_prod["current_price"]),
+                                        "invest_amount": int(amt),
+                                        "redeemed": False,
+                                    }
+                                )
+                                toast("투자 완료! (장부에 반영됨)", icon="✅")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"장부 저장 실패: {e}")
+                        else:
+                            st.error(res.get("error", "투자 실패"))
+                with n:
+                    if st.button("아니오", use_container_width=True, key="inv_user_no"):
+                        st.session_state["inv_user_confirm"] = False
+                        st.rerun()
+    
+    # -------------------------------------------------
+    # 4) (관리자) 투자 종목 추가/수정/삭제
+    # -------------------------------------------------
+    if inv_admin_ok:
+        st.divider()
+        st.markdown("### 🧰 투자 종목 추가/수정/삭제")
+    
+        prod_all = _get_products(active_only=False)
+    
+        # ✅ 드롭다운에는 "활성 종목"만 보이게(삭제=비활성은 숨김)
+        prod_active = [p for p in prod_all if bool(p.get("is_active", True))]
+    
+        labels = ["(신규 추가)"] + [p["name"] for p in prod_active if p["name"]]
+    
+        sel = st.selectbox("편집 대상", labels, key="inv_admin_edit_sel")
+    
+        cur_obj = None
+        if sel != "(신규 추가)":
+            for p in prod_active:
+                if p["name"] == sel:
+                    cur_obj = p
+                    break
+    
+        name_default = "" if cur_obj is None else cur_obj["name"]
+        price_default = 0.0 if cur_obj is None else float(cur_obj["current_price"])
+    
+        c1, c2 = st.columns([2.2, 1.2], gap="small")
+        with c1:
+            new_name = st.text_input("투자 종목명", value=name_default, key="inv_admin_name")
+        with c2:
+            new_price = st.number_input(
+                "초기/현재 주가",
+                min_value=0.0,
+                max_value=999.9,
+                step=0.1,
+                format="%.1f",
+                value=float(price_default),
+                key="inv_admin_price",
+            )
+    
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("저장", use_container_width=True, key="inv_admin_save"):
+                nm = str(new_name or "").strip()
+                if not nm:
+                    st.warning("종목명을 입력해 주세요.")
+                else:
+                    # ✅ 중복 종목명 방지(공백/대소문자 무시)
+                    nm_key = nm.replace(" ", "").lower()
+                    dup = None
+                    for p in prod_all:
+                        pnm = str(p.get("name", "") or "").strip()
+                        if pnm and pnm.replace(" ", "").lower() == nm_key:
+                            dup = p
+                            break
+    
+                    # (신규 추가)인데 이미 존재하면:
+                    # - 활성 종목이면: 중복 추가 막기
+                    # - 비활성(삭제된) 종목이면: 새로 만들지 말고 "복구(재활성화)" 처리
+                    if cur_obj is None and dup is not None:
+                        if bool(dup.get("is_active", True)):
+                            st.error("이미 같은 종목명이 있어요. (중복 추가 불가)")
+                            st.stop()
+                        else:
+                            # ✅ 비활성 종목 복구
+                            try:
+                                db.collection(INV_PROD_COL).document(dup["product_id"]).set(
+                                    {
+                                        "name": nm,
+                                        "current_price": _as_price1(new_price),
+                                        "is_active": True,
+                                        "updated_at": firestore.SERVER_TIMESTAMP,
+                                    },
+                                    merge=True,
+                                )
+                                toast("삭제된 종목을 복구했습니다.", icon="♻️")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"복구 실패: {e}")
+                                st.stop()
+    
+                    # (수정)인데 다른 문서와 이름이 겹치면 막기
+                    if cur_obj is not None and dup is not None and str(dup.get("product_id")) != str(cur_obj.get("product_id")):
+                        st.error("이미 같은 종목명이 있어요. (중복 이름 불가)")
+                        st.stop()
+    
+                    try:
+                        if cur_obj is None:
+                            db.collection(INV_PROD_COL).document().set(
+                                {
+                                    "name": nm,
+                                    "current_price": _as_price1(new_price),
+                                    "is_active": True,
+                                    "created_at": firestore.SERVER_TIMESTAMP,
+                                    "updated_at": firestore.SERVER_TIMESTAMP,
+                                }
+                            )
+                            toast("종목이 추가되었습니다.", icon="✅")
+                        else:
+                            db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
+                                {
+                                    "name": nm,
+                                    "current_price": _as_price1(new_price),
+                                    "is_active": True,
+                                    "updated_at": firestore.SERVER_TIMESTAMP,
+                                },
+                                merge=True,
+                            )
+                            toast("종목이 수정되었습니다.", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"저장 실패: {e}")
+        with b2:
+            if st.button("삭제", use_container_width=True, key="inv_admin_del", disabled=(cur_obj is None)):
+                if cur_obj is None:
+                    st.stop()
+                try:
+                    db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
+                        {"is_active": False, "updated_at": firestore.SERVER_TIMESTAMP},
+                        merge=True,
+                    )
+                    toast("삭제(비활성화) 완료", icon="🗑️")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"삭제 실패: {e}")
+    
+    # =========================
+    # 👥 계정 정보/활성화 (관리자 전용)
+    # =========================
 
 # =========================
-# (학생) 🏦 은행(적금)(관리자) — 별도 탭 (admin::🏦 은행(적금))
+# (학생) 📈 투자(관리자) — 별도 탭 (admin::📈 투자)
 # =========================
+if "admin::📈 투자" in tabs:
+    with tab_map["admin::📈 투자"]:
+        st.subheader("📈 투자(관리자)")
+        # ✅ 이 탭은 "관리자 기능 접근 권한"을 받은 학생에게만 노출됩니다.
+        #    따라서 화면/기능을 관리자 탭과 완전히 동일하게 렌더링합니다.
+        _render_invest_admin_like(
+            inv_admin_ok_flag=True,
+            force_is_admin=True,
+            my_student_id=my_student_id,
+            login_name=login_name,
+            login_pin=login_pin,
+        )
 if "admin::🏦 은행(적금)" in tabs:
     with tab_map["admin::🏦 은행(적금)"]:
         st.subheader("🏦 은행(적금)(관리자)")
@@ -6762,865 +6979,15 @@ if "🔎 개별조회" in tabs:
                                 )
                                 render_tx_table(df_tx)
 
-
-# =========================
-# 📈 투자 탭 렌더러 (학생/관리자 공용)
-#  - KP(키 프리픽스)로 위젯/세션 키 충돌 방지
-# =========================
-def render_invest_tab(inv_admin_ok: bool, my_student_id: str, login_name: str, login_pin: str, key_prefix: str):
-    KP = str(key_prefix or "")
-    INV_PROD_COL = "invest_products"
-    INV_HIST_COL = "invest_price_history"
-    INV_LEDGER_COL = "invest_ledger"
-
-    # -------------------------
-    # 유틸(함수 대신 안전하게 inline)
-    # -------------------------
-    days_ko = ["월", "화", "수", "목", "금", "토", "일"]
-
-    def _as_price1(v):
-        try:
-            return float(f"{float(v):.1f}")
-        except Exception:
-            return 0.0
-
-    def _ts_to_dt(v):
-        if v is None:
-            return None
-        if isinstance(v, datetime):
-            return v
-        try:
-            if hasattr(v, "to_datetime"):
-                out = v.to_datetime()
-                if isinstance(out, datetime):
-                    return out
-        except Exception:
-            pass
-        return None
-
-    def _fmt_kor_date_md(dt_obj):
-        if not dt_obj:
-            return "-"
-        try:
-            dt_kst = dt_obj.astimezone(KST)
-        except Exception:
-            dt_kst = dt_obj
-        try:
-            wd = days_ko[int(dt_kst.weekday())]
-        except Exception:
-            wd = ""
-        return f"{dt_kst.month}월 {dt_kst.day}일({wd})"
-
-    # -------------------------
-    # 권한: 지급(회수) 가능?
-    # - 관리자 or 직업 '투자증권'
-    # -------------------------
-    def _can_redeem(actor_student_id: str) -> bool:
-        if inv_admin_ok:
-            return True
-        try:
-            if not actor_student_id:
-                return False
-            snap = db.collection("students").document(str(actor_student_id)).get()
-            if not snap.exists:
-                return False
-            rid = str((snap.to_dict() or {}).get("role_id", "") or "")
-            if not rid:
-                return False
-            roles = api_list_roles_cached()
-            for r in roles:
-                if str(r.get("role_id")) == rid:
-                    return str(r.get("role_name", "") or "") == "투자증권"
-            return False
-        except Exception:
-            return False
-
-    # -------------------------
-    # 장부 로드
-    # -------------------------
-    def _load_ledger(for_student_id: str | None):
-        try:
-            q = (
-                db.collection(INV_LEDGER_COL)
-                .order_by("buy_at", direction=firestore.Query.DESCENDING)
-                .limit(400)
-                .stream()
-            )
-            rows = []
-            for d in q:
-                x = d.to_dict() or {}
-                if for_student_id and str(x.get("student_id")) != str(for_student_id):
-                    continue
-                rows.append({**x, "_doc_id": d.id})
-            return rows
-        except Exception:
-            # fallback(인덱스 등)
-            try:
-                q = db.collection(INV_LEDGER_COL).limit(400).stream()
-                rows = []
-                for d in q:
-                    x = d.to_dict() or {}
-                    if for_student_id and str(x.get("student_id")) != str(for_student_id):
-                        continue
-                    rows.append({**x, "_doc_id": d.id})
-                return rows
-            except Exception:
-                return []
-
-    # -------------------------
-    # 주가 변동 내역 로드 (표용)
-    # -------------------------
-    def _get_history(product_id: str, limit=120):
-        pid = str(product_id)
-        out = []
-        # 1) 인덱스 OK일 때
-        try:
-            q = (
-                db.collection(INV_HIST_COL)
-                .where(filter=FieldFilter("product_id", "==", pid))
-                .order_by("created_at", direction=firestore.Query.DESCENDING)
-                .limit(int(limit))
-                .stream()
-            )
-            for d in q:
-                x = d.to_dict() or {}
-                out.append(
-                    {
-                        "created_at": x.get("created_at"),
-                        "reason": str(x.get("reason", "") or "").strip(),
-                        "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
-                        "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
-                    }
-                )
-            return out
-        except Exception:
-            pass
-
-        # 2) fallback
-        try:
-            q = (
-                db.collection(INV_HIST_COL)
-                .where(filter=FieldFilter("product_id", "==", pid))
-                .limit(int(limit))
-                .stream()
-            )
-            for d in q:
-                x = d.to_dict() or {}
-                out.append(
-                    {
-                        "created_at": x.get("created_at"),
-                        "reason": str(x.get("reason", "") or "").strip(),
-                        "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
-                        "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
-                    }
-                )
-            out.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
-            return out
-        except Exception:
-            return []
-
-    # -------------------------
-    # 종목 로드
-    # -------------------------
-    def _get_products(active_only=True):
-        try:
-            q = db.collection(INV_PROD_COL)
-            if active_only:
-                q = q.where(filter=FieldFilter("is_active", "==", True))
-            docs = q.stream()
-            out = []
-            for d in docs:
-                x = d.to_dict() or {}
-                nm = str(x.get("name", "") or "").strip()
-                if not nm:
-                    continue
-                out.append(
-                    {
-                        "product_id": d.id,
-                        "name": nm,
-                        "current_price": _as_price1(x.get("current_price", 0.0)),
-                        "is_active": bool(x.get("is_active", True)),
-                    }
-                )
-            out.sort(key=lambda r: r["name"])
-            return out
-        except Exception:
-            return []
-
-    # -------------------------
-    # 회수 계산(÷10)
-    # -------------------------
-    def _calc_redeem_amount(invest_amount: int, buy_price: float, sell_price: float):
-        invest_amount = int(invest_amount or 0)
-        buy_price = _as_price1(buy_price)
-        sell_price = _as_price1(sell_price)
-        diff = _as_price1(sell_price - buy_price)
-
-        # diff <= -100 : 전액 손실
-        if diff <= -100:
-            profit = -invest_amount
-            redeem_amt = 0
-        else:
-            profit = invest_amount * float(diff) / 10.0  # ✅ 나누기 10
-            redeem_amt = invest_amount + profit
-            if redeem_amt < 0:
-                redeem_amt = 0
-
-        return diff, profit, int(round(redeem_amt))
-
-    # -------------------------------------------------
-    # 1) (상단) 종목 및 주가 변동
-    # -------------------------------------------------
-    st.markdown("### 📈 종목 및 주가 변동")
-
-    # (사용자) 상단 요약: 현재 잔액 / 투자 총액
-    if not is_admin:
-        cur_bal = 0
-        try:
-            if my_student_id:
-                s = db.collection("students").document(str(my_student_id)).get()
-                if s.exists:
-                    cur_bal = int((s.to_dict() or {}).get("balance", 0) or 0)
-        except Exception:
-            cur_bal = 0
-
-        inv_total = 0
-        try:
-            my_rows = _load_ledger(my_student_id)
-            inv_total = sum(
-                int(r.get("invest_amount", 0) or 0)
-                for r in my_rows
-                if not bool(r.get("redeemed", False))
-            )
-        except Exception:
-            inv_total = 0
-
-        cA, cB = st.columns(2, gap="small")
-        with cA:
-            st.markdown(f"**현재 잔액:** {cur_bal}드림")
-        with cB:
-            st.markdown(f"**투자 총액:** {inv_total}드림")
-        st.divider()
-
-    products = _get_products(active_only=True)
-    if not products:
-        st.info("등록된 투자 종목이 없습니다. (관리자) 아래에서 종목을 먼저 추가해 주세요.")
-    else:
-        for p in products:
-            nm = p["name"]
-            cur = p["current_price"]
-            st.markdown(f"- **{nm}** (현재주가 **{cur:.1f}**)")
-
-            if inv_admin_ok:
-                with st.expander(f"{nm} 주가 변동 반영", expanded=False):
-                    c1, c2, c3 = st.columns([3.2, 2.2, 1.2], gap="small")
-                    with c1:
-                        reason = st.text_input("변동 사유", key=f"{KP}inv_reason_{p['product_id']}")
-                    with c2:
-                        new_price = st.number_input(
-                            "주가",
-                            min_value=0.0,
-                            max_value=999.9,
-                            step=0.1,
-                            format="%.1f",
-                            value=float(cur),
-                            key=f"{KP}inv_price_{p['product_id']}",
-                        )
-                    with c3:
-                        save_btn = st.button("저장", use_container_width=True, key=f"{KP}inv_save_{p['product_id']}")
-
-                    if save_btn:
-                        reason2 = str(reason or "").strip()
-                        if not reason2:
-                            st.warning("변동 사유를 입력해 주세요.")
-                        else:
-                            try:
-                                payload = {
-                                    "product_id": p["product_id"],
-                                    "reason": reason2,
-                                    "price_before": _as_price1(cur),
-                                    "price_after": _as_price1(new_price),
-                                    "created_at": firestore.SERVER_TIMESTAMP,
-                                }
-                                db.collection(INV_HIST_COL).document().set(payload)
-                                db.collection(INV_PROD_COL).document(p["product_id"]).set(
-                                    {"current_price": _as_price1(new_price), "updated_at": firestore.SERVER_TIMESTAMP},
-                                    merge=True,
-                                )
-                                toast("주가가 반영되었습니다.", icon="✅")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"저장 실패: {e}")
-
-                    # 변동 내역(표)
-                    hist = _get_history(p["product_id"], limit=120)
-                    if hist:
-                        rows = []
-                        for h in hist:
-                            dt = _ts_to_dt(h.get("created_at"))
-                            pb = float(h.get("price_before", 0.0) or 0.0)
-                            pa = float(h.get("price_after", 0.0) or 0.0)
-                            diff = round(pa - pb, 1)
-
-                            # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
-                            def _fmt_kor_datetime(dt_obj):
-                                if not dt_obj:
-                                    return "-"
-                                try:
-                                    dt_kst = dt_obj.astimezone(KST)
-                                except Exception:
-                                    dt_kst = dt_obj
-
-                                hour = dt_kst.hour
-                                ampm = "오전" if hour < 12 else "오후"
-                                hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
-                                return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
-
-                            # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
-                            if diff > 0:
-                                diff_view = f"<span style='color:red'>▲ +{diff:.1f}</span>"
-                            elif diff < 0:
-                                diff_view = f"<span style='color:blue'>▼ {diff:.1f}</span>"
-                            else:
-                                diff_view = "-"
-
-                            rows.append(
-                                {
-                                    "변동일시": _fmt_kor_datetime(dt),
-                                    "변동사유": h.get("reason", "") or "",
-                                    "주가": f"{pa:.1f}",          # ✅ '변동 후' → '주가'
-                                    "주가 등락": diff_view,
-                                }
-                            )
-
-                        df = pd.DataFrame(rows)
-
-                        # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                        left, right = st.columns([1.7, 2.2], gap="large")
-
-                        with left:
-                            st.markdown(
-                                df.to_html(escape=False, index=False),
-                                unsafe_allow_html=True,
-                            )
-
-                        with right:
-                            # 가로: 변동사유 / 세로: 변동 후(주가)
-                            chart_rows = []
-
-                            # ✅ 초기주가 1점 추가
-                            # - 변동 기록이 있으면: 가장 오래된 기록의 price_before가 '초기주가'
-                            # - 변동 기록이 없으면: 현재주가를 초기로 표시
-                            init_price = None
-                            if hist:
-                                oldest = hist[-1]  # hist는 최신순이라 마지막이 가장 오래됨
-                                init_price = float(oldest.get("price_before", 0.0) or 0.0)
-                            if init_price is None:
-                                init_price = float(p.get("current_price", 0.0) or 0.0)
-
-                            chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
-
-                            # ✅ 이후 변동(오래된→최신)
-                            for h2 in reversed(hist):
-                                reason2 = str(h2.get("reason", "") or "").strip() or "-"
-                                pa2 = float(h2.get("price_after", 0.0) or 0.0)
-                                chart_rows.append({"변동사유": reason2, "변동 후": round(pa2, 1)})
-
-                            cdf = pd.DataFrame(chart_rows)
-
-                            if not cdf.empty:
-                                order = cdf["변동사유"].tolist()
-
-                                chart = (
-                                    alt.Chart(cdf)
-                                    .mark_line(point=True)
-                                    .encode(
-                                        x=alt.X(
-                                            "변동사유:N",
-                                            sort=order,
-                                            title=None,
-                                            axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
-                                        ),
-                                        y=alt.Y(
-                                            "변동 후:Q",
-                                            title=None,
-                                            scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
-                                        ),
-                                        tooltip=["변동사유", "변동 후"],
-                                    )
-                                    .properties(height=260)
-                                )
-                                st.altair_chart(chart, use_container_width=True)
-                            else:
-                                st.caption("그래프 데이터가 없습니다.")
-
-                    else:
-                        st.caption("아직 주가 변동 기록이 없습니다.")
-
-            else:
-                with st.expander(f"{nm} 주가 변동 내역", expanded=False):
-                    # 변동 내역(표)
-                    hist = _get_history(p["product_id"], limit=120)
-                    if hist:
-                        rows = []
-                        for h in hist:
-                            dt = _ts_to_dt(h.get("created_at"))
-                            pb = float(h.get("price_before", 0.0) or 0.0)
-                            pa = float(h.get("price_after", 0.0) or 0.0)
-                            diff = round(pa - pb, 1)
-
-                            # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
-                            def _fmt_kor_datetime(dt_obj):
-                                if not dt_obj:
-                                    return "-"
-                                try:
-                                    dt_kst = dt_obj.astimezone(KST)
-                                except Exception:
-                                    dt_kst = dt_obj
-
-                                hour = dt_kst.hour
-                                ampm = "오전" if hour < 12 else "오후"
-                                hh = hour if 1 <= hour <= 12 else (hour - 12 if hour > 12 else 12)
-                                return f"{dt_kst.month}월 {dt_kst.day}일({days_ko[dt_kst.weekday()]}) {ampm} {hh:02d}시 {dt_kst.minute:02d}분"
-
-                            # 주가 등락 표시 (요청: 하락은 파란 아이콘+파란 글씨)
-                            if diff > 0:
-                                diff_view = f"<span style='color:red'>▲ +{diff:.1f}</span>"
-                            elif diff < 0:
-                                diff_view = f"<span style='color:blue'>▼ {diff:.1f}</span>"
-                            else:
-                                diff_view = "-"
-
-                            rows.append(
-                                {
-                                    "변동일시": _fmt_kor_datetime(dt),
-                                    "변동사유": h.get("reason", "") or "",
-                                    "주가": f"{pa:.1f}",          # ✅ '변동 후' → '주가'
-                                    "주가 등락": diff_view,
-                                }
-                            )
-
-                        df = pd.DataFrame(rows)
-
-                        # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                        left, right = st.columns([1.7,2.2], gap="large")
-
-                        with left:
-                            st.markdown(
-                                df.to_html(escape=False, index=False),
-                                unsafe_allow_html=True,
-                            )
-
-                        with right:
-                            # 가로: 변동사유 / 세로: 변동 후(주가)
-                            chart_rows = []
-
-                            # ✅ 초기주가 1점 추가
-                            # - 변동 기록이 있으면: 가장 오래된 기록의 price_before가 '초기주가'
-                            # - 변동 기록이 없으면: 현재주가를 초기로 표시
-                            init_price = None
-                            if hist:
-                                oldest = hist[-1]  # hist는 최신순이라 마지막이 가장 오래됨
-                                init_price = float(oldest.get("price_before", 0.0) or 0.0)
-                            if init_price is None:
-                                init_price = float(p.get("current_price", 0.0) or 0.0)
-
-                            chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
-
-                            # ✅ 이후 변동(오래된→최신)
-                            for h2 in reversed(hist):
-                                reason2 = str(h2.get("reason", "") or "").strip() or "-"
-                                pa2 = float(h2.get("price_after", 0.0) or 0.0)
-                                chart_rows.append({"변동사유": reason2, "변동 후": round(pa2, 1)})
-
-                            cdf = pd.DataFrame(chart_rows)
-
-                            if not cdf.empty:
-                                order = cdf["변동사유"].tolist()
-
-                                chart = (
-                                    alt.Chart(cdf)
-                                    .mark_line(point=True)
-                                    .encode(
-                                        x=alt.X(
-                                            "변동사유:N",
-                                            sort=order,
-                                            title=None,
-                                            axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
-                                        ),
-                                        y=alt.Y(
-                                            "변동 후:Q",
-                                            title=None,
-                                            scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
-                                        ),
-                                        tooltip=["변동사유", "변동 후"],
-                                    )
-                                    .properties(height=260)
-                                )
-                                st.altair_chart(chart, use_container_width=True)
-                            else:
-                                st.caption("그래프 데이터가 없습니다.")
-
-                    else:
-                        st.caption("아직 주가 변동 기록이 없습니다.")
-
-    st.divider()
-
-    # -------------------------------------------------
-    # 2) 투자 상품 관리 장부
-    # -------------------------------------------------
-    st.markdown("### 🧾 투자 상품 관리 장부")
-
-    ledger_rows = _load_ledger(None if is_admin else my_student_id)
-
-    view_rows = []
-    for x in ledger_rows:
-        redeemed = bool(x.get("redeemed", False))
-        view_rows.append(
-            {
-                "번호": int(x.get("no", 0) or 0),
-                "이름": str(x.get("name", "") or ""),
-                "종목": str(x.get("product_name", "") or ""),
-                "매입일자": str(x.get("buy_date_label", "") or ""),
-                "매입 주가": f"{_as_price1(x.get('buy_price', 0.0)):.1f}",
-                "투자 금액": int(x.get("invest_amount", 0) or 0),
-                "지급완료": "✅" if redeemed else "",
-                "매수일자": str(x.get("sell_date_label", "") or ""),
-                "매수 주가": f"{_as_price1(x.get('sell_price', 0.0)):.1f}" if redeemed else "",
-                "주가차이": f"{_as_price1(x.get('diff', 0.0)):.1f}" if redeemed else "",
-                "수익/손실금": int(round(float(x.get("profit", 0.0) or 0.0))) if redeemed else "",
-                "찾을 금액": int(x.get("redeem_amount", 0) or 0) if redeemed else "",
-                "_doc_id": x.get("_doc_id"),
-                "_student_id": x.get("student_id"),
-                "_product_id": x.get("product_id"),
-                "_buy_price": x.get("buy_price"),
-                "_invest_amount": x.get("invest_amount"),
-            }
-        )
-
-    if view_rows:
-        st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
-                     use_container_width=True, hide_index=True)
-    else:
-        st.caption("투자 내역이 없습니다.")
-
-    # -------------------------------------------------
-    # 2-1) 지급(회수) 처리
-    # -------------------------------------------------
-    pending = [x for x in view_rows if not any([x.get("지급완료") == "✅"])]
-    if pending:
-        st.markdown("#### 💸 투자 회수(지급)")
-        can_redeem_now = _can_redeem(my_student_id)
-        if (not is_admin) and (not can_redeem_now):
-            st.info("투자 회수는 관리자 또는 '투자증권' 직업 학생만 할 수 있어요.")
-        else:
-            for x in pending[:100]:
-                doc_id = str(x.get("_doc_id", "") or "")
-                sid = str(x.get("_student_id", "") or "")
-                pid = str(x.get("_product_id", "") or "")
-                buy_price = _as_price1(x.get("_buy_price", 0.0))
-                invest_amt = int(x.get("_invest_amount", 0) or 0)
-                prod_name = str(x.get("종목", "") or "")
-
-                # 현재 주가 찾기
-                cur_price = buy_price
-                for p in products:
-                    if str(p["product_id"]) == pid:
-                        cur_price = _as_price1(p["current_price"])
-                        break
-
-                diff, profit, redeem_amt = _calc_redeem_amount(invest_amt, buy_price, cur_price)
-
-                c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
-                with c1:
-                    st.markdown(f"**{x.get('번호','')}**")
-                with c2:
-                    st.markdown(f"{x.get('이름','')}")
-                    st.caption(prod_name)
-                with c3:
-                    st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
-                    st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
-                with c4:
-                    if st.button("지급", use_container_width=True, key=f"{KP}inv_pay_{doc_id}"):
-
-                        sell_dt = datetime.now(tz=KST)
-                        sell_label = _fmt_kor_date_md(sell_dt)
-                        memo = f"투자 회수({prod_name})"
-
-                        if inv_admin_ok:
-                            res = api_admin_add_tx_by_student_id(
-                                admin_pin=ADMIN_PIN,
-                                student_id=sid,
-                                memo=memo,
-                                deposit=int(redeem_amt),
-                                withdraw=0,
-                            )
-                        else:
-                            res = api_broker_deposit_by_student_id(
-                                actor_student_id=my_student_id,
-                                student_id=sid,
-                                memo=memo,
-                                deposit=int(redeem_amt),
-                            )
-
-                        if res.get("ok"):
-                            try:
-                                db.collection(INV_LEDGER_COL).document(doc_id).set(
-                                    {
-                                        "redeemed": True,
-                                        "sell_at": firestore.SERVER_TIMESTAMP,
-                                        "sell_date_label": sell_label,
-                                        "sell_price": _as_price1(cur_price),
-                                        "diff": _as_price1(diff),
-                                        "profit": float(profit),
-                                        "redeem_amount": int(redeem_amt),
-                                    },
-                                    merge=True,
-                                )
-                                toast("지급 완료!", icon="✅")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"장부 업데이트 실패: {e}")
-                        else:
-                            st.error(res.get("error", "지급 실패"))
-
-    st.divider()
-
-    # -------------------------------------------------
-    # 3) (사용자) 투자 실행
-    # -------------------------------------------------
-    if not is_admin:
-        st.markdown("### 💳 투자하기")
-
-        inv_ok2 = True
-        try:
-            snap = db.collection("students").document(str(my_student_id)).get()
-            if snap.exists:
-                inv_ok2 = bool((snap.to_dict() or {}).get("invest_enabled", True))
-        except Exception:
-            inv_ok2 = True
-
-        if not inv_ok2:
-            st.warning("이 계정은 현재 투자 기능이 비활성화되어 있어요.")
-        elif not products:
-            st.info("투자 종목이 아직 없어요. 관리자에게 종목 추가를 요청해 주세요.")
-        else:
-            prod_labels = [f"{p['name']} (현재 {p['current_price']:.1f})" for p in products]
-            by_label = {lab: p for lab, p in zip(prod_labels, products)}
-
-            sel_lab = st.selectbox("투자 종목 선택", prod_labels, key=f"{KP}inv_user_sel_prod")
-            sel_prod = by_label.get(sel_lab)
-
-            amt = st.number_input("투자 금액", min_value=0, step=10, value=0, key=f"{KP}inv_user_amt")
-            if st.button("투자", use_container_width=True, key=f"{KP}inv_user_btn"):
-                if int(amt) <= 0:
-                    st.warning("투자 금액을 입력해 주세요.")
-                else:
-                    st.session_state[f"{KP}inv_user_confirm"] = True
-
-            if st.session_state.get(f"{KP}inv_user_confirm", False):
-                st.warning("정말로 투자할까요?")
-                y, n = st.columns(2)
-                with y:
-                    if st.button("예", use_container_width=True, key=f"{KP}inv_user_yes"):
-                        st.session_state[f"{KP}inv_user_confirm"] = False
-
-                        memo = f"투자 매입({sel_prod['name']})"
-                        res = api_add_tx(login_name, login_pin, memo=memo, deposit=0, withdraw=int(amt))
-                        if res.get("ok"):
-                            try:
-                                sd = fs_auth_student(login_name, login_pin)
-                                sdata = sd.to_dict() or {}
-                                no = int(sdata.get("no", 0) or 0)
-
-                                buy_dt = datetime.now(tz=KST)
-                                buy_label = _fmt_kor_date_md(buy_dt)
-
-                                db.collection(INV_LEDGER_COL).document().set(
-                                    {
-                                        "student_id": sd.id,
-                                        "no": no,
-                                        "name": str(sdata.get("name", "") or ""),
-                                        "product_id": sel_prod["product_id"],
-                                        "product_name": sel_prod["name"],
-                                        "buy_at": firestore.SERVER_TIMESTAMP,
-                                        "buy_date_label": buy_label,
-                                        "buy_price": _as_price1(sel_prod["current_price"]),
-                                        "invest_amount": int(amt),
-                                        "redeemed": False,
-                                    }
-                                )
-                                toast("투자 완료! (장부에 반영됨)", icon="✅")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"장부 저장 실패: {e}")
-                        else:
-                            st.error(res.get("error", "투자 실패"))
-                with n:
-                    if st.button("아니오", use_container_width=True, key=f"{KP}inv_user_no"):
-                        st.session_state[f"{KP}inv_user_confirm"] = False
-                        st.rerun()
-
-    # -------------------------------------------------
-    # 4) (관리자) 투자 종목 추가/수정/삭제
-    # -------------------------------------------------
-    if inv_admin_ok:
-        st.divider()
-        st.markdown("### 🧰 투자 종목 추가/수정/삭제")
-
-        prod_all = _get_products(active_only=False)
-
-        # ✅ 드롭다운에는 "활성 종목"만 보이게(삭제=비활성은 숨김)
-        prod_active = [p for p in prod_all if bool(p.get("is_active", True))]
-
-        labels = ["(신규 추가)"] + [p["name"] for p in prod_active if p["name"]]
-
-        sel = st.selectbox("편집 대상", labels, key=f"{KP}inv_admin_edit_sel")
-
-        cur_obj = None
-        if sel != "(신규 추가)":
-            for p in prod_active:
-                if p["name"] == sel:
-                    cur_obj = p
-                    break
-
-        name_default = "" if cur_obj is None else cur_obj["name"]
-        price_default = 0.0 if cur_obj is None else float(cur_obj["current_price"])
-
-        c1, c2 = st.columns([2.2, 1.2], gap="small")
-        with c1:
-            new_name = st.text_input("투자 종목명", value=name_default, key=f"{KP}inv_admin_name")
-        with c2:
-            new_price = st.number_input(
-                "초기/현재 주가",
-                min_value=0.0,
-                max_value=999.9,
-                step=0.1,
-                format="%.1f",
-                value=float(price_default),
-                key=f"{KP}inv_admin_price",
-            )
-
-        b1, b2 = st.columns(2)
-        with b1:
-            if st.button("저장", use_container_width=True, key=f"{KP}inv_admin_save"):
-                nm = str(new_name or "").strip()
-                if not nm:
-                    st.warning("종목명을 입력해 주세요.")
-                else:
-                    # ✅ 중복 종목명 방지(공백/대소문자 무시)
-                    nm_key = nm.replace(" ", "").lower()
-                    dup = None
-                    for p in prod_all:
-                        pnm = str(p.get("name", "") or "").strip()
-                        if pnm and pnm.replace(" ", "").lower() == nm_key:
-                            dup = p
-                            break
-
-                    # (신규 추가)인데 이미 존재하면:
-                    # - 활성 종목이면: 중복 추가 막기
-                    # - 비활성(삭제된) 종목이면: 새로 만들지 말고 "복구(재활성화)" 처리
-                    if cur_obj is None and dup is not None:
-                        if bool(dup.get("is_active", True)):
-                            st.error("이미 같은 종목명이 있어요. (중복 추가 불가)")
-                            st.stop()
-                        else:
-                            # ✅ 비활성 종목 복구
-                            try:
-                                db.collection(INV_PROD_COL).document(dup["product_id"]).set(
-                                    {
-                                        "name": nm,
-                                        "current_price": _as_price1(new_price),
-                                        "is_active": True,
-                                        "updated_at": firestore.SERVER_TIMESTAMP,
-                                    },
-                                    merge=True,
-                                )
-                                toast("삭제된 종목을 복구했습니다.", icon="♻️")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"복구 실패: {e}")
-                                st.stop()
-
-                    # (수정)인데 다른 문서와 이름이 겹치면 막기
-                    if cur_obj is not None and dup is not None and str(dup.get("product_id")) != str(cur_obj.get("product_id")):
-                        st.error("이미 같은 종목명이 있어요. (중복 이름 불가)")
-                        st.stop()
-
-                    try:
-                        if cur_obj is None:
-                            db.collection(INV_PROD_COL).document().set(
-                                {
-                                    "name": nm,
-                                    "current_price": _as_price1(new_price),
-                                    "is_active": True,
-                                    "created_at": firestore.SERVER_TIMESTAMP,
-                                    "updated_at": firestore.SERVER_TIMESTAMP,
-                                }
-                            )
-                            toast("종목이 추가되었습니다.", icon="✅")
-                        else:
-                            db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
-                                {
-                                    "name": nm,
-                                    "current_price": _as_price1(new_price),
-                                    "is_active": True,
-                                    "updated_at": firestore.SERVER_TIMESTAMP,
-                                },
-                                merge=True,
-                            )
-                            toast("종목이 수정되었습니다.", icon="✅")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"저장 실패: {e}")
-        with b2:
-            if st.button("삭제", use_container_width=True, key=f"{KP}inv_admin_del", disabled=(cur_obj is None)):
-                if cur_obj is None:
-                    st.stop()
-                try:
-                    db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
-                        {"is_active": False, "updated_at": firestore.SERVER_TIMESTAMP},
-                        merge=True,
-                    )
-                    toast("삭제(비활성화) 완료", icon="🗑️")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"삭제 실패: {e}")
-
-    # =========================
-    # 👥 계정 정보/활성화 (관리자 전용)
-    # =========================
-
-# =========================
-# 📈 투자 탭(기본)
-#  - 관리자 로그인: 관리자 화면
-#  - 학생 로그인: 학생 화면(기존 그대로)
-# =========================
 if "📈 투자" in tabs:
     with tab_map["📈 투자"]:
-        render_invest_tab(
-            inv_admin_ok=bool(is_admin),
+        _render_invest_admin_like(
+            inv_admin_ok_flag=bool(is_admin),
+            force_is_admin=bool(is_admin),
             my_student_id=my_student_id,
             login_name=login_name,
             login_pin=login_pin,
-            key_prefix="inv_main__",
         )
-
-# =========================
-# 📈 투자(관리자) 탭 (권한 받은 학생 전용)
-#  - 학생 기본 '📈 투자' 탭은 건드리지 않고,
-#    추가 탭에서 관리자 화면/기능을 그대로 제공
-# =========================
-if "📈 투자(관리자)" in tabs:
-    with tab_map["📈 투자(관리자)"]:
-        render_invest_tab(
-            inv_admin_ok=True,
-            my_student_id=my_student_id,
-            login_name=login_name,
-            login_pin=login_pin,
-            key_prefix="inv_admin__",
-        )
-
 if "👥 계정 정보/활성화" in tabs:
     with tab_map["👥 계정 정보/활성화"]:
         st.subheader("📋 계정정보 / 활성화 관리")
