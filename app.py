@@ -831,6 +831,72 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
     except Exception:
         return ("없음", 0)
 
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
+    """
+    ✅ return (표시문구, 투자원금합계)
+    - 표시문구 예: "국어 100드림, 수학 50드림"
+    - invest_ledger: redeemed=False 항목의 invest_amount를 '원금'으로 간주해 종목별 합산
+    """
+    try:
+        sid = str(student_id)
+
+        # 1) 종목 정보 맵 (id -> name)
+        prod_name = {}
+        for d in db.collection(INV_PROD_COL).stream():
+            x = d.to_dict() or {}
+            pid = str(x.get("product_id", d.id) or d.id)
+            pname = (
+                str(x.get("name", "") or "").strip()
+                or str(x.get("label", "") or "").strip()
+                or str(x.get("title", "") or "").strip()
+                or str(x.get("subject", "") or "").strip()
+                or pid
+            )
+            prod_name[pid] = pname
+
+        # 2) 보유 장부(미환매) → 종목별 원금 합산
+        q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
+        per_prod_amt = {}  # pid -> principal(sum invest_amount)
+
+        for d in q:
+            x = d.to_dict() or {}
+            if bool(x.get("redeemed", False)):
+                continue
+
+            pid = str(x.get("product_id", "") or "")
+            if not pid:
+                continue
+
+            invest_amount = int(x.get("invest_amount", 0) or 0)
+            if invest_amount <= 0:
+                continue
+
+            per_prod_amt[pid] = per_prod_amt.get(pid, 0) + invest_amount
+
+        if not per_prod_amt:
+            return ("없음", 0)
+
+        total_principal = int(sum(int(v) for v in per_prod_amt.values()))
+
+        # 표시: 종목별(내림차순) 최대 6개, 그 이상이면 상위 3개 + 외 n개
+        items = sorted(per_prod_amt.items(), key=lambda kv: kv[1], reverse=True)
+
+        shown = []
+        if len(items) <= 6:
+            for pid, v in items:
+                shown.append(f"{prod_name.get(pid, pid)} {int(v)}드림")
+        else:
+            for pid, v in items[:3]:
+                shown.append(f"{prod_name.get(pid, pid)} {int(v)}드림")
+            shown.append(f"외 {len(items)-3}개")
+
+        return (", ".join(shown), total_principal)
+
+    except Exception:
+        return ("없음", 0)
+
 def _safe_credit(student_id: str):
     """
     ✅ (score, grade) 안전 조회
@@ -4511,11 +4577,20 @@ if "🏦 내 통장" in tabs:
             except Exception:
                 credit_score, credit_grade = 0, 10
 
+            # 4) 투자 원금(종목별) + 합계
+            invest_text, invest_principal_total = "없음", 0
+            try:
+                invest_text, invest_principal_total = _get_invest_principal_by_student_id(str(student_id))
+            except Exception:
+                invest_text, invest_principal_total = "없음", 0
+
+            asset_total = int(balance + total_savings_principal + invest_principal_total)
+
             st.markdown(f"## 🧾 {login_name} 통장")
 
             # ✅ 총자산만 따로 출력 (글자 살짝 크게)
             st.markdown(
-                f'<div class="total-asset">총자산: {balance + total_savings_principal}드림</div>',
+                f'<div class="total-asset">총자산: {asset_total}드림</div>',
                 unsafe_allow_html=True
             )
 
@@ -4524,6 +4599,7 @@ if "🏦 내 통장" in tabs:
                 f"""
 **통장 잔액:** {balance}드림  
 **적금 금액:** {total_savings_principal}드림  
+**투자 금액:** {invest_text}  
 **직업:** {job_name}  
 **신용도:** {credit_grade}등급({credit_score}점)
 """
