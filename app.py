@@ -559,10 +559,11 @@ div[data-testid="stExpander"] > div{
 }
 
 /* =========================
-   헤더(제목 줄) 전체 중앙정렬
+   헤더(제목 줄) 중앙정렬
    ========================= */
-div[data-testid="stDataFrame"] thead th,
-div[data-testid="stDataEditor"] thead th {
+div[data-testid="stDataFrame"] div[role="columnheader"],
+div[data-testid="stDataEditor"] div[role="columnheader"] {
+    justify-content: center !important;
     text-align: center !important;
 }
 
@@ -570,15 +571,17 @@ div[data-testid="stDataEditor"] thead th {
    번호 / 이름 컬럼만 중앙정렬
    ========================= */
 
-/* 번호 컬럼 (첫 번째 컬럼) */
-div[data-testid="stDataFrame"] tbody td:nth-child(1),
-div[data-testid="stDataEditor"] tbody td:nth-child(1) {
+/* 첫 번째 컬럼 */
+div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(1),
+div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(1) {
+    justify-content: center !important;
     text-align: center !important;
 }
 
-/* 이름 컬럼 (두 번째 컬럼) */
-div[data-testid="stDataFrame"] tbody td:nth-child(2),
-div[data-testid="stDataEditor"] tbody td:nth-child(2) {
+/* 두 번째 컬럼 */
+div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(2),
+div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
+    justify-content: center !important;
     text-align: center !important;
 }
     </style>
