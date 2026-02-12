@@ -15,64 +15,6 @@ import re
 # 설정
 # =========================
 APP_TITLE = "학급 경제 시스템"
-
-# =========================
-# ✅ DataFrame 표 렌더링 공용 래퍼 (헤더 + 앞 2컬럼 중앙정렬)
-# - _render_df()을 직접 쓰던 곳을 _render_df()로 바꿔 사용
-# - DataFrame이면 Styler로 헤더/앞 2컬럼 중앙정렬
-# - 이미 Styler면 그대로 출력
-# =========================
-def _render_df(df, **kwargs):
-    """✅ 표 출력 공용 래퍼
-    - DataFrame이면: (가능한 범위에서) 헤더 중앙정렬 + 앞 2개 컬럼(보통 번호/이름) 중앙정렬을 적용해 출력
-    - Styler(또는 DataFrame이 아닌 객체)이면: 그대로 출력
-    주의: column_config가 있으면 Streamlit이 DataFrame을 직접 렌더링해야 하므로 Styler를 적용하지 않습니다.
-    """
-    import pandas as pd
-
-    # 1) Styler(또는 유사 객체)면 그대로 출력
-    if hasattr(df, "data") and not isinstance(df, pd.DataFrame):
-        # Styler는 hide_index / column_config를 직접 지원하지 않으므로 제거
-        kwargs.pop("hide_index", None)
-        kwargs.pop("column_config", None)
-        return st.dataframe(df, **kwargs)
-
-    # 2) DataFrame이면 필요 시 Styler 적용
-    if isinstance(df, pd.DataFrame):
-        # column_config가 있으면 DataFrame을 그대로 출력(Styler와 충돌 가능)
-        if "column_config" in kwargs:
-            return st.dataframe(df, **kwargs)
-
-        hide_index = bool(kwargs.pop("hide_index", False))
-
-        sty = df.style
-
-        if hide_index:
-            try:
-                sty = sty.hide(axis="index")
-            except Exception:
-                try:
-                    sty = sty.hide_index()
-                except Exception:
-                    pass
-
-        # 헤더 중앙정렬
-        sty = sty.set_table_styles(
-            [{"selector": "th", "props": [("text-align", "center")]}],
-            overwrite=False,
-        )
-
-        # 앞 2개 컬럼 중앙정렬(컬럼이 2개 미만이면 있는 만큼만)
-        cols = df.columns.tolist()[:2]
-        if cols:
-            sty = sty.set_properties(subset=cols, **{"text-align": "center"})
-
-        return st.dataframe(sty, **kwargs)
-
-    # 3) 그 외 타입은 그대로
-    kwargs.pop("hide_index", None)
-    return st.dataframe(df, **kwargs)
-
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
@@ -3624,10 +3566,10 @@ def _get_credit_cfg():
         return {"base": 50, "o": 1, "x": -3, "tri": 0}
     d = snap.to_dict() or {}
     return {
-        "base": int(d.get("base", 50) or 50),
-        "o": int(d.get("o", 1) or 1),
-        "x": int(d.get("x", -3) or -3),
-        "tri": int(d.get("tri", 0) or 0),
+        "base": int(d.get("base", 50) if d.get("base", None) is not None else 50),
+        "o": int(d.get("o", 1) if d.get("o", None) is not None else 1),
+        "x": int(d.get("x", -3) if d.get("x", None) is not None else -3),
+        "tri": int(d.get("tri", 0) if d.get("tri", None) is not None else 0),
     }
 
 def _norm_status(v) -> str:
@@ -3640,10 +3582,10 @@ def _norm_status(v) -> str:
 
 def _calc_credit_score_for_student(student_id: str):
     credit_cfg = _get_credit_cfg()
-    base = int(credit_cfg.get("base", 50) or 50)
-    o_pt = int(credit_cfg.get("o", 1) or 1)
-    x_pt = int(credit_cfg.get("x", -3) or -3)
-    tri_pt = int(credit_cfg.get("tri", 0) or 0)
+    base = int(credit_cfg.get("base", 50) if credit_cfg.get("base", None) is not None else 50)
+    o_pt = int(credit_cfg.get("o", 1) if credit_cfg.get("o", None) is not None else 1)
+    x_pt = int(credit_cfg.get("x", -3) if credit_cfg.get("x", None) is not None else -3)
+    tri_pt = int(credit_cfg.get("tri", 0) if credit_cfg.get("tri", None) is not None else 0)
 
     def _delta(v) -> int:
         v = _norm_status(v)
@@ -3687,7 +3629,7 @@ def render_tx_table(df_tx: pd.DataFrame):
             "balance_after": "총액",
         }
     )
-    _render_df(
+    st.dataframe(
         view[["내역", "입금", "출금", "총액", "날짜-시간"]],
         use_container_width=True,
         hide_index=True,
@@ -4318,7 +4260,7 @@ if "🏦 내 통장" in tabs:
                             else:
                                 st.session_state["bank_tpl_bulk_df"] = df
                                 st.success(f"업로드 완료! ({len(df)}행) 아래 미리보기 확인 후 저장을 누르세요.")
-                                _render_df(df, use_container_width=True, hide_index=True)
+                                st.dataframe(df, use_container_width=True, hide_index=True)
 
                     except Exception as e:
                         st.error(f"엑셀 읽기 실패: {e}")
@@ -5320,7 +5262,7 @@ if "admin::🏦 내 통장" in tabs:
                             else:
                                 st.session_state["bank_tpl_bulk_df"] = df
                                 st.success(f"업로드 완료! ({len(df)}행) 아래 미리보기 확인 후 저장을 누르세요.")
-                                _render_df(df, use_container_width=True, hide_index=True)
+                                st.dataframe(df, use_container_width=True, hide_index=True)
 
                     except Exception as e:
                         st.error(f"엑셀 읽기 실패: {e}")
@@ -6038,7 +5980,7 @@ if "admin::📈 투자" in tabs:
             )
 
         if view_rows:
-            _render_df(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
+            st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
                          use_container_width=True, hide_index=True)
         else:
             st.caption("투자 내역이 없습니다.")
@@ -6280,18 +6222,18 @@ if "admin::🏦 은행(적금)" in tabs:
                 return {"base": 50, "o": 1, "x": -3, "tri": 0}
             d = snap.to_dict() or {}
             return {
-                "base": int(d.get("base", 50) or 50),
-                "o": int(d.get("o", 1) or 1),
-                "x": int(d.get("x", -3) or -3),
-                "tri": int(d.get("tri", 0) or 0),
+                "base": int(d.get("base", 50) if d.get("base", None) is not None else 50),
+                "o": int(d.get("o", 1) if d.get("o", None) is not None else 1),
+                "x": int(d.get("x", -3) if d.get("x", None) is not None else -3),
+                "tri": int(d.get("tri", 0) if d.get("tri", None) is not None else 0),
             }
 
         def _calc_credit_score_for_student(student_id: str) -> tuple[int, int]:
             cfg = _get_credit_cfg()
-            base = int(cfg.get("base", 50) or 50)
-            o_pt = int(cfg.get("o", 1) or 1)
-            x_pt = int(cfg.get("x", -3) or -3)
-            tri_pt = int(cfg.get("tri", 0) or 0)
+            base = int(cfg.get("base", 50) if cfg.get("base", None) is not None else 50)
+            o_pt = int(cfg.get("o", 1) if cfg.get("o", None) is not None else 1)
+            x_pt = int(cfg.get("x", -3) if cfg.get("x", None) is not None else -3)
+            tri_pt = int(cfg.get("tri", 0) if cfg.get("tri", None) is not None else 0)
 
             def _delta(v):
                 vv = _norm_status(v)
@@ -6552,7 +6494,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     "번호","이름","적금기간","신용등급","이자율","적금 금액","이자","만기 금액",
                     "적금 날짜","만기 날짜","처리 결과","지급 금액"
                 ]
-                _render_df(df[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
 
                 st.markdown("#### 🧯 중도해지 처리(관리자)")
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
@@ -7277,7 +7219,7 @@ if "📈 투자" in tabs:
             )
 
         if view_rows:
-            _render_df(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
+            st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
                          use_container_width=True, hide_index=True)
         else:
             st.caption("투자 내역이 없습니다.")
@@ -7784,7 +7726,7 @@ if "👥 계정 정보/활성화" in tabs:
         if not df_status.empty:
             df_status = df_status.sort_values(["번호","이름"]).reset_index(drop=True)
 
-        _render_df(df_status, use_container_width=True, hide_index=True)
+        st.dataframe(df_status, use_container_width=True, hide_index=True)
 
         # -------------------------------------------------
         # ✅ (탭 상단) 엑셀 일괄 계정 추가 + 샘플 다운로드
@@ -8619,7 +8561,7 @@ if "💼 직업/월급" in tabs:
                 df_status = df_status.sort_values(["번호_정렬", "이름", "직업"], kind="mergesort").drop(columns=["번호_정렬"])
             except Exception:
                 df_status = df_status.sort_values(["번호", "이름", "직업"], kind="mergesort")
-            _render_df(df_status[["번호", "이름", "직업", "월급", "실수령액"]], use_container_width=True, hide_index=True)
+            st.dataframe(df_status[["번호", "이름", "직업", "월급", "실수령액"]], use_container_width=True, hide_index=True)
         else:
             st.info("아직 직업이 배정된 학생이 없습니다.")
 
@@ -9075,7 +9017,7 @@ if "💼 직업/월급" in tabs:
         # -------------------------
         df_preview = st.session_state.get("job_bulk_df")
         if df_preview is not None and not df_preview.empty:
-            _render_df(df_preview, use_container_width=True, hide_index=True)
+            st.dataframe(df_preview, use_container_width=True, hide_index=True)
 
         # -------------------------
         # 3) 저장(반영) 버튼: 여기서만 DB 반영
@@ -9149,7 +9091,7 @@ if "🏛️ 국세청(국고)" in tabs:
                     "created_at_kr": "날짜-시간",
                 }
             )
-            _render_df(
+            st.dataframe(
                 view[["내역", "세입", "세출", "총액", "날짜-시간"]],
                 use_container_width=True,
                 hide_index=True,
@@ -9939,19 +9881,19 @@ if "💳 신용등급" in tabs:
                 return {"base": 50, "o": 1, "x": -3, "tri": 0}
             d = snap.to_dict() or {}
             return {
-                "base": int(d.get("base", 50) or 50),
-                "o": int(d.get("o", 1) or 1),
-                "x": int(d.get("x", -3) or -3),
-                "tri": int(d.get("tri", 0) or 0),
+                "base": int(d.get("base", 50) if d.get("base", None) is not None else 50),
+                "o": int(d.get("o", 1) if d.get("o", None) is not None else 1),
+                "x": int(d.get("x", -3) if d.get("x", None) is not None else -3),
+                "tri": int(d.get("tri", 0) if d.get("tri", None) is not None else 0),
             }
 
         def _save_credit_cfg(cfg: dict):
             db.collection("config").document("credit_scoring").set(
                 {
-                    "base": int(cfg.get("base", 50) or 50),
-                    "o": int(cfg.get("o", 1) or 1),
-                    "x": int(cfg.get("x", -3) or -3),
-                    "tri": int(cfg.get("tri", 0) or 0),
+                    "base": int(cfg.get("base", 50) if cfg.get("base", None) is not None else 50),
+                    "o": int(cfg.get("o", 1) if cfg.get("o", None) is not None else 1),
+                    "x": int(cfg.get("x", -3) if cfg.get("x", None) is not None else -3),
+                    "tri": int(cfg.get("tri", 0) if cfg.get("tri", None) is not None else 0),
                     "updated_at": firestore.SERVER_TIMESTAMP,
                 },
                 merge=True,
@@ -9991,10 +9933,10 @@ if "💳 신용등급" in tabs:
         sub_rows_desc = list(sub_rows_all)            # ✅ 그대로(최신→과거라고 가정)
         sub_rows_asc  = list(reversed(sub_rows_desc)) # ✅ 누적 계산은 과거→최신
 
-        base = int(credit_cfg.get("base", 50) or 50)
-        o_pt = int(credit_cfg.get("o", 1) or 1)
-        x_pt = int(credit_cfg.get("x", -3) or -3)
-        tri_pt = int(credit_cfg.get("tri", 0) or 0)
+        base = int(credit_cfg.get("base", 50) if credit_cfg.get("base", None) is not None else 50)
+        o_pt = int(credit_cfg.get("o", 1) if credit_cfg.get("o", None) is not None else 1)
+        x_pt = int(credit_cfg.get("x", -3) if credit_cfg.get("x", None) is not None else -3)
+        tri_pt = int(credit_cfg.get("tri", 0) if credit_cfg.get("tri", None) is not None else 0)
 
         def _norm_status(v) -> str:
             """상태값을 무조건 'O' / 'X' / '△' 중 하나로 강제"""
@@ -10354,18 +10296,18 @@ if "🏦 은행(적금)" in tabs:
                 return {"base": 50, "o": 1, "x": -3, "tri": 0}
             d = snap.to_dict() or {}
             return {
-                "base": int(d.get("base", 50) or 50),
-                "o": int(d.get("o", 1) or 1),
-                "x": int(d.get("x", -3) or -3),
-                "tri": int(d.get("tri", 0) or 0),
+                "base": int(d.get("base", 50) if d.get("base", None) is not None else 50),
+                "o": int(d.get("o", 1) if d.get("o", None) is not None else 1),
+                "x": int(d.get("x", -3) if d.get("x", None) is not None else -3),
+                "tri": int(d.get("tri", 0) if d.get("tri", None) is not None else 0),
             }
 
         def _calc_credit_score_for_student(student_id: str) -> tuple[int, int]:
             cfg = _get_credit_cfg()
-            base = int(cfg.get("base", 50) or 50)
-            o_pt = int(cfg.get("o", 1) or 1)
-            x_pt = int(cfg.get("x", -3) or -3)
-            tri_pt = int(cfg.get("tri", 0) or 0)
+            base = int(cfg.get("base", 50) if cfg.get("base", None) is not None else 50)
+            o_pt = int(cfg.get("o", 1) if cfg.get("o", None) is not None else 1)
+            x_pt = int(cfg.get("x", -3) if cfg.get("x", None) is not None else -3)
+            tri_pt = int(cfg.get("tri", 0) if cfg.get("tri", None) is not None else 0)
 
             def _delta(v):
                 vv = _norm_status(v)
@@ -10626,7 +10568,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     "번호","이름","적금기간","신용등급","이자율","적금 금액","이자","만기 금액",
                     "적금 날짜","만기 날짜","처리 결과","지급 금액"
                 ]
-                _render_df(df[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
 
                 st.markdown("#### 🧯 중도해지 처리(관리자)")
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
@@ -10796,7 +10738,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
                 df_my = pd.DataFrame(view)
                 show_cols = ["적금기간","신용등급","이자율","적금 금액","이자","만기 금액","적금 날짜","만기 날짜","처리 결과","지급 금액"]
-                _render_df(df_my[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(df_my[show_cols], use_container_width=True, hide_index=True)
 
                 running_ids = df_my[(df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")].copy()
                 if not running_ids.empty and can_write:
@@ -10840,7 +10782,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 table_rows.append(row)
 
             df_rate = pd.DataFrame(table_rows)
-            _render_df(df_rate, use_container_width=True, hide_index=True)
+            st.dataframe(df_rate, use_container_width=True, hide_index=True)
             st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다.")
 
 # =========================
