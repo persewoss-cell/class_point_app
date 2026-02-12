@@ -8,19 +8,6 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
-
-# =========================
-# (옵션) AgGrid: 표 열 폭 드래그 조절 + 저장/복원
-# ※ requirements.txt에 streamlit-aggrid 추가 필요
-# =========================
-try:
-    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
-except Exception:
-    AgGrid = None
-    GridOptionsBuilder = None
-    GridUpdateMode = None
-    DataReturnMode = None
-
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
 
@@ -3584,106 +3571,6 @@ def _get_credit_cfg():
         "x": int(d.get("x", -3) if d.get("x", None) is not None else -3),
         "tri": int(d.get("tri", 0) if d.get("tri", None) is not None else 0),
     }
-
-def _get_ui_prefs():
-    """UI 환경설정(표 열 폭 등) 저장/복원용"""
-    ref = db.collection("config").document("ui_prefs")
-    try:
-        snap = ref.get()
-        if not snap.exists:
-            return {}
-        return snap.to_dict() or {}
-    except Exception:
-        return {}
-
-def _get_table_col_widths(table_key: str) -> dict:
-    prefs = _get_ui_prefs()
-    tables = prefs.get("tables", {}) if isinstance(prefs, dict) else {}
-    slot = tables.get(table_key, {}) if isinstance(tables, dict) else {}
-    widths = slot.get("col_widths", {}) if isinstance(slot, dict) else {}
-    # widths: {"컬럼명": 180, ...}
-    out = {}
-    if isinstance(widths, dict):
-        for k, v in widths.items():
-            try:
-                out[str(k)] = int(v)
-            except Exception:
-                pass
-    return out
-
-def _save_table_col_widths(table_key: str, widths: dict):
-    """Firestore에 열 폭 저장"""
-    if not isinstance(widths, dict):
-        return
-    clean = {}
-    for k, v in widths.items():
-        try:
-            clean[str(k)] = int(v)
-        except Exception:
-            continue
-
-    ref = db.collection("config").document("ui_prefs")
-    payload = {
-        "tables": {
-            table_key: {
-                "col_widths": clean,
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            }
-        }
-    }
-    try:
-        ref.set(payload, merge=True)
-    except Exception:
-        # 저장 실패는 UI를 막지 않음
-        pass
-
-def _extract_aggrid_col_widths(grid_response: dict) -> dict:
-    """AgGrid 응답에서 현재 컬럼 width를 최대한 안전하게 추출"""
-    if not isinstance(grid_response, dict):
-        return {}
-
-    candidates = []
-
-    # 1) 직접 키로 오는 경우
-    for k in ("columns_state", "columnsState", "column_state", "columnState"):
-        v = grid_response.get(k)
-        if isinstance(v, list):
-            candidates.append(v)
-
-    # 2) gridState / grid_state 안에 들어오는 경우(버전 차이 대비)
-    for k in ("gridState", "grid_state", "gridstate", "gridState"):
-        gs = grid_response.get(k)
-        if isinstance(gs, dict):
-            for kk in ("columnState", "column_state", "columnsState", "columns_state"):
-                v = gs.get(kk)
-                if isinstance(v, list):
-                    candidates.append(v)
-
-    # 3) gridOptions.columnDefs에서 width 읽기(최후 수단)
-    go = grid_response.get("gridOptions")
-    if isinstance(go, dict):
-        cds = go.get("columnDefs")
-        if isinstance(cds, list):
-            candidates.append(cds)
-
-    out = {}
-    for state in candidates:
-        for col in state:
-            if not isinstance(col, dict):
-                continue
-            col_id = col.get("colId")
-            if col_id is None:
-                col_id = col.get("field")
-            width = col.get("width")
-            if col_id is None or width is None:
-                continue
-            try:
-                out[str(col_id)] = int(width)
-            except Exception:
-                pass
-
-    return out
-
 
 def _norm_status(v) -> str:
     v = str(v or "").strip().upper()
@@ -7839,63 +7726,7 @@ if "👥 계정 정보/활성화" in tabs:
         if not df_status.empty:
             df_status = df_status.sort_values(["번호","이름"]).reset_index(drop=True)
 
-        # ✅ 열 폭 드래그 조절 + (선택)저장/복원
-# - 기본 st.dataframe은 열 폭 '저장'을 코드로 확실히 보장하기 어렵습니다.
-# - AgGrid 사용 시 열 폭을 Firestore(config/ui_prefs)에 저장하여 로그인 후에도 복원합니다.
-TABLE_KEY = "admin_permissions_status"
-
-if AgGrid is None:
-    st.info("표 열 폭 저장/복원을 쓰려면 requirements.txt에 streamlit-aggrid를 추가해야 해요. (현재는 기본 표로 표시)")
-    st.dataframe(df_status, use_container_width=True, hide_index=True, key="df_perm_status")
-else:
-    saved_widths = _get_table_col_widths(TABLE_KEY)
-
-    # 옵션: 자동저장(드래그할 때마다 변경 감지 → 저장)
-    c_opt1, c_opt2 = st.columns([1, 1])
-    with c_opt1:
-        autosave = st.checkbox("열 폭 변경 자동 저장", value=True, key="perm_status_autosave")
-    with c_opt2:
-        save_now = st.button("💾 현재 열 폭 저장", key="perm_status_save_now", use_container_width=True)
-
-    gb = GridOptionsBuilder.from_dataframe(df_status)
-    gb.configure_default_column(resizable=True, sortable=True, filter=True)
-
-    # 저장된 폭이 있으면 컬럼별로 적용
-    for col in list(df_status.columns):
-        w = saved_widths.get(col)
-        if isinstance(w, int) and w > 30:
-            gb.configure_column(col, width=w)
-
-    grid_options = gb.build()
-
-    grid_response = AgGrid(
-        df_status,
-        gridOptions=grid_options,
-        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        update_mode=GridUpdateMode.GRID_CHANGED,   # 컬럼 리사이즈/정렬/필터 변화 감지
-        fit_columns_on_grid_load=False,           # 사용자가 조절한 폭을 존중
-        allow_unsafe_jscode=False,
-        theme="balham",
-        key="ag_perm_status",
-    )
-
-    cur_widths = _extract_aggrid_col_widths(grid_response)
-
-    # 저장 트리거: 수동 버튼 또는 자동저장(변경 감지)
-    changed = False
-    if cur_widths:
-        last_seen = st.session_state.get("_perm_status_last_widths", {})
-        if cur_widths != last_seen:
-            st.session_state["_perm_status_last_widths"] = cur_widths
-            changed = True
-
-    if save_now and cur_widths:
-        _save_table_col_widths(TABLE_KEY, cur_widths)
-        st.success("열 폭을 저장했어요. 다음 로그인/새로고침에도 유지됩니다.")
-    elif autosave and changed and cur_widths:
-        # 저장 폭과 다를 때만 저장
-        if cur_widths != saved_widths:
-            _save_table_col_widths(TABLE_KEY, cur_widths)
+        st.dataframe(df_status, use_container_width=True, hide_index=True)
 
         # -------------------------------------------------
         # ✅ (탭 상단) 엑셀 일괄 계정 추가 + 샘플 다운로드
