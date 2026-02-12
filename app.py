@@ -41,9 +41,21 @@ def _df_center_no_name_header(df: pd.DataFrame) -> "pd.io.formats.style.Styler":
     return sty
 
 
-def _render_df(df: pd.DataFrame, **kwargs):
-    """st.dataframe을 Styler 기반으로 안전 렌더링"""
-    return _render_df(_df_center_no_name_header(df), **kwargs)
+def _render_df(df, **kwargs):
+    """✅ st.dataframe 공용 렌더러
+    - DataFrame이면: 헤더 전체 + (앞 2개 컬럼: 보통 번호/이름)만 중앙정렬 Styler 적용
+    - 이미 Styler면: 그대로 출력
+    """
+    # pandas Styler는 `.data` 속성을 가짐
+    if hasattr(df, "data") and hasattr(df, "set_table_styles"):
+        return st.dataframe(df, **kwargs)
+
+    if isinstance(df, pd.DataFrame):
+        return st.dataframe(_df_center_no_name_header(df), **kwargs)
+
+    # 예외 케이스: 그냥 출력
+    return st.dataframe(df, **kwargs)
+
 
 # =========================
 # 설정
