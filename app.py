@@ -4,6 +4,33 @@ import altair as alt
 
 from datetime import datetime, timezone, timedelta, date
 
+
+# =========================
+# 투자/차트 공용: Firestore Timestamp → datetime 변환
+# (어떤 탭에서도 NameError 안 나도록 전역으로 둠)
+# =========================
+def _ts_to_dt(v):
+    """Firestore Timestamp/Datetime/ISO 문자열을 datetime으로 변환(UTC 기준)."""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v
+    try:
+        # Firestore Timestamp (google.cloud.firestore_v1._helpers.TimestampWithNanoseconds 등)
+        if hasattr(v, "to_datetime"):
+            return v.to_datetime()
+        if hasattr(v, "seconds"):
+            return datetime.fromtimestamp(float(v.seconds), tz=timezone.utc)
+    except Exception:
+        pass
+    try:
+        # ISO 문자열
+        if isinstance(v, str):
+            return datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    return None
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
