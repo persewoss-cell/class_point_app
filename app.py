@@ -45,6 +45,7 @@ APP_TITLE = "학급 경제 시스템"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
+days_ko = ["월", "화", "수", "목", "금", "토", "일"]
 # =========================
 # (공용) 투자 주가 변동 내역 로드
 # - 일부 탭/권한 흐름에서 로컬 함수 스코프가 꼬이며 NameError가 발생할 수 있어
@@ -6015,6 +6016,8 @@ if not is_admin:
     
                             # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
                             def _fmt_kor_datetime(dt_obj):
+                                # (PATCH) 요일 한글 표기 안전 처리
+                                _days = globals().get('days_ko', ['월','화','수','목','금','토','일'])
                                 if not dt_obj:
                                     return "-"
                                 try:
@@ -6122,6 +6125,8 @@ if not is_admin:
     
                             # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
                             def _fmt_kor_datetime(dt_obj):
+                                # (PATCH) 요일 한글 표기 안전 처리
+                                _days = globals().get('days_ko', ['월','화','수','목','금','토','일'])
                                 if not dt_obj:
                                     return "-"
                                 try:
