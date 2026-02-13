@@ -6221,7 +6221,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             sel_prod = by_label.get(sel_lab)
     
             amt = st.number_input("투자 금액", min_value=0, step=10, value=0, key="inv_user_amt")
-            if st.button("투자", use_container_width=True, key="inv_user_btn"):
+            if st.button("투자(다음 확인창에서 ‘예’를 눌러야 완료, 신중하게 결정하기)", use_container_width=True, key="inv_user_btn"):
                 if int(amt) <= 0:
                     st.warning("투자 금액을 입력해 주세요.")
                 else:
