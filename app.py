@@ -10269,7 +10269,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
                 running_ids = df_my[(df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")].copy()
                 if not running_ids.empty and can_write:
-                    st.markdown("#### 🧯 중도해지(원금만 지급)")
+                    st.markdown("#### ⚠️ 중도해지(원금만 지급)")
                     opts = ["(선택 없음)"] + [
                         f"{r['적금기간']} | {r['적금 날짜']} | {int(r['적금 금액'])}P"
                         for _, r in running_ids.head(30).iterrows()
