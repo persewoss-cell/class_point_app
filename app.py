@@ -5839,6 +5839,12 @@ if not is_admin:
         st.markdown(f"**현재 평가금액 :** {eval_total}드림 {_fmt_breakdown(eval_by_prod)}")
 
     st.divider()
+    # ✅ 관리자형(주가 반영 등) 기능 사용 가능 여부(관리자 또는 투자(관리자) 권한)
+    try:
+        inv_admin_ok = bool(is_admin) or has_admin_feature_access(my_perms, "📈 투자", is_admin=False)
+    except Exception:
+        inv_admin_ok = bool(is_admin)
+
     # ✅ 종목 로드(직접 로드: NameError 방지)
     products = []
     try:
