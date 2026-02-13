@@ -4591,7 +4591,7 @@ if "🏦 내 통장" in tabs:
 
             # ✅ 총자산만 따로 출력 (글자 살짝 크게)
             st.markdown(
-                f'<div class="total-asset">🧮총자산: {asset_total}드림</div>',
+                f'<div class="total-asset">🧮 총 자산: {asset_total}드림</div>',
                 unsafe_allow_html=True
             )
 
