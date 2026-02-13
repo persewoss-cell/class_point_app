@@ -10353,7 +10353,7 @@ def can_edit_schedule(area: str, perms: set) -> bool:
 # -------------------------
 if "🎯 목표" in tabs and (not is_admin):
     with tab_map["🎯 목표"]:
-        st.subheader("🎯 목표 저금")
+        st.subheader("🎯 나의 목표 자산")
 
         # 1) 현재 목표 불러오기
         gres = api_get_goal(login_name, login_pin)
