@@ -4607,7 +4607,7 @@ if "🏦 내 통장" in tabs:
             )
 
             # ✅ 거래 기록 (DuplicateElementKey 방지: prefix를 탭 전용으로 변경)
-            st.subheader("📝 거래 기록(통장에 찍기)")
+            st.subheader("📝 통장 기록하기")
             memo_u, dep_u, wd_u = render_admin_trade_ui(
                 prefix=f"bank_trade_{login_name}",
                 templates_list=TEMPLATES,
