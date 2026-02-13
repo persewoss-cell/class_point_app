@@ -34,9 +34,9 @@ st.markdown(
     @media (max-width: 768px) {
         section.main > div:first-child { padding-top: 3.2rem; }
     }
-    .block-container { padding-bottom: 2.0rem; }
+    .block-container { padding-bottom: 7.0rem; }
     @media (max-width: 768px) {
-        .block-container { padding-bottom: 6.0rem; }
+        .block-container { padding-bottom: 7.0rem; }
     }
 
     /* radio → 버튼처럼 */
@@ -583,10 +583,6 @@ div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(2),
 div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
     justify-content: center !important;
     text-align: center !important;
-}
-/* ✅ 하단 여백 늘리기 */
-.block-container {
-    padding-bottom: 5rem !important;
 }
     </style>
     """,
