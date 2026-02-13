@@ -5839,7 +5839,25 @@ if not is_admin:
         st.markdown(f"**현재 평가금액 :** {eval_total}드림 {_fmt_breakdown(eval_by_prod)}")
 
     st.divider()
-    products = _get_products(active_only=True)
+    # ✅ 종목 로드(직접 로드: NameError 방지)
+    products = []
+    try:
+        q = db.collection(INV_PROD_COL).where(filter=FieldFilter("is_active", "==", True))
+        for d in q.stream():
+            x = d.to_dict() or {}
+            nm = str(x.get("name", "") or "").strip()
+            if not nm:
+                continue
+            products.append({
+                "product_id": str(x.get("product_id") or d.id),
+                "name": nm,
+                "current_price": float(x.get("current_price", 0.0) or 0.0),
+                "is_active": bool(x.get("is_active", True)),
+            })
+        # 등록순이 있으면 그걸 우선, 없으면 이름순
+        products.sort(key=lambda p: str(p.get("name","")))
+    except Exception:
+        products = []
     if not products:
         st.info("등록된 투자 종목이 없습니다. (관리자) 아래에서 종목을 먼저 추가해 주세요.")
     else:
