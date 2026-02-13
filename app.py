@@ -10453,6 +10453,10 @@ if "🎯 목표" in tabs and (not is_admin):
             else:
                 msg += " (목표일 이전 만기 적금은 원금만 반영)"
 
+            # ✅ 투자 현재평가 포함 추가
+            if inv_eval_total > 0:
+                msg += f", 투자 현재평가 +{inv_eval_total} 포함"
+
             st.info(msg)
 
         if principal_all_running == 0 and interest_before_goal == 0:
