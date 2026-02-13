@@ -5787,12 +5787,12 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 buy_price = float(r.get("buy_price", 0.0) or 0.0)
                 cur_price = float(price_by_id.get(pid, 0.0) or 0.0)
 
-                # ✅ 현재 평가(거래 탭과 동일): 투자금 * (현재가/매입가)
+                # ✅ 현재 평가(거래 탭 기준): 투자금 * (현재가/매입가)
                 if buy_price > 0 and cur_price > 0:
                     cur_val = amt * (cur_price / buy_price)
                 else:
                     cur_val = amt
-            
+
                 _add_sum(principal_by_name, nm, amt)
                 _add_sum(eval_by_name, nm, int(round(cur_val)))
 
@@ -10429,7 +10429,15 @@ if "🎯 목표" in tabs and (not is_admin):
             pass
 
         goal_amount = int(g_amt)
-        expected_amount = bal_now + principal_all_running + interest_before_goal
+        # ✅ 투자 현재 평가금(거래 탭 기준) 포함
+        inv_eval_total = 0
+        try:
+            _inv_text, _inv_total = _get_invest_summary_by_student_id(sid)
+            inv_eval_total = int(_inv_total or 0)
+        except Exception:
+            inv_eval_total = 0
+
+        expected_amount = bal_now + principal_all_running + interest_before_goal + inv_eval_total
 
         now_ratio = clamp01(bal_now / goal_amount if goal_amount > 0 else 0)
         exp_ratio = clamp01(expected_amount / goal_amount if goal_amount > 0 else 0)
