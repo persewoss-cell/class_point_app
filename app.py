@@ -10206,7 +10206,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
             st.divider()
 
-            st.markdown("### 📒 내 적금")
+            st.markdown("### 📒 내 적금 내역")
             my_rows = []
             if my_student_id:
                 q = db.collection(SAV_COL).where(filter=FieldFilter("student_id", "==", str(my_student_id))).stream()
