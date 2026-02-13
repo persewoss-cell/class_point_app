@@ -4600,7 +4600,7 @@ if "🏦 내 통장" in tabs:
                 f"""
 **통장 잔액:** {balance}드림  
 **적금 금액:** {total_savings_principal}드림  
-**투자 금액:** {invest_text}  
+**투자(현재 평가금액):** {invest_text}  
 **직업:** {job_name}  
 **신용도:** {credit_grade}등급({credit_score}점)
 """
