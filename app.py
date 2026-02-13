@@ -18,6 +18,69 @@ APP_TITLE = "학급 경제 시스템"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
+# =========================
+# (공용) 투자 주가 변동 내역 로드
+# - 일부 탭/권한 흐름에서 로컬 함수 스코프가 꼬이며 NameError가 발생할 수 있어
+#   전역 헬퍼로 통일합니다.
+# =========================
+INV_HIST_COL_NAME = "invest_price_history"
+
+def inv_get_history(product_id: str, limit: int = 120):
+    """주가 변동 내역을 created_at DESC로 최대 limit개 반환"""
+    pid = str(product_id or "")
+    out = []
+    if not pid:
+        return out
+
+    try:
+        q = (
+            db.collection(INV_HIST_COL_NAME)
+            .where(filter=FieldFilter("product_id", "==", pid))
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(int(limit))
+            .stream()
+        )
+        for d in q:
+            x = d.to_dict() or {}
+            out.append(
+                {
+                    "created_at": x.get("created_at"),
+                    "reason": str(x.get("reason", "") or "").strip(),
+                    "price_before": float(x.get("price_before", 0.0) or 0.0),
+                    "price_after": float(x.get("price_after", 0.0) or 0.0),
+                }
+            )
+        return out
+    except Exception:
+        # 인덱스/정렬 실패 시: where만으로 가져와서 파이썬 정렬
+        try:
+            q2 = (
+                db.collection(INV_HIST_COL_NAME)
+                .where(filter=FieldFilter("product_id", "==", pid))
+                .limit(int(limit))
+                .stream()
+            )
+            tmp = []
+            for d in q2:
+                x = d.to_dict() or {}
+                tmp.append(
+                    {
+                        "created_at": x.get("created_at"),
+                        "reason": str(x.get("reason", "") or "").strip(),
+                        "price_before": float(x.get("price_before", 0.0) or 0.0),
+                        "price_after": float(x.get("price_after", 0.0) or 0.0),
+                    }
+                )
+            def _key(v):
+                t = v.get("created_at")
+                try:
+                    return t.timestamp() if t else 0
+                except Exception:
+                    return 0
+            tmp.sort(key=_key, reverse=True)
+            return tmp[: int(limit)]
+        except Exception:
+            return out
 
 # ✅ 기존 관리자 유지(교사)
 ADMIN_PIN = "9999"
@@ -5914,7 +5977,7 @@ if not is_admin:
                                 st.error(f"저장 실패: {e}")
     
                     # 변동 내역(표)
-                    hist = _get_history(p["product_id"], limit=120)
+                    hist = inv_get_history(p["product_id"], limit=120)
                     if hist:
                         rows = []
                         for h in hist:
@@ -6021,7 +6084,7 @@ if not is_admin:
             else:
                 with st.expander(f"{nm} 주가 변동 내역", expanded=False):
                     # 변동 내역(표)
-                    hist = _get_history(p["product_id"], limit=120)
+                    hist = inv_get_history(p["product_id"], limit=120)
                     if hist:
                         rows = []
                         for h in hist:
