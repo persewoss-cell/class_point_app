@@ -5733,8 +5733,9 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     # -------------------------------------------------
     st.markdown("### 📈 종목 및 주가 변동")
     
-    # (사용자) 상단 요약: 현재 잔액 / 투자 총액
+    # (사용자) 상단 요약: 통장 잔액 / 투자 원금 / 현재 평가
     if not is_admin:
+        # 1) 통장 잔액
         cur_bal = 0
         try:
             if my_student_id:
@@ -5743,24 +5744,68 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     cur_bal = int((s.to_dict() or {}).get("balance", 0) or 0)
         except Exception:
             cur_bal = 0
-    
-        inv_total = 0
+
+        # 2) 투자 원금 / 현재 평가
+        principal_total = 0
+        eval_total = 0
+        principal_by_name = {}
+        eval_by_name = {}
+
+        def _add_sum(d, k, v):
+            d[k] = int(d.get(k, 0) or 0) + int(v or 0)
+
+        def _fmt_breakdown(d):
+            items = []
+            for k in sorted(d.keys()):
+                v = int(d.get(k, 0) or 0)
+                if v > 0:
+                    items.append(f"{k} {v}드림")
+            return ", ".join(items) if items else "없음"
+
         try:
+            prods_now = _get_products(active_only=True)
+            price_by_id = {str(p["product_id"]): float(p.get("current_price", 0.0) or 0.0) for p in prods_now}
+            name_by_id = {str(p["product_id"]): str(p.get("name", "") or "") for p in prods_now}
+
             my_rows = _load_ledger(my_student_id)
-            inv_total = sum(
-                int(r.get("invest_amount", 0) or 0)
-                for r in my_rows
-                if not bool(r.get("redeemed", False))
-            )
+
+            for r in my_rows:
+                if bool(r.get("redeemed", False)):
+                    continue
+
+                amt = int(r.get("invest_amount", 0) or 0)
+                if amt <= 0:
+                    continue
+
+                pid = str(r.get("product_id", "") or "")
+                nm = str(r.get("product_name", "") or "").strip()
+                if not nm:
+                    nm = str(name_by_id.get(pid, "") or "").strip()
+                if not nm:
+                    nm = "미지정"
+
+                buy_price = float(r.get("buy_price", 0.0) or 0.0)
+                cur_price = float(price_by_id.get(pid, 0.0) or 0.0)
+
+                _, _, redeem_amt = _calc_redeem_amount(amt, buy_price, cur_price)
+
+                _add_sum(principal_by_name, nm, amt)
+                _add_sum(eval_by_name, nm, int(redeem_amt))
+
+            principal_total = sum(principal_by_name.values())
+            eval_total = sum(eval_by_name.values())
+
         except Exception:
-            inv_total = 0
-    
-        cA, cB = st.columns(2, gap="small")
-        with cA:
-            st.markdown(f"**현재 잔액:** {cur_bal}드림")
-        with cB:
-            st.markdown(f"**투자 총액:** {inv_total}드림")
+            principal_total = 0
+            eval_total = 0
+            principal_by_name = {}
+            eval_by_name = {}
+
+        st.markdown(f"**통장 잔액:** {cur_bal}드림")
+        st.markdown(f"**투자 원금:** 총 {principal_total}드림({_fmt_breakdown(principal_by_name)})")
+        st.markdown(f"**현재 평가:** 총 {eval_total}드림({_fmt_breakdown(eval_by_name)})")
         st.divider()
+
     
     products = _get_products(active_only=True)
     if not products:
