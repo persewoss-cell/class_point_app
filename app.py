@@ -5787,10 +5787,14 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 buy_price = float(r.get("buy_price", 0.0) or 0.0)
                 cur_price = float(price_by_id.get(pid, 0.0) or 0.0)
 
-                _, _, redeem_amt = _calc_redeem_amount(amt, buy_price, cur_price)
-
+                # ✅ 현재 평가(거래 탭과 동일): 투자금 * (현재가/매입가)
+                if buy_price > 0 and cur_price > 0:
+                    cur_val = amt * (cur_price / buy_price)
+                else:
+                    cur_val = amt
+            
                 _add_sum(principal_by_name, nm, amt)
-                _add_sum(eval_by_name, nm, int(redeem_amt))
+                _add_sum(eval_by_name, nm, int(round(cur_val)))
 
             principal_total = sum(principal_by_name.values())
             eval_total = sum(eval_by_name.values())
