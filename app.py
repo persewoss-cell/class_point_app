@@ -10269,13 +10269,13 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
                 running_ids = df_my[(df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")].copy()
                 if not running_ids.empty and can_write:
-                    st.markdown("#### ⚠️ 중도해지(원금만 지급)")
+                    st.markdown("#### ⚠️ 중도 해지(원금만 지급)")
                     opts = ["(선택 없음)"] + [
                         f"{r['적금기간']} | {r['적금 날짜']} | {int(r['적금 금액'])}P"
                         for _, r in running_ids.head(30).iterrows()
                     ]
                     lab_to_id = {opts[i+1]: running_ids.iloc[i]["_id"] for i in range(len(running_ids.head(30)))}
-                    pick2 = st.selectbox("중도해지할 적금 선택", opts, key="stu_bank_cancel_pick")
+                    pick2 = st.selectbox("중도 해지할 적금 선택", opts, key="stu_bank_cancel_pick")
                     if pick2 != "(선택 없음)":
                         if st.button("중도해지 실행", use_container_width=True, key="stu_bank_cancel_do"):
                             rid = str(lab_to_id.get(pick2))
