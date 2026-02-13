@@ -2778,7 +2778,7 @@ def render_admin_trade_ui(prefix: str, templates_list: list, template_by_display
         st.session_state.setdefault(tre_key, True)   # ✅ 기본 체크(ON)
         st.checkbox("국고 반영", key=tre_key)
 
-        st.caption("⚡ 빠른 금액(원형 버튼)")
+        st.caption("⚡ 빠른 금액(누른 만큼 더해지거나 줄어듬)")
         QUICK_AMOUNTS = [0, 10, 20, 50, 100, 200, 500, 1000]
 
         pick_key = f"{prefix}_quick_pick"
