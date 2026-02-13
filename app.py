@@ -10397,13 +10397,6 @@ if "🎯 목표" in tabs and (not is_admin):
 
         sid = student_doc.id
         bal_now = int((student_doc.to_dict() or {}).get("balance", 0) or 0)
-        
-        # ✅ 투자 현재 평가금(거래 탭 총자산 기준과 동일)
-        invest_value_total = 0
-        try:
-            _txt, invest_value_total = _get_invest_summary_by_student_id(str(sid))
-        except Exception:
-            invest_value_total = 0
 
         # running 적금 로드
         principal_all_running = 0
@@ -10432,12 +10425,7 @@ if "🎯 목표" in tabs and (not is_admin):
             pass
 
         goal_amount = int(g_amt)
-        expected_amount = (
-            bal_now
-            + principal_all_running
-            + interest_before_goal
-            + int(invest_value_total)
-        )
+        expected_amount = bal_now + principal_all_running + interest_before_goal
 
         now_ratio = clamp01(bal_now / goal_amount if goal_amount > 0 else 0)
         exp_ratio = clamp01(expected_amount / goal_amount if goal_amount > 0 else 0)
