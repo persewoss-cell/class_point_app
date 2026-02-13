@@ -4,33 +4,6 @@ import altair as alt
 
 from datetime import datetime, timezone, timedelta, date
 
-
-# =========================
-# 투자/차트 공용: Firestore Timestamp → datetime 변환
-# (어떤 탭에서도 NameError 안 나도록 전역으로 둠)
-# =========================
-def _ts_to_dt(v):
-    """Firestore Timestamp/Datetime/ISO 문자열을 datetime으로 변환(UTC 기준)."""
-    if v is None:
-        return None
-    if isinstance(v, datetime):
-        return v
-    try:
-        # Firestore Timestamp (google.cloud.firestore_v1._helpers.TimestampWithNanoseconds 등)
-        if hasattr(v, "to_datetime"):
-            return v.to_datetime()
-        if hasattr(v, "seconds"):
-            return datetime.fromtimestamp(float(v.seconds), tz=timezone.utc)
-    except Exception:
-        pass
-    try:
-        # ISO 문자열
-        if isinstance(v, str):
-            return datetime.fromisoformat(v.replace("Z", "+00:00"))
-    except Exception:
-        return None
-    return None
-
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -45,70 +18,6 @@ APP_TITLE = "학급 경제 시스템"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
-days_ko = ["월", "화", "수", "목", "금", "토", "일"]
-# =========================
-# (공용) 투자 주가 변동 내역 로드
-# - 일부 탭/권한 흐름에서 로컬 함수 스코프가 꼬이며 NameError가 발생할 수 있어
-#   전역 헬퍼로 통일합니다.
-# =========================
-INV_HIST_COL_NAME = "invest_price_history"
-
-def inv_get_history(product_id: str, limit: int = 120):
-    """주가 변동 내역을 created_at DESC로 최대 limit개 반환"""
-    pid = str(product_id or "")
-    out = []
-    if not pid:
-        return out
-
-    try:
-        q = (
-            db.collection(INV_HIST_COL_NAME)
-            .where(filter=FieldFilter("product_id", "==", pid))
-            .order_by("created_at", direction=firestore.Query.DESCENDING)
-            .limit(int(limit))
-            .stream()
-        )
-        for d in q:
-            x = d.to_dict() or {}
-            out.append(
-                {
-                    "created_at": x.get("created_at"),
-                    "reason": str(x.get("reason", "") or "").strip(),
-                    "price_before": float(x.get("price_before", 0.0) or 0.0),
-                    "price_after": float(x.get("price_after", 0.0) or 0.0),
-                }
-            )
-        return out
-    except Exception:
-        # 인덱스/정렬 실패 시: where만으로 가져와서 파이썬 정렬
-        try:
-            q2 = (
-                db.collection(INV_HIST_COL_NAME)
-                .where(filter=FieldFilter("product_id", "==", pid))
-                .limit(int(limit))
-                .stream()
-            )
-            tmp = []
-            for d in q2:
-                x = d.to_dict() or {}
-                tmp.append(
-                    {
-                        "created_at": x.get("created_at"),
-                        "reason": str(x.get("reason", "") or "").strip(),
-                        "price_before": float(x.get("price_before", 0.0) or 0.0),
-                        "price_after": float(x.get("price_after", 0.0) or 0.0),
-                    }
-                )
-            def _key(v):
-                t = v.get("created_at")
-                try:
-                    return t.timestamp() if t else 0
-                except Exception:
-                    return 0
-            tmp.sort(key=_key, reverse=True)
-            return tmp[: int(limit)]
-        except Exception:
-            return out
 
 # ✅ 기존 관리자 유지(교사)
 ADMIN_PIN = "9999"
@@ -5823,138 +5732,37 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     # 1) (상단) 종목 및 주가 변동
     # -------------------------------------------------
     st.markdown("### 📈 종목 및 주가 변동")
-# (사용자) 상단 요약: 통장잔액 / 투자원금(종목별) / 현재 평가금액(종목별)
-if not is_admin:
-    # 1) 통장잔액
-    cur_bal = 0
-    try:
-        if my_student_id:
-            s = db.collection("students").document(str(my_student_id)).get()
-            if s.exists:
-                cur_bal = int((s.to_dict() or {}).get("balance", 0) or 0)
-    except Exception:
+    
+    # (사용자) 상단 요약: 현재 잔액 / 투자 총액
+    if not is_admin:
         cur_bal = 0
-
-    # 2) 투자원금(미회수) + 3) 현재 평가금액(미회수, 현재주가 반영)
-    principal_total = 0
-    eval_total = 0
-
-    principal_by_prod = {}  # {종목명: 원금합}
-    eval_by_prod = {}       # {종목명: 평가금액합}
-
-    # 종목 표시 순서: 현재 활성 종목 등록 순서대로
-    prod_order = []
-    prod_price_map = {}     # {종목명: 현재가}
-    prod_id_map = {}        # {product_id: (종목명, 현재가)}
-
-    try:
-        _prods = _get_products(active_only=True) or []
-        for p in _prods:
-            _name = str(p.get("name", "") or "")
-            _pid = str(p.get("product_id", "") or "")
-            _curp = float(p.get("current_price", 0.0) or 0.0)
-            if _name and _name not in prod_order:
-                prod_order.append(_name)
-            if _name:
-                prod_price_map[_name] = _curp
-            if _pid:
-                prod_id_map[_pid] = (_name, _curp)
-
-        my_rows = _load_ledger(my_student_id)
-
-        for r in my_rows:
-            if bool(r.get("redeemed", False)):
-                continue  # 회수 완료는 제외
-
-            prod_id = str(r.get("product_id", "") or "")
-            prod_name = str(r.get("product_name", "") or "")  # 장부에 저장된 이름(우선)
-            invest_amt = int(r.get("invest_amount", 0) or 0)
-            buy_price = float(r.get("buy_price", 0.0) or 0.0)
-
-            # 종목 마스터에서 이름/현재가 가져오기(가능하면)
-            if prod_id and prod_id in prod_id_map:
-                master_name, cur_price = prod_id_map[prod_id]
-                if master_name:
-                    prod_name = master_name
-            else:
-                # fallback: 장부에 current_price가 있으면 사용, 없으면 0
-                cur_price = float(r.get("current_price", 0.0) or 0.0)
-
-            if not prod_name:
-                prod_name = "미지정"
-
-            # 원금 합산
-            principal_total += invest_amt
-            principal_by_prod[prod_name] = principal_by_prod.get(prod_name, 0) + invest_amt
-
-            # 평가금액(현재 주가 반영) = 회수 계산 로직과 동일
-            diff, profit, redeem_amt = _calc_redeem_amount(invest_amt, buy_price, cur_price)
-            eval_total += int(redeem_amt)
-            eval_by_prod[prod_name] = eval_by_prod.get(prod_name, 0) + int(redeem_amt)
-
-            # 주문서에 없던 종목이 장부에만 있는 경우: 뒤에 추가
-            if prod_name not in prod_order:
-                prod_order.append(prod_name)
-
-    except Exception:
-        principal_total = 0
-        eval_total = 0
-        principal_by_prod = {}
-        eval_by_prod = {}
-        prod_order = []
-
-    def _fmt_breakdown(d: dict) -> str:
-        if not d:
-            return ""
-        # 0인 값 제거
-        items = [(k, int(v)) for k, v in d.items() if int(v or 0) != 0]
-        if not items:
-            return ""
-
-        # 종목 등록 순서대로 정렬, 없으면 뒤로
-        order_index = {name: i for i, name in enumerate(prod_order)}
-        items.sort(key=lambda kv: (order_index.get(kv[0], 10**9), kv[0]))
-
-        return "(" + ", ".join([f"{k} {v}드림" for k, v in items]) + ")"
-
-    st.markdown(f"**통장잔액 :** {cur_bal}드림")
-
-    if principal_total == 0:
-        st.markdown("**투자원금 :** 0드림")
-    else:
-        st.markdown(f"**투자원금 :** {principal_total}드림 {_fmt_breakdown(principal_by_prod)}")
-
-    if eval_total == 0:
-        st.markdown("**현재 평가금액 :** 0드림")
-    else:
-        st.markdown(f"**현재 평가금액 :** {eval_total}드림 {_fmt_breakdown(eval_by_prod)}")
-
-    st.divider()
-    # ✅ 관리자형(주가 반영 등) 기능 사용 가능 여부(관리자 또는 투자(관리자) 권한)
-    try:
-        inv_admin_ok = bool(is_admin) or has_admin_feature_access(my_perms, "📈 투자", is_admin=False)
-    except Exception:
-        inv_admin_ok = bool(is_admin)
-
-    # ✅ 종목 로드(직접 로드: NameError 방지)
-    products = []
-    try:
-        q = db.collection(INV_PROD_COL).where(filter=FieldFilter("is_active", "==", True))
-        for d in q.stream():
-            x = d.to_dict() or {}
-            nm = str(x.get("name", "") or "").strip()
-            if not nm:
-                continue
-            products.append({
-                "product_id": str(x.get("product_id") or d.id),
-                "name": nm,
-                "current_price": float(x.get("current_price", 0.0) or 0.0),
-                "is_active": bool(x.get("is_active", True)),
-            })
-        # 등록순이 있으면 그걸 우선, 없으면 이름순
-        products.sort(key=lambda p: str(p.get("name","")))
-    except Exception:
-        products = []
+        try:
+            if my_student_id:
+                s = db.collection("students").document(str(my_student_id)).get()
+                if s.exists:
+                    cur_bal = int((s.to_dict() or {}).get("balance", 0) or 0)
+        except Exception:
+            cur_bal = 0
+    
+        inv_total = 0
+        try:
+            my_rows = _load_ledger(my_student_id)
+            inv_total = sum(
+                int(r.get("invest_amount", 0) or 0)
+                for r in my_rows
+                if not bool(r.get("redeemed", False))
+            )
+        except Exception:
+            inv_total = 0
+    
+        cA, cB = st.columns(2, gap="small")
+        with cA:
+            st.markdown(f"**현재 잔액:** {cur_bal}드림")
+        with cB:
+            st.markdown(f"**투자 총액:** {inv_total}드림")
+        st.divider()
+    
+    products = _get_products(active_only=True)
     if not products:
         st.info("등록된 투자 종목이 없습니다. (관리자) 아래에서 종목을 먼저 추가해 주세요.")
     else:
@@ -6005,7 +5813,7 @@ if not is_admin:
                                 st.error(f"저장 실패: {e}")
     
                     # 변동 내역(표)
-                    hist = inv_get_history(p["product_id"], limit=120)
+                    hist = _get_history(p["product_id"], limit=120)
                     if hist:
                         rows = []
                         for h in hist:
@@ -6016,8 +5824,6 @@ if not is_admin:
     
                             # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
                             def _fmt_kor_datetime(dt_obj):
-                                # (PATCH) 요일 한글 표기 안전 처리
-                                _days = globals().get('days_ko', ['월','화','수','목','금','토','일'])
                                 if not dt_obj:
                                     return "-"
                                 try:
@@ -6114,7 +5920,7 @@ if not is_admin:
             else:
                 with st.expander(f"{nm} 주가 변동 내역", expanded=False):
                     # 변동 내역(표)
-                    hist = inv_get_history(p["product_id"], limit=120)
+                    hist = _get_history(p["product_id"], limit=120)
                     if hist:
                         rows = []
                         for h in hist:
@@ -6125,8 +5931,6 @@ if not is_admin:
     
                             # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
                             def _fmt_kor_datetime(dt_obj):
-                                # (PATCH) 요일 한글 표기 안전 처리
-                                _days = globals().get('days_ko', ['월','화','수','목','금','토','일'])
                                 if not dt_obj:
                                     return "-"
                                 try:
