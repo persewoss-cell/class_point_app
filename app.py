@@ -584,6 +584,10 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
     justify-content: center !important;
     text-align: center !important;
 }
+/* ✅ 하단 여백 늘리기 */
+.block-container {
+    padding-bottom: 5rem !important;
+}
     </style>
     """,
     unsafe_allow_html=True,
