@@ -6885,20 +6885,10 @@ if "🔎 개별조회" in tabs:
         st.markdown(
             """
 <style>
-/* 🔎 개별조회 expander(접힌 제목)만: 작게 + 한줄 + 말줄임 */
+/* 🔎 개별조회 expander(접힌 제목)만: 글자 크기 축소 */
 div[data-testid="stExpander"]:has(.indview-marker) summary{
-  font-size: 0.82rem !important;
+  font-size: 0.80rem !important;
   line-height: 1.15 !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-}
-
-/* summary 안쪽 텍스트 래퍼들도 같이 한줄/말줄임 */
-div[data-testid="stExpander"]:has(.indview-marker) summary *{
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
 }
 </style>
             """,
