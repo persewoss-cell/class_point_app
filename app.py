@@ -607,20 +607,20 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
 
 /* expander 사이 간격 */
 div[data-baseweb="accordion"] > div {
-    margin-bottom: 6px !important;
+    margin-bottom: 2px !important;
 }
 
 /* 둥근 사각형 헤더 버튼 */
 div[data-baseweb="accordion-item"] > div > div > button {
-    padding-top: 6px !important;
-    padding-bottom: 6px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
     min-height: 32px !important;
 }
 
 /* 펼쳤을 때 내부 영역 */
 div[data-baseweb="accordion-item"] div[role="region"] {
-    padding-top: 6px !important;
-    padding-bottom: 6px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
 }
 
 /* 내부 문단 기본 margin 제거 */
