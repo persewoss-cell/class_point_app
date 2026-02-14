@@ -59,9 +59,9 @@ def _df_show(df: pd.DataFrame, **kwargs):
     # Streamlit 버전에 따라 Styler 지원이 다를 수 있어,
     # Styler 전달 실패 시 일반 DF로 fallback
     try:
-        _df_show(_style_df(df), **kwargs)
+        st.dataframe(_style_df(df), **kwargs)
     except Exception:
-        _df_show(df, **kwargs)
+        st.dataframe(df, **kwargs)
 
 
 from datetime import datetime, timezone, timedelta, date
