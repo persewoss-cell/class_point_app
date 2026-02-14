@@ -9457,6 +9457,7 @@ if "📊 통계청" in tabs:
 /* 1) radiogroup 자체 여백/정렬 */
 div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) {
   display: flex !important;
+  width: 100% !important;
   justify-content: center !important;
   align-items: center !important;
   gap: 4px !important;
