@@ -124,24 +124,6 @@ st.markdown(
         outline: none !important;
     }
     
-    /* ✅ stat_cellpick_ 버튼묶음(라디오) — 제목셀과 같은 중앙 정렬 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
-        padding-left: 0 !important;
-        padding-right: 0 !important;
-        margin: 0 !important;
-        width: 100% !important;
-    }
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
-        width: 100% !important;
-        display: flex !important;
-        justify-content: center !important;
-    }
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup"] {
-        margin: 0 auto !important;
-        justify-content: center !important;
-    }
-
-
 /* ✅ DataFrame/DataEditor: 바깥 네모 박스(테두리/여백)만 줄이기 */
 [data-testid="stDataFrame"]{
     overflow-x: auto;
@@ -9457,7 +9439,6 @@ if "📊 통계청" in tabs:
 /* 1) radiogroup 자체 여백/정렬 */
 div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) {
   display: flex !important;
-  width: 100% !important;
   justify-content: center !important;
   align-items: center !important;
   gap: 4px !important;
@@ -9499,19 +9480,12 @@ div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) input:focus {
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
   margin: 0 !important;
   padding: 0 !important;
-  width: 100% !important;
-  display: flex !important;
-  justify-content: center !important;
 }
-
 
 /* 5) stRadio가 들어있는 element/container 쪽에 생기는 기본 여백 제거 */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
   margin: 0 !important;
   padding: 0 !important;
-  width: 100% !important;
-  display: flex !important;
-  justify-content: center !important;
 }
 
 /* 6) label 안의 불필요한 텍스트/여백 요소가 높이 만드는 경우까지 눌러버리기 */
@@ -9526,7 +9500,6 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
   padding-bottom: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
-  width: 100% !important;
 }
 /* 1. 모든 라디오 버튼의 기본 빨간색 그림자/테두리 강제 제거 */
         div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div {
@@ -9553,6 +9526,25 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
             border-color: #3b82f6 !important;
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
         }
+
+/* ===== (PATCH) 통계표 헤더를 라디오와 같은 기준(왼쪽 정렬)으로 맞추기 ===== */
+.stat_hdr_cell{
+  display:flex !important;
+  justify-content:flex-start !important;  /* ✅ 라디오 그룹이 시작하는 쪽(왼쪽)으로 */
+  align-items:center !important;
+  width:100% !important;
+  padding:0 !important;
+  margin:0 !important;
+}
+.stat_hdr_inner{
+  display:inline-block !important;
+  text-align:left !important;
+  font-weight:700 !important;
+  line-height:1.15 !important;
+  /* ✅ 라디오 위젯이 가지고 있는 기본 왼쪽 여백과 유사하게 미세 보정 */
+  padding-left:2px !important;
+}
+
 </style>
 """,
                 unsafe_allow_html=True,
@@ -9568,9 +9560,9 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                     date_disp = str(s.get("date_display", "") or "")
                     label = str(s.get("label", "") or "")
                     st.markdown(
-                        f"<div style='text-align:center; font-weight:700; line-height:1.15;'>"
+                        f"""<div class='stat_hdr_cell'><div class='stat_hdr_inner'>"
                         f"{date_disp}<br>{label}"
-                        f"</div>",
+                        f"</div></div>""",
                         unsafe_allow_html=True,
                     )
 
