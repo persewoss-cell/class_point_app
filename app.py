@@ -97,16 +97,7 @@ st.markdown(
 
     /* 2. 통계청 전용: O, X, △ 값에 따라 배경색을 선명하게 꽉 채우기 */
     
-    
-
-    /* ✅ (PATCH) 통계청 셀(O/X/△) 버튼 묶음 자체를 '셀 가운데'로 정렬 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup"]{
-        justify-content: center !important;
-        align-items: center !important;
-        width: 100% !important;
-    }
-
-/* [O] 선택 시: 선명한 초록색 */
+    /* [O] 선택 시: 선명한 초록색 */
     div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="O"]:checked) {
         background-color: #10b981 !important;
         border-color: #059669 !important;
@@ -9535,6 +9526,25 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
             border-color: #3b82f6 !important;
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
         }
+
+/* ===== (PATCH) 통계표 헤더를 라디오와 같은 기준(왼쪽 정렬)으로 맞추기 ===== */
+.stat_hdr_cell{
+  display:flex !important;
+  justify-content:flex-start !important;  /* ✅ 라디오 그룹이 시작하는 쪽(왼쪽)으로 */
+  align-items:center !important;
+  width:100% !important;
+  padding:0 !important;
+  margin:0 !important;
+}
+.stat_hdr_inner{
+  display:inline-block !important;
+  text-align:left !important;
+  font-weight:700 !important;
+  line-height:1.15 !important;
+  /* ✅ 라디오 위젯이 가지고 있는 기본 왼쪽 여백과 유사하게 미세 보정 */
+  padding-left:2px !important;
+}
+
 </style>
 """,
                 unsafe_allow_html=True,
@@ -9550,9 +9560,7 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                     date_disp = str(s.get("date_display", "") or "")
                     label = str(s.get("label", "") or "")
                     st.markdown(
-                        f"<div style='text-align:center; font-weight:700; line-height:1.15;'>"
-                        f"{date_disp}<br>{label}"
-                        f"</div>",
+                        f"<div class='stat_hdr_cell'><div class='stat_hdr_inner'>{date_disp}<br>{label}</div></div>",
                         unsafe_allow_html=True,
                     )
 
