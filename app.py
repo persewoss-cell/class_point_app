@@ -56,6 +56,15 @@ def render_df(df: pd.DataFrame, *, use_container_width: bool = True, hide_index:
     if isinstance(df, pd.Series):
         df = df.to_frame()
 
+    # ✅ 대용량 표에서 Styler는 Streamlit Cloud에서 매우 느려져
+    #    "무한 로딩처럼 보이는" 현상이 발생할 수 있어요.
+    #    일정 크기 이상이면 안전하게 Styler를 생략하고 기본 dataframe으로 표시합니다.
+    MAX_STYLE_ROWS = 250
+    MAX_STYLE_CELLS = 12000
+    if df.shape[0] > MAX_STYLE_ROWS or (df.shape[0] * max(1, df.shape[1])) > MAX_STYLE_CELLS:
+        st.dataframe(df, use_container_width=use_container_width, hide_index=hide_index, height=height)
+        return
+
     try:
         right_cols, center_cols = _pick_align_columns(df)
 
