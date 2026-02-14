@@ -62,7 +62,10 @@ def render_df(df: pd.DataFrame, *, use_container_width: bool = True, hide_index:
     MAX_STYLE_ROWS = 250
     MAX_STYLE_CELLS = 12000
     if df.shape[0] > MAX_STYLE_ROWS or (df.shape[0] * max(1, df.shape[1])) > MAX_STYLE_CELLS:
-        st.dataframe(df, use_container_width=use_container_width, hide_index=hide_index, height=height)
+        kwargs = dict(use_container_width=use_container_width, hide_index=hide_index)
+        if height is not None:
+            kwargs["height"] = height
+        st.dataframe(df, **kwargs)
         return
 
     try:
@@ -87,9 +90,15 @@ def render_df(df: pd.DataFrame, *, use_container_width: bool = True, hide_index:
         if right_cols:
             sty = sty.set_properties(subset=right_cols, **{"text-align": "right"})
 
-        st.dataframe(sty, use_container_width=use_container_width, hide_index=hide_index, height=height)
+        kwargs = dict(use_container_width=use_container_width, hide_index=hide_index)
+        if height is not None:
+            kwargs["height"] = height
+        st.dataframe(sty, **kwargs)
     except Exception:
-        st.dataframe(df, use_container_width=use_container_width, hide_index=hide_index, height=height)
+        kwargs = dict(use_container_width=use_container_width, hide_index=hide_index)
+        if height is not None:
+            kwargs["height"] = height
+        st.dataframe(df, **kwargs)
 
 
 # ✅ 기존 관리자 유지(교사)
