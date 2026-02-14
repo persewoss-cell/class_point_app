@@ -614,7 +614,7 @@ div[data-baseweb="accordion"] > div {
 div[data-baseweb="accordion-item"] > div > div > button {
     padding-top: 2px !important;
     padding-bottom: 2px !important;
-    min-height: 32px !important;
+    min-height: 23px !important;
 }
 
 /* 펼쳤을 때 내부 영역 */
