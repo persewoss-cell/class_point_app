@@ -9560,9 +9560,7 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                     date_disp = str(s.get("date_display", "") or "")
                     label = str(s.get("label", "") or "")
                     st.markdown(
-                        f"""<div class='stat_hdr_cell'><div class='stat_hdr_inner'>"
-                        f"{date_disp}<br>{label}"
-                        f"</div></div>""",
+                        f"<div class='stat_hdr_cell'><div class='stat_hdr_inner'>{date_disp}<br>{label}</div></div>",
                         unsafe_allow_html=True,
                     )
 
