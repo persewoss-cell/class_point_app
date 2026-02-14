@@ -6033,7 +6033,20 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 chart_df["y2"] = chart_df["변동 후"].shift(-1)
 
     
-                                seg_df = chart_df.dropna(subset=["x2"])
+                                seg_df = chart_df.dropna(subset=["x2"]).copy()
+
+                                # ✅ 구간(현재→다음) 기준으로 상승/하락/보합 판정
+                                def _seg_dir(_r):
+                                    y1 = _r.get("변동 후")
+                                    y2 = _r.get("y2")
+                                    if pd.isna(y1) or pd.isna(y2):
+                                        return "same"
+                                    if float(y2) > float(y1):
+                                        return "up"
+                                    if float(y2) < float(y1):
+                                        return "down"
+                                    return "same"
+                                seg_df["direction_seg"] = seg_df.apply(_seg_dir, axis=1)
 
 
     
@@ -6082,7 +6095,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     color=alt.Color(
 
     
-                                        "direction:N",
+                                        "direction_seg:N",
 
     
                                         scale=alt.Scale(domain=["up", "down", "same"], range=["red", "blue", "black"]),
@@ -6286,7 +6299,20 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 chart_df["y2"] = chart_df["변동 후"].shift(-1)
 
     
-                                seg_df = chart_df.dropna(subset=["x2"])
+                                seg_df = chart_df.dropna(subset=["x2"]).copy()
+
+                                # ✅ 구간(현재→다음) 기준으로 상승/하락/보합 판정
+                                def _seg_dir(_r):
+                                    y1 = _r.get("변동 후")
+                                    y2 = _r.get("y2")
+                                    if pd.isna(y1) or pd.isna(y2):
+                                        return "same"
+                                    if float(y2) > float(y1):
+                                        return "up"
+                                    if float(y2) < float(y1):
+                                        return "down"
+                                    return "same"
+                                seg_df["direction_seg"] = seg_df.apply(_seg_dir, axis=1)
 
 
     
@@ -6335,7 +6361,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     color=alt.Color(
 
     
-                                        "direction:N",
+                                        "direction_seg:N",
 
     
                                         scale=alt.Scale(domain=["up", "down", "same"], range=["red", "blue", "black"]),
