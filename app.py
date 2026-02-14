@@ -19,91 +19,157 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
 
-# =========================
-# ✅ 표(데이터프레임) 공통 렌더: 정렬 규칙 통일
-# - 헤더(제목셀): 가운데
-# - 기본 내용: 가운데
-# - 번호/이름: 가운데 정렬 고정
-# - 금액/수치 컬럼(키워드 기반): 우측 정렬
-# =========================
-_RIGHT_ALIGN_KEYWORDS = [
-    "금액","입금","출금","총액","잔액","세입","세출","월급","이자","원금",
-    "수익","손실","투자","지급","평가","주가","점수",
-    "수수료","가격","단가","현재가","매수가","평가금","수익률","손익","합계","총"
-]
-_CENTER_ALWAYS_COLS = {"번호", "이름"}
-
-def _pick_align_columns(df: pd.DataFrame):
-    """(right_cols, center_cols) 반환"""
-    cols = [str(c) for c in (df.columns.tolist() if df is not None else [])]
-    right_cols = []
-    center_cols = []
-    for c in cols:
-        if c in _CENTER_ALWAYS_COLS:
-            center_cols.append(c)
-            continue
-        if any(k in c for k in _RIGHT_ALIGN_KEYWORDS):
-            right_cols.append(c)
-    return right_cols, center_cols
-
-def render_df(df: pd.DataFrame, *, use_container_width: bool = True, hide_index: bool = True, height=None):
-    """✅ st.dataframe 표 렌더 통일(정렬 규칙 적용).
-    - Styler가 실패해도 표는 반드시 출력되게(안전장치 포함)
-    """
-    if df is None:
-        st.info("표 데이터가 없습니다.")
-        return
-    if isinstance(df, pd.Series):
-        df = df.to_frame()
-
-    # ✅ 대용량 표에서 Styler는 Streamlit Cloud에서 매우 느려져
-    #    "무한 로딩처럼 보이는" 현상이 발생할 수 있어요.
-    #    일정 크기 이상이면 안전하게 Styler를 생략하고 기본 dataframe으로 표시합니다.
-    MAX_STYLE_ROWS = 250
-    MAX_STYLE_CELLS = 12000
-    if df.shape[0] > MAX_STYLE_ROWS or (df.shape[0] * max(1, df.shape[1])) > MAX_STYLE_CELLS:
-        kwargs = dict(use_container_width=use_container_width, hide_index=hide_index)
-        if height is not None:
-            kwargs["height"] = height
-        st.dataframe(df, **kwargs)
-        return
-
-    try:
-        right_cols, center_cols = _pick_align_columns(df)
-
-        sty = df.style
-
-        # 헤더/기본 정렬
-        sty = sty.set_table_styles(
-            [
-                {"selector": "th", "props": [("text-align", "center"), ("white-space", "nowrap")]},
-                {"selector": "td", "props": [("text-align", "center")]},
-            ],
-            overwrite=False,
-        )
-
-        # 번호/이름 강제 가운데
-        if center_cols:
-            sty = sty.set_properties(subset=center_cols, **{"text-align": "center"})
-
-        # 금액/수치(키워드) 우측
-        if right_cols:
-            sty = sty.set_properties(subset=right_cols, **{"text-align": "right"})
-
-        kwargs = dict(use_container_width=use_container_width, hide_index=hide_index)
-        if height is not None:
-            kwargs["height"] = height
-        st.dataframe(sty, **kwargs)
-    except Exception:
-        kwargs = dict(use_container_width=use_container_width, hide_index=hide_index)
-        if height is not None:
-            kwargs["height"] = height
-        st.dataframe(df, **kwargs)
-
-
 # ✅ 기존 관리자 유지(교사)
 ADMIN_PIN = "9999"
 ADMIN_NAME = "관리자"
+
+# =========================
+# ✅ 공용: 표 정렬 규칙(헤더/기본/번호·이름/금액·수치)
+# - 헤더(th): 항상 가운데
+# - 기본(td): 가운데
+# - 번호/이름: 가운데 고정(번호는 숫자여도 가운데)
+# - 금액/수치 컬럼: 우측 정렬
+#   (입금/출금/총액/잔액/세입/세출/월급/이자/원금/수익/손실/투자/지급/평가/주가/점수 등)
+# =========================
+AMOUNT_RIGHT_KEYWORDS = [
+    "금액","수치","입금","출금","총액","잔액","세입","세출","월급","이자","원금",
+    "수익","손실","투자","지급","평가","주가","점수","가격","단가","합계","이익","손해",
+]
+
+CENTER_FIXED_KEYWORDS = ["번호", "이름", "학번", "no", "name"]
+
+def _is_amount_right_col(col_name: str, ser: pd.Series | None = None) -> bool:
+    nm = str(col_name or "").strip()
+    if not nm:
+        return False
+
+    # ✅ 번호는 "숫자여도" 항상 가운데
+    if "번호" in nm or nm.lower() in ("no",):
+        return False
+
+    # 키워드 기반
+    low = nm.lower()
+    for kw in AMOUNT_RIGHT_KEYWORDS:
+        if kw and (kw in nm):
+            return True
+
+    # dtype 기반(숫자 컬럼이면 기본 우측) — 단 '번호' 제외
+    try:
+        if ser is not None and hasattr(ser, "dtype"):
+            kind = getattr(ser.dtype, "kind", "")
+            if kind in ("i", "u", "f"):  # int/uint/float
+                return True
+    except Exception:
+        pass
+
+    # 값이 거의 숫자처럼 보이면 우측(단, 텍스트가 많으면 제외)
+    try:
+        if ser is not None:
+            s = ser.dropna().astype(str).head(50)
+            if len(s) >= 5:
+                num_like = 0
+                for v in s:
+                    v2 = re.sub(r"[,\s]|드림|원|점|%","", str(v))
+                    if re.fullmatch(r"-?\d+(\.\d+)?", v2 or ""):
+                        num_like += 1
+                if num_like / max(1, len(s)) >= 0.8:
+                    return True
+    except Exception:
+        pass
+
+    return False
+
+def _is_center_fixed_col(col_name: str) -> bool:
+    nm = str(col_name or "").strip()
+    if not nm:
+        return False
+    if "번호" in nm or "이름" in nm:
+        return True
+    if nm.lower() in ("no", "name"):
+        return True
+    return False
+
+def style_table(df: pd.DataFrame) -> "pd.io.formats.style.Styler":
+    """정렬 규칙만 최소 적용한 Styler(무한로딩 방지: 무거운 스타일 금지)."""
+    if df is None:
+        df = pd.DataFrame()
+    base = df.style
+
+    # ✅ 헤더 가운데
+    base = base.set_table_styles(
+        [
+            {"selector": "th", "props": [("text-align", "center")]},
+        ],
+        overwrite=False,
+    )
+
+    # ✅ 기본 가운데
+    try:
+        base = base.set_properties(**{"text-align": "center"})
+    except Exception:
+        pass
+
+    # ✅ 컬럼별: 우측 정렬(금액/수치)
+    right_cols = []
+    try:
+        for c in df.columns:
+            ser = df[c] if c in df.columns else None
+            if _is_amount_right_col(str(c), ser):
+                right_cols.append(c)
+    except Exception:
+        right_cols = []
+
+    if right_cols:
+        try:
+            base = base.set_properties(subset=right_cols, **{"text-align": "right"})
+        except Exception:
+            pass
+
+    # ✅ 번호/이름은 가운데 고정(혹시 우측으로 잡혔을 때 되돌림)
+    center_cols = [c for c in df.columns if _is_center_fixed_col(str(c))]
+    if center_cols:
+        try:
+            base = base.set_properties(subset=center_cols, **{"text-align": "center"})
+        except Exception:
+            pass
+
+    return base
+
+def render_df(df: pd.DataFrame, *, use_container_width: bool = True, hide_index: bool = True, height=None, key: str | None = None):
+    """
+    ✅ 표 출력 공용 함수
+    - 무조건 Styler로 정렬 규칙 적용
+    - height=None이면 StreamlitInvalidHeightError 방지(파라미터 자체를 제거)
+    """
+    if df is None:
+        df = pd.DataFrame()
+
+    sty = style_table(df)
+
+    kwargs = {"use_container_width": use_container_width, "hide_index": hide_index}
+    if key is not None:
+        kwargs["key"] = key
+    if height is not None:
+        try:
+            kwargs["height"] = int(height)
+        except Exception:
+            pass
+
+    # ✅ Streamlit은 Styler를 st.dataframe에 넣으면 렌더링 가능
+    return st.dataframe(sty, **kwargs)
+
+# ✅ HTML로 출력하는 표(to_html/classes)에도 동일 규칙 일부 적용(헤더 가운데/기본 가운데/숫자 우측)
+st.markdown(
+    """
+    <style>
+      table.inv_hist_table th { text-align: center !important; }
+      table.inv_hist_table td { text-align: center !important; }
+      /* 투자 변동 표: 주가(3열)는 우측 */
+      table.inv_hist_table td:nth-child(3) { text-align: right !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # =========================
 # 모바일 UI CSS + 템플릿 정렬(촘촘) CSS
@@ -3793,10 +3859,12 @@ def render_tx_table(df_tx: pd.DataFrame):
             "balance_after": "총액",
         }
     )
+
     render_df(
         view[["내역", "입금", "출금", "총액", "날짜-시간"]],
         use_container_width=True,
         hide_index=True,
+        key="tx_table",
     )
 
 def refresh_account_data_light(name: str, pin: str, force: bool = False):
@@ -4424,7 +4492,7 @@ if "🏦 내 통장" in tabs:
                             else:
                                 st.session_state["bank_tpl_bulk_df"] = df
                                 st.success(f"업로드 완료! ({len(df)}행) 아래 미리보기 확인 후 저장을 누르세요.")
-                                render_df(df, use_container_width=True, hide_index=True)
+                                st.dataframe(df, use_container_width=True, hide_index=True)
 
                     except Exception as e:
                         st.error(f"엑셀 읽기 실패: {e}")
@@ -5437,7 +5505,7 @@ if "admin::🏦 내 통장" in tabs:
                             else:
                                 st.session_state["bank_tpl_bulk_df"] = df
                                 st.success(f"업로드 완료! ({len(df)}행) 아래 미리보기 확인 후 저장을 누르세요.")
-                                render_df(df, use_container_width=True, hide_index=True)
+                                st.dataframe(df, use_container_width=True, hide_index=True)
 
                     except Exception as e:
                         st.error(f"엑셀 읽기 실패: {e}")
@@ -6550,8 +6618,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         )
     
     if view_rows:
-        render_df(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
-                     use_container_width=True, hide_index=True)
+        render_df(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"), use_container_width=True, hide_index=True, key="inv_ledger_table")
     else:
         st.caption("투자 내역이 없습니다.")
     
@@ -7280,7 +7347,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     "번호","이름","적금기간","신용등급","이자율","적금 금액","이자","만기 금액",
                     "적금 날짜","만기 날짜","처리 결과","지급 금액"
                 ]
-                render_df(df[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
 
                 st.markdown("#### 🧯 중도해지 처리(관리자)")
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
@@ -7695,7 +7762,7 @@ if "👥 계정 정보/활성화" in tabs:
         if not df_status.empty:
             df_status = df_status.sort_values(["번호","이름"]).reset_index(drop=True)
 
-        render_df(df_status, use_container_width=True, hide_index=True)
+        render_df(df_status, use_container_width=True, hide_index=True, key="perm_status_table")
 
         # -------------------------------------------------
         # ✅ (탭 상단) 엑셀 일괄 계정 추가 + 샘플 다운로드
@@ -8530,7 +8597,7 @@ if "💼 직업/월급" in tabs:
                 df_status = df_status.sort_values(["번호_정렬", "이름", "직업"], kind="mergesort").drop(columns=["번호_정렬"])
             except Exception:
                 df_status = df_status.sort_values(["번호", "이름", "직업"], kind="mergesort")
-            render_df(df_status[["번호", "이름", "직업", "월급", "실수령액"]], use_container_width=True, hide_index=True)
+            st.dataframe(df_status[["번호", "이름", "직업", "월급", "실수령액"]], use_container_width=True, hide_index=True)
         else:
             st.info("아직 직업이 배정된 학생이 없습니다.")
 
@@ -8986,7 +9053,7 @@ if "💼 직업/월급" in tabs:
         # -------------------------
         df_preview = st.session_state.get("job_bulk_df")
         if df_preview is not None and not df_preview.empty:
-            render_df(df_preview, use_container_width=True, hide_index=True)
+            st.dataframe(df_preview, use_container_width=True, hide_index=True)
 
         # -------------------------
         # 3) 저장(반영) 버튼: 여기서만 DB 반영
@@ -9060,7 +9127,7 @@ if "🏛️ 국세청(국고)" in tabs:
                     "created_at_kr": "날짜-시간",
                 }
             )
-            render_df(
+            st.dataframe(
                 view[["내역", "세입", "세출", "총액", "날짜-시간"]],
                 use_container_width=True,
                 hide_index=True,
@@ -10537,7 +10604,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     "번호","이름","적금기간","신용등급","이자율","적금 금액","이자","만기 금액",
                     "적금 날짜","만기 날짜","처리 결과","지급 금액"
                 ]
-                render_df(df[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
 
                 st.markdown("#### 🧯 중도해지 처리(관리자)")
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
@@ -10707,7 +10774,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
                 df_my = pd.DataFrame(view)
                 show_cols = ["적금기간","신용등급","이자율","적금 금액","이자","만기 금액","적금 날짜","만기 날짜","처리 결과","지급 금액"]
-                render_df(df_my[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(df_my[show_cols], use_container_width=True, hide_index=True)
 
                 running_ids = df_my[(df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")].copy()
                 if not running_ids.empty and can_write:
@@ -10751,7 +10818,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 table_rows.append(row)
 
             df_rate = pd.DataFrame(table_rows)
-            render_df(df_rate, use_container_width=True, hide_index=True)
+            render_df(df_rate, use_container_width=True, hide_index=True, key="bank_rate_table")
             st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다.")
 
 # =========================
