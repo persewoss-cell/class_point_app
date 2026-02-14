@@ -1,72 +1,3 @@
-st.markdown("""<style>
-
-/* =========================
-   🔎 개별조회: 초압축 토글 박스(mini expander)
-   - expander 대신 버튼 토글 방식(여백/폰트/간격 완전 제어)
-   ========================= */
-.indv-mini-wrap + div[data-testid="stButton"]{
-  margin: 0 0 4px 0 !important;     /* ✅ 박스 간 간격 */
-}
-.indv-mini-wrap + div[data-testid="stButton"] button{
-  padding: 4px 10px !important;     /* ✅ 박스 안쪽 위아래 여백 */
-  border-radius: 14px !important;
-  border: 1px solid #d1d5db !important;
-  background: #f3f4f6 !important;
-  box-shadow: none !important;
-  font-size: 0.72rem !important;    /* ✅ 글자 크기 */
-  line-height: 1.15 !important;
-  text-align: left !important;      /* 긴 한줄 텍스트 보기 좋게 */
-  white-space: normal !important;   /* 두 줄 허용 */
-}
-.indv-mini-wrap + div[data-testid="stButton"] button:hover{
-  filter: brightness(0.98);
-}
-
-/* 열렸을 때 내용 컨테이너 */
-.indv-mini-content + div{
-  margin-top: 0px !important;
-  margin-bottom: 6px !important;
-  padding: 6px 10px !important;
-  border-radius: 14px !important;
-  border: 1px solid #e5e7eb !important;
-  background: #ffffff !important;
-}
-.indv-mini-content + div div[data-testid="stMarkdownContainer"] p{
-  margin: 0 !important;
-}
-
-
-
-/* =========================
-   🔎 개별조회: 적용 실패 대비 '스코프 앵커' 기반 강제 적용 (Streamlit 버전별 DOM 차이 대응)
-   - 탭 시작 시 <div id="indvview-anchor"></div> 를 찍어두고,
-     그 앵커를 포함하는 블록에서만 버튼/간격을 축소합니다.
-   ========================= */
-div[data-testid="stVerticalBlock"]:has(#indvview-anchor) div[data-testid="stButton"]{
-  margin: 0 0 4px 0 !important;
-}
-div[data-testid="stVerticalBlock"]:has(#indvview-anchor) div[data-testid="stButton"] button{
-  padding: 4px 10px !important;
-  border-radius: 14px !important;
-  font-size: 0.72rem !important;
-  line-height: 1.15 !important;
-  white-space: normal !important;
-}
-/* 개별조회 열림 영역(컨테이너) 기본 여백 축소 */
-div[data-testid="stVerticalBlock"]:has(#indvview-anchor) div[data-testid="stContainer"]{
-  padding-top: 0px !important;
-  padding-bottom: 0px !important;
-}
-div[data-testid="stVerticalBlock"]:has(#indvview-anchor) div[data-testid="stMarkdownContainer"] h3{
-  margin-top: 6px !important;
-  margin-bottom: 4px !important;
-}
-div[data-testid="stVerticalBlock"]:has(#indvview-anchor) div[data-testid="stMarkdownContainer"] p{
-  margin-top: 0px !important;
-  margin-bottom: 4px !important;
-}
-
-</style>""", unsafe_allow_html=True)
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -6962,9 +6893,6 @@ if "🔎 개별조회" in tabs:
     with tab_map["🔎 개별조회"]:
         st.subheader("🔎 개별조회(번호순)")
 
-        # ✅ (PATCH) 개별조회 CSS 스코프 앵커(버전별 DOM 차이 대응)
-        st.markdown('<div id="indvview-anchor"></div>', unsafe_allow_html=True)
-
         if not (is_admin or has_tab_access(my_perms, "🔎 개별조회", is_admin)):
             st.error("접근 권한이 없습니다.")
             st.stop()
@@ -7097,40 +7025,25 @@ if "🔎 개별조회" in tabs:
                         credit_grade=credit_grade,
                     )
 
-                    # ✅ (PATCH) Streamlit expander 대신 '초압축 토글 박스'로 표시
-                    # - expander는 내부 padding/margin이 Streamlit 버전에 따라 고정이라 CSS로 잘 안 줄어드는 경우가 있어,
-                    #   버튼+세션토글 방식으로 완전히 제어합니다.
-                    open_key = f"indv_open_{sid}"
-                    if open_key not in st.session_state:
-                        st.session_state[open_key] = False
-
-                    # 헤더(둥근 박스) - CSS는 .indv-mini-wrap + 다음 stButton에 적용
-                    st.markdown('<div class="indv-mini-wrap"></div>', unsafe_allow_html=True)
-                    if st.button(collapsed, key=f"indv_btn_{sid}", use_container_width=True):
-                        st.session_state[open_key] = not bool(st.session_state.get(open_key, False))
-                        st.rerun()
-
-                    # 내용(열림)
-                    if st.session_state.get(open_key, False):
-                        st.markdown('<div class="indv-mini-content"></div>', unsafe_allow_html=True)
-                        with st.container():
-                            # -------------------------
-                            # 통장내역(최신 120)
-                            # -------------------------
-                            st.markdown("### 📒 통장내역")
-                            txr = api_get_txs_by_student_id(sid, limit=120)
-                            if not txr.get("ok"):
-                                st.error(txr.get("error", "내역을 불러오지 못했어요."))
+                    with st.expander(collapsed, expanded=False):
+                        # -------------------------
+                        # 통장내역(최신 120)
+                        # -------------------------
+                        st.markdown("### 📒 통장내역")
+                        txr = api_get_txs_by_student_id(sid, limit=120)
+                        if not txr.get("ok"):
+                            st.error(txr.get("error", "내역을 불러오지 못했어요."))
+                        else:
+                            df_tx = pd.DataFrame(txr.get("rows", []))
+                            if df_tx.empty:
+                                st.info("거래 내역이 없어요.")
                             else:
-                                df_tx = pd.DataFrame(txr.get("rows", []))
-                                if df_tx.empty:
-                                    st.info("거래 내역이 없어요.")
-                                else:
-                                    df_tx = df_tx.sort_values(
-                                        "created_at_utc",
-                                        ascending=False
-                                    )
-                                    render_tx_table(df_tx)
+                                df_tx = df_tx.sort_values(
+                                    "created_at_utc",
+                                    ascending=False
+                                )
+                                render_tx_table(df_tx)
+
 if "📈 투자" in tabs:
     with tab_map["📈 투자"]:
         _render_invest_admin_like(
@@ -10548,7 +10461,7 @@ if "🎯 목표" in tabs and (not is_admin):
         st.progress(exp_ratio)
         st.write(f"총 자산 기준 예상 달성률: **{exp_ratio*100:.1f}%** (예상 {expected_amount} / 목표 {goal_amount})")
 
-        if principal_all_running > 0:  
+        if principal_all_running > 0:
             msg = f"📌 진행 중 적금 원금 **+{principal_all_running}** 포함"
 
             if interest_before_goal > 0:
