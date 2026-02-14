@@ -5568,6 +5568,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         table.inv_hist_table th {
             font-weight: 700;
             background: rgba(0,0,0,0.03);
+            text-align: center;
+        }
         }
         </style>
         """,
@@ -5981,75 +5983,25 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             if not cdf.empty:
                                 order = cdf["변동사유"].tolist()
     
-                                # ✅ (PATCH) 상승/하락/변동없음에 따라 선 색상 변경(상승=빨강, 하락=파랑, 변동없음=검정)
-                                cdf2 = cdf.copy()
-                                cdf2["__idx"] = range(len(cdf2))
-                                seg = cdf2.iloc[:-1].copy()
-                                seg["x2"] = cdf2["변동사유"].shift(-1).iloc[:-1]
-                                seg["y"] = cdf2["변동 후"].iloc[:-1]
-                                seg["y2"] = cdf2["변동 후"].shift(-1).iloc[:-1]
-
-                                def _trend(_a, _b):
-                                    try:
-                                        if float(_b) > float(_a):
-                                            return "상승"
-                                        if float(_b) < float(_a):
-                                            return "하락"
-                                        return "변동없음"
-                                    except Exception:
-                                        return "변동없음"
-
-                                seg["trend"] = [_trend(a, b) for a, b in zip(seg["y"], seg["y2"])]
-
-                                order = cdf2["변동사유"].tolist()
-
-                                base_x = alt.X(
-                                    "변동사유:N",
-                                    sort=order,
-                                    title=None,
-                                    axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
-                                )
-                                base_y = alt.Y(
-                                    "변동 후:Q",
-                                    title=None,
-                                    scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
-                                )
-
-                                seg_chart = (
-                                    alt.Chart(seg)
-                                    .mark_rule(strokeWidth=3)
+                                chart = (
+                                    alt.Chart(cdf)
+                                    .mark_line(point=True)
                                     .encode(
-                                        x=base_x,
-                                        x2=alt.X2("x2:N"),
-                                        y=alt.Y("y:Q", title=None, scale=alt.Scale(domain=[50, 100])),
-                                        y2=alt.Y2("y2:Q"),
-                                        color=alt.Color(
-                                            "trend:N",
-                                            scale=alt.Scale(domain=["상승", "하락", "변동없음"], range=["red", "blue", "black"]),
-                                            legend=None,
+                                        x=alt.X(
+                                            "변동사유:N",
+                                            sort=order,
+                                            title=None,
+                                            axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
                                         ),
-                                        tooltip=[
-                                            alt.Tooltip("변동사유:N", title="구간 시작"),
-                                            alt.Tooltip("x2:N", title="구간 끝"),
-                                            alt.Tooltip("y:Q", title="주가"),
-                                            alt.Tooltip("y2:Q", title="다음 주가"),
-                                            alt.Tooltip("trend:N", title="등락"),
-                                        ],
-                                    )
-                                )
-
-                                pt_chart = (
-                                    alt.Chart(cdf2)
-                                    .mark_point(filled=True, size=60)
-                                    .encode(
-                                        x=base_x,
-                                        y=base_y,
+                                        y=alt.Y(
+                                            "변동 후:Q",
+                                            title=None,
+                                            scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
+                                        ),
                                         tooltip=["변동사유", "변동 후"],
                                     )
+                                    .properties(height=260)
                                 )
-
-                                chart = (seg_chart + pt_chart).properties(height=260)
-
                                 st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
@@ -6138,75 +6090,25 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             if not cdf.empty:
                                 order = cdf["변동사유"].tolist()
     
-                                # ✅ (PATCH) 상승/하락/변동없음에 따라 선 색상 변경(상승=빨강, 하락=파랑, 변동없음=검정)
-                                cdf2 = cdf.copy()
-                                cdf2["__idx"] = range(len(cdf2))
-                                seg = cdf2.iloc[:-1].copy()
-                                seg["x2"] = cdf2["변동사유"].shift(-1).iloc[:-1]
-                                seg["y"] = cdf2["변동 후"].iloc[:-1]
-                                seg["y2"] = cdf2["변동 후"].shift(-1).iloc[:-1]
-
-                                def _trend(_a, _b):
-                                    try:
-                                        if float(_b) > float(_a):
-                                            return "상승"
-                                        if float(_b) < float(_a):
-                                            return "하락"
-                                        return "변동없음"
-                                    except Exception:
-                                        return "변동없음"
-
-                                seg["trend"] = [_trend(a, b) for a, b in zip(seg["y"], seg["y2"])]
-
-                                order = cdf2["변동사유"].tolist()
-
-                                base_x = alt.X(
-                                    "변동사유:N",
-                                    sort=order,
-                                    title=None,
-                                    axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
-                                )
-                                base_y = alt.Y(
-                                    "변동 후:Q",
-                                    title=None,
-                                    scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
-                                )
-
-                                seg_chart = (
-                                    alt.Chart(seg)
-                                    .mark_rule(strokeWidth=3)
+                                chart = (
+                                    alt.Chart(cdf)
+                                    .mark_line(point=True)
                                     .encode(
-                                        x=base_x,
-                                        x2=alt.X2("x2:N"),
-                                        y=alt.Y("y:Q", title=None, scale=alt.Scale(domain=[50, 100])),
-                                        y2=alt.Y2("y2:Q"),
-                                        color=alt.Color(
-                                            "trend:N",
-                                            scale=alt.Scale(domain=["상승", "하락", "변동없음"], range=["red", "blue", "black"]),
-                                            legend=None,
+                                        x=alt.X(
+                                            "변동사유:N",
+                                            sort=order,
+                                            title=None,
+                                            axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
                                         ),
-                                        tooltip=[
-                                            alt.Tooltip("변동사유:N", title="구간 시작"),
-                                            alt.Tooltip("x2:N", title="구간 끝"),
-                                            alt.Tooltip("y:Q", title="주가"),
-                                            alt.Tooltip("y2:Q", title="다음 주가"),
-                                            alt.Tooltip("trend:N", title="등락"),
-                                        ],
-                                    )
-                                )
-
-                                pt_chart = (
-                                    alt.Chart(cdf2)
-                                    .mark_point(filled=True, size=60)
-                                    .encode(
-                                        x=base_x,
-                                        y=base_y,
+                                        y=alt.Y(
+                                            "변동 후:Q",
+                                            title=None,
+                                            scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
+                                        ),
                                         tooltip=["변동사유", "변동 후"],
                                     )
+                                    .properties(height=260)
                                 )
-
-                                chart = (seg_chart + pt_chart).properties(height=260)
-
                                 st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
