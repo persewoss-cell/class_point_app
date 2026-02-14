@@ -2932,7 +2932,7 @@ def render_round_amount_picker(prefix: str, plus_label: str, minus_label: str, a
         st.session_state[skip_key] = True
         st.session_state[mode_prev_key] = str(st.session_state.get(mode_key, plus_label))
 
-    st.caption("⚡ 빠른 금액(원형 버튼)")
+    st.caption("⚡ 빠른 금액(누른 만큼 더해지거나 줄어듬, 0은 초기화)")
     st.radio(
         "적용",
         [plus_label, minus_label],
