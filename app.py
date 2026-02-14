@@ -9498,12 +9498,19 @@ div[role="radiogroup"]:has(input[id*="stat_cellpick_"]) input:focus {
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
   margin: 0 !important;
   padding: 0 !important;
+  width: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
 }
+
 
 /* 5) stRadio가 들어있는 element/container 쪽에 생기는 기본 여백 제거 */
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
   margin: 0 !important;
   padding: 0 !important;
+  width: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
 }
 
 /* 6) label 안의 불필요한 텍스트/여백 요소가 높이 만드는 경우까지 눌러버리기 */
@@ -9518,6 +9525,7 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
   padding-bottom: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
+  width: 100% !important;
 }
 /* 1. 모든 라디오 버튼의 기본 빨간색 그림자/테두리 강제 제거 */
         div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div {
