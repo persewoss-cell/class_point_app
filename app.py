@@ -185,24 +185,6 @@ st.markdown(
     }
     .tpl-sub { color:#666; font-size: 0.85rem; margin-top: 2px; line-height: 1.05; }
 
-/* ✅ 통계청 통계표: 라디오( O/X/△ )를 컬럼 가운데 정렬
-   - 제출물(열) 개수가 적을 때, 헤더는 중앙정렬인데 라디오는 왼쪽에 붙어 보여 어긋나 보이는 문제를 방지 */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
-    width: 100% !important;
-    min-width: 0 !important;
-}
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
-    width: 100% !important;
-    display: flex !important;
-    justify-content: center !important;
-}
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup"] {
-    width: 100% !important;
-    display: flex !important;
-    justify-content: center !important;
-    gap: 6px !important;
-}
-
 /* ✅ stat_cellpick_ 전용: 선택 색상(순서 기반) */
 
 /* (중요) 기본 선택 배경 리셋은 "stat_cellpick_"에만 적용 */
@@ -9452,6 +9434,24 @@ if "📊 통계청" in tabs:
             st.markdown(
                 """
 <style>
+/* ✅ (FIX) 통계표 셀(stRadio) 자체를 "컬럼 가운데"로 강제 정렬
+   - 제출물(열) 개수가 적을 때 헤더는 중앙인데, 라디오 셀은 왼쪽으로 붙는 현상 해결
+   - stat_cellpick_ 라디오가 들어있는 요소에만 적용(다른 탭 영향 없음)
+*/
+div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
+  width: fit-content !important;
+  margin: 0 auto !important;
+}
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
+  width: fit-content !important;
+  margin: 0 auto !important;
+}
+
 /* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 원형 버튼처럼 + 높이/여백 압축 ===== */
 
 /* 1) radiogroup 자체 여백/정렬 */
@@ -9544,23 +9544,10 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
             border-color: #3b82f6 !important;
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
         }
-
-/* (FIX) 제출물 개수가 적을 때 헤더/셀 정렬이 어긋나는 문제 해결
-   - Streamlit columns는 내부 콘텐츠의 'min-content width' 영향을 받으면
-     행(헤더/바디)마다 실제 column 폭이 달라질 수 있음
-   - 통계표 영역만 min-width:0 처리해 flex 비율 계산을 동일하게 강제 */
-#stat_table_wrap div[data-testid="column"] { 
-  min-width: 0 !important;
-}
-#stat_table_wrap div[data-testid="column"] > div {
-  width: 100% !important;
-}
 </style>
 """,
                 unsafe_allow_html=True,
             )
-
-            st.markdown("<div id='stat_table_wrap'>", unsafe_allow_html=True)
 
             hdr_cols = st.columns([0.37, 0.7] + [1.2] * len(col_titles))
             with hdr_cols[0]:
@@ -9633,8 +9620,6 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                     st.rerun()
                 else:
                     st.error(res_sv.get("error", "저장 실패"))
-
-        st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
 
