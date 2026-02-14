@@ -17,6 +17,45 @@ import re
 APP_TITLE = "🏫학급 경제 시스템🪙"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
+st.markdown("""<style>
+
+/* ✅ (PATCH) Expander(Accordion) compact spacing — BaseWeb 기반(버전 무관) */
+
+/* expander 목록 사이 간격 */
+div[data-baseweb="accordion"] > div{
+  margin-bottom: 4px !important;
+}
+
+/* expander 한 덩어리(카드) 자체 여백 제거 */
+div[data-baseweb="accordion-item"]{
+  margin: 0 !important;
+}
+
+/* 헤더 버튼(접힌 줄) 위아래 패딩 축소 */
+div[data-baseweb="accordion-item"] > div > div > button,
+div[data-baseweb="accordion-item"] > div > div > button *{
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  min-height: unset !important;
+  line-height: 1.15 !important;
+}
+
+/* 펼친 내용(Region) 패딩 축소 */
+div[data-baseweb="accordion-item"] div[role="region"]{
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+
+/* 내부 마크다운 문단 기본 margin 제거(높이 부풀림 방지) */
+div[data-baseweb="accordion-item"] div[data-testid="stMarkdownContainer"] p{
+  margin: 0 !important;
+}
+
+</style>""", unsafe_allow_html=True)
+
+
 KST = timezone(timedelta(hours=9))
 
 # ✅ 기존 관리자 유지(교사)
@@ -549,48 +588,6 @@ div[data-testid="stExpander"]{
 }
 div[data-testid="stExpander"] > div{
     border: none !important;
-}
-
-
-
-/* ✅ (PATCH) Expander(개별조회) '박스 안쪽 여백/박스 간 여백' 강제 축소
-   - Streamlit 버전에 따라 padding이 summary/button/region/element-container 쪽에 걸려있어서
-     여러 레이어를 같이 눌러야 체감이 납니다. */
-div[data-testid="stElementContainer"]{
-    margin-top: 0.05rem !important;
-    margin-bottom: 0.15rem !important;  /* ✅ 박스 간 간격 */
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-}
-
-div[data-testid="stExpander"]{
-    margin: 0 !important;
-}
-
-/* 제목줄(접힌 줄) 패딩 축소: summary / button / 내부 p까지 */
-div[data-testid="stExpander"] summary,
-div[data-testid="stExpander"] summary *,
-div[data-testid="stExpander"] button,
-div[data-testid="stExpander"] button *{
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
-    margin-top: 0 !important;
-    margin-bottom: 0 !important;
-    line-height: 1.15 !important;
-}
-
-/* 펼친 내용 영역 패딩 축소 */
-div[data-testid="stExpander"] div[role="region"],
-div[data-testid="stExpander"] div[role="region"] *{
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
-    margin-top: 0 !important;
-    margin-bottom: 0 !important;
-}
-
-/* Markdown 문단 기본 margin 때문에 높이가 커지는 것 방지 */
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] p{
-    margin: 0 !important;
 }
 
 /* ✅ 총자산 강조 */
