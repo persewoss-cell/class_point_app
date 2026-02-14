@@ -984,25 +984,6 @@ def api_get_goal_by_student_id(student_id: str):
         return {"ok": False, "error": str(e)}
 
 
-def api_set_goal(student_id: str, target_amount: int, goal_date_str: str):
-    """학생별 목표 저장(학생 1명당 문서 1개: doc_id = student_id)"""
-    GOAL_COL = "goals"
-    try:
-        db.collection(GOAL_COL).document(student_id).set(
-            {
-                "student_id": student_id,
-                "target_amount": int(target_amount or 0),
-                "goal_date": goal_date_str,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
 def api_get_goal(name: str, pin: str):
     """사용자 인증 후 목표 조회"""
     student_doc = fs_auth_student(name, pin)  # ✅ login_name/login_pin 버그 수정
