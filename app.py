@@ -614,8 +614,8 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
 /* 접힌 제목줄(요약) 패딩 축소 */
 .indview-wrap details > summary,
 .indview-wrap div[data-testid="stExpander"] summary{
-    padding-top: 1px !important;
-    padding-bottom: 1px !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
     margin: 0 !important;
     min-height: unset !important;
     line-height: 1.15 !important;
