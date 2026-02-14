@@ -17,45 +17,6 @@ import re
 APP_TITLE = "🏫학급 경제 시스템🪙"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
-st.markdown("""<style>
-
-/* ✅ (PATCH) Expander(Accordion) compact spacing — BaseWeb 기반(버전 무관) */
-
-/* expander 목록 사이 간격 */
-div[data-baseweb="accordion"] > div{
-  margin-bottom: 1px !important;
-}
-
-/* expander 한 덩어리(카드) 자체 여백 제거 */
-div[data-baseweb="accordion-item"]{
-  margin: 0 !important;
-}
-
-/* 헤더 버튼(접힌 줄) 위아래 패딩 축소 */
-div[data-baseweb="accordion-item"] > div > div > button,
-div[data-baseweb="accordion-item"] > div > div > button *{
-  padding-top: 1px !important;
-  padding-bottom: 1px !important;
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-  min-height: unset !important;
-  line-height: 1.15 !important;
-}
-
-/* 펼친 내용(Region) 패딩 축소 */
-div[data-baseweb="accordion-item"] div[role="region"]{
-  padding-top: 4px !important;
-  padding-bottom: 4px !important;
-}
-
-/* 내부 마크다운 문단 기본 margin 제거(높이 부풀림 방지) */
-div[data-baseweb="accordion-item"] div[data-testid="stMarkdownContainer"] p{
-  margin: 0 !important;
-}
-
-</style>""", unsafe_allow_html=True)
-
-
 KST = timezone(timedelta(hours=9))
 
 # ✅ 기존 관리자 유지(교사)
@@ -638,6 +599,47 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
         margin: 0 !important;
         padding: 0 !important;
     }
+
+
+
+/* =========================
+   🔎 개별조회(expander) 전용: 박스 안쪽/박스간 여백 강제 축소
+   - Streamlit 버전별 DOM 차이를 고려해서 details + stExpander 둘 다 타겟
+   ========================= */
+.indview-wrap details,
+.indview-wrap div[data-testid="stExpander"]{
+    margin: 0 0 6px 0 !important;   /* ✅ 박스 간 간격 */
+}
+
+/* 접힌 제목줄(요약) 패딩 축소 */
+.indview-wrap details > summary,
+.indview-wrap div[data-testid="stExpander"] summary{
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+    margin: 0 !important;
+    min-height: unset !important;
+    line-height: 1.15 !important;
+}
+
+/* 제목줄 내부 텍스트들 */
+.indview-wrap details > summary *,
+.indview-wrap div[data-testid="stExpander"] summary *{
+    margin: 0 !important;
+    line-height: 1.15 !important;
+}
+
+/* 펼친 내용 영역 패딩 축소 */
+.indview-wrap details div[role="region"],
+.indview-wrap div[data-testid="stExpander"] div[role="region"]{
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+
+/* 펼친 내용 내부 markdown 기본 p margin 제거(높이 부풀림 방지) */
+.indview-wrap div[data-testid="stMarkdownContainer"] p,
+.indview-wrap .stMarkdown p{
+    margin: 0 !important;
+}
 
 </style>
     """,
@@ -7015,6 +7017,7 @@ if "🔎 개별조회" in tabs:
             if not acc_rows:
                 st.info("표시할 계정이 없습니다.")
             else:
+                st.markdown('<div class="indview-wrap">', unsafe_allow_html=True)
                 for r in acc_rows:
                     sid = str(r["student_id"])
                     nm = str(r["name"])
@@ -7082,6 +7085,7 @@ if "🔎 개별조회" in tabs:
                                     ascending=False
                                 )
                                 render_tx_table(df_tx)
+                st.markdown('</div>', unsafe_allow_html=True)
 
 if "📈 투자" in tabs:
     with tab_map["📈 투자"]:
