@@ -6050,7 +6050,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
 
                                 chart = (seg_chart + pt_chart).properties(height=260)
 
-st.altair_chart(chart, use_container_width=True)
+                                st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
     
@@ -6207,7 +6207,7 @@ st.altair_chart(chart, use_container_width=True)
 
                                 chart = (seg_chart + pt_chart).properties(height=260)
 
-st.altair_chart(chart, use_container_width=True)
+                                st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
     
