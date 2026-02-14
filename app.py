@@ -37,16 +37,16 @@ components.html(
 
     // 헤더(둥근 사각형) 버튼 패딩/높이
     document.querySelectorAll('div[data-baseweb="accordion-item"] button').forEach(btn => {
-      btn.style.paddingTop = '4px';
-      btn.style.paddingBottom = '4px';
-      btn.style.minHeight = '26px';
+      btn.style.paddingTop = '1px';
+      btn.style.paddingBottom = '1px';
+      btn.style.minHeight = '10px';
       btn.style.lineHeight = '1.15';
     });
 
     // 펼친 내용 영역 패딩
     document.querySelectorAll('div[data-baseweb="accordion-item"] div[role="region"]').forEach(r => {
-      r.style.paddingTop = '4px';
-      r.style.paddingBottom = '4px';
+      r.style.paddingTop = '1px';
+      r.style.paddingBottom = '1px';
     });
 
     // 내부 문단 margin 제거
