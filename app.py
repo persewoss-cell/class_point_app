@@ -584,24 +584,23 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
     justify-content: center !important;
     text-align: center !important;
 }
+    
+    /* ✅ (PATCH) Expander(개별조회 포함) 제목 글자 크기 축소 — Streamlit DOM 변화에도 먹게 넓게 타겟 */
+    details summary { font-size: 0.78rem !important; line-height: 1.2 !important; }
+    details summary * { font-size: 0.78rem !important; line-height: 1.2 !important; }
 
-    /* ✅ (PATCH) expander 제목 글자 크기 축소 (개별조회 요약이 길어서 두 줄이 되는 문제 완화) */
-    details[data-testid="stExpander"] summary {
+    /* 일부 버전에서 summary 안에 markdown container로 감싸지는 경우 */
+    details summary div[data-testid="stMarkdownContainer"] p,
+    details summary div[data-testid="stMarkdownContainer"] span,
+    details summary p,
+    details summary span {
         font-size: 0.78rem !important;
-        line-height: 1.15 !important;
-    }
-    details[data-testid="stExpander"] summary * {
-        font-size: 0.78rem !important;
-        line-height: 1.15 !important;
-    }
-    /* Streamlit이 summary 안에 markdown(p)을 넣는 경우까지 확실히 */
-    details[data-testid="stExpander"] summary div[data-testid="stMarkdownContainer"] p {
-        font-size: 0.78rem !important;
-        line-height: 1.15 !important;
+        line-height: 1.2 !important;
         margin: 0 !important;
+        padding: 0 !important;
     }
 
-    </style>
+</style>
     """,
     unsafe_allow_html=True,
 )
