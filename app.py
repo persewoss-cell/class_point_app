@@ -600,6 +600,35 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
         padding: 0 !important;
     }
 
+
+/* =========================================================
+   🔥 (최종) 개별조회 expander 여백 축소 - BaseWeb 전용
+   ========================================================= */
+
+/* expander 사이 간격 */
+div[data-baseweb="accordion"] > div {
+    margin-bottom: 6px !important;
+}
+
+/* 둥근 사각형 헤더 버튼 */
+div[data-baseweb="accordion-item"] > div > div > button {
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+    min-height: 32px !important;
+}
+
+/* 펼쳤을 때 내부 영역 */
+div[data-baseweb="accordion-item"] div[role="region"] {
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+}
+
+/* 내부 문단 기본 margin 제거 */
+div[data-baseweb="accordion-item"] p {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
 </style>
     """,
     unsafe_allow_html=True,
