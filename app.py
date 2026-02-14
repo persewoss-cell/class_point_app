@@ -5549,7 +5549,32 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     INV_HIST_COL = "invest_price_history"
     INV_LEDGER_COL = "invest_ledger"
     
-    # -------------------------
+    
+    # ✅ (PATCH) 투자 탭 - 종목별 '주가 변동 내역' 표 글자/패딩 축소 전용 CSS
+    st.markdown(
+        """
+        <style>
+        table.inv_hist_table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            line-height: 1.15;
+        }
+        table.inv_hist_table th, table.inv_hist_table td {
+            padding: 6px 8px;
+            border: 1px solid rgba(0,0,0,0.08);
+            vertical-align: middle;
+        }
+        table.inv_hist_table th {
+            font-weight: 700;
+            background: rgba(0,0,0,0.03);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# -------------------------
     # 유틸(함수 대신 안전하게 inline)
     # -------------------------
     days_ko = ["월", "화", "수", "목", "금", "토", "일"]
@@ -5925,7 +5950,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     
                         with left:
                             st.markdown(
-                                df.to_html(escape=False, index=False),
+                                df.to_html(escape=False, index=False, classes="inv_hist_table"),
                                 unsafe_allow_html=True,
                             )
     
@@ -6032,7 +6057,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     
                         with left:
                             st.markdown(
-                                df.to_html(escape=False, index=False),
+                                df.to_html(escape=False, index=False, classes="inv_hist_table"),
                                 unsafe_allow_html=True,
                             )
     
