@@ -185,6 +185,24 @@ st.markdown(
     }
     .tpl-sub { color:#666; font-size: 0.85rem; margin-top: 2px; line-height: 1.05; }
 
+/* ✅ 통계청 통계표: 라디오( O/X/△ )를 컬럼 가운데 정렬
+   - 제출물(열) 개수가 적을 때, 헤더는 중앙정렬인데 라디오는 왼쪽에 붙어 보여 어긋나 보이는 문제를 방지 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
+    width: 100% !important;
+    min-width: 0 !important;
+}
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+}
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup"] {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    gap: 6px !important;
+}
+
 /* ✅ stat_cellpick_ 전용: 선택 색상(순서 기반) */
 
 /* (중요) 기본 선택 배경 리셋은 "stat_cellpick_"에만 적용 */
