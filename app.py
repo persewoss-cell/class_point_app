@@ -6038,17 +6038,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     )
                                 )
 
-                                pt_chart = (
-                                    alt.Chart(cdf2)
-                                    .mark_point(filled=True, size=60)
-                                    .encode(
-                                        x=base_x,
-                                        y=base_y,
-                                        tooltip=["변동사유", "변동 후"],
-                                    )
-                                )
-
-                                chart = (seg_chart + pt_chart).properties(height=260)
+                                # ✅ (PATCH) 점(마커) 제거: 선만 표시
+                                chart = seg_chart.properties(height=260)
 
                                 st.altair_chart(chart, use_container_width=True)
                             else:
