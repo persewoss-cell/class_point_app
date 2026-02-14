@@ -10467,7 +10467,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 ]
                 st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
 
-                st.markdown("#### 🧯 중도해지 처리(관리자)")
+                st.markdown("#### 🛠️ 중도해지 처리(관리자)")
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
 
                 running = df[df["처리 결과"] == "진행중"].copy()
