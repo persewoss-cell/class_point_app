@@ -6878,19 +6878,23 @@ if "🔎 개별조회" in tabs:
         st.subheader("🔎 개별조회(번호순)")
 
         # -------------------------------------------------
-        # ✅ (PATCH) 개별조회 expander(접힌 제목) 글자 크기/줄바꿈 방지
-        #  - 2줄로 내려가는 것 방지(한 줄 + … 처리)
-        #  - 개별조회 expander에만 적용: expander 내부에 indview-marker를 심고 :has()로 타겟팅
+        # ✅ (PATCH) 개별조회 expander(접힌 제목) 글자 크기만 축소
+        #  - 말줄임/한줄 고정 ❌ (사용자 요청)
+        #  - 탭 내부에 'indview-scope' 마커를 두고, 그 뒤에 나오는 expander 제목만 축소
         # -------------------------------------------------
         st.markdown(
             """
 <style>
-/* 🔎 개별조회 expander(접힌 제목)만: 글자 크기 축소 */
-div[data-testid="stExpander"]:has(.indview-marker) summary{
-  font-size: 0.80rem !important;
-  line-height: 1.15 !important;
+/* 🔎 개별조회 탭 내부에서만: expander 제목 글자 크기 축소 */
+.indview-scope ~ div[data-testid="stExpander"] summary p{
+  font-size: 0.75rem !important;
+  line-height: 1.2 !important;
+}
+.indview-scope ~ div[data-testid="stExpander"] summary{
+  line-height: 1.2 !important;
 }
 </style>
+<div class="indview-scope"></div>
             """,
             unsafe_allow_html=True,
         )
