@@ -23,7 +23,7 @@ st.markdown("""<style>
 
 /* expander 목록 사이 간격 */
 div[data-baseweb="accordion"] > div{
-  margin-bottom: 4px !important;
+  margin-bottom: 1px !important;
 }
 
 /* expander 한 덩어리(카드) 자체 여백 제거 */
@@ -34,8 +34,8 @@ div[data-baseweb="accordion-item"]{
 /* 헤더 버튼(접힌 줄) 위아래 패딩 축소 */
 div[data-baseweb="accordion-item"] > div > div > button,
 div[data-baseweb="accordion-item"] > div > div > button *{
-  padding-top: 4px !important;
-  padding-bottom: 4px !important;
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   min-height: unset !important;
