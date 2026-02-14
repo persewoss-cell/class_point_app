@@ -6877,6 +6877,35 @@ if "🔎 개별조회" in tabs:
     with tab_map["🔎 개별조회"]:
         st.subheader("🔎 개별조회(번호순)")
 
+        # -------------------------------------------------
+        # ✅ (PATCH) 개별조회 expander(접힌 제목) 글자 크기/줄바꿈 방지
+        #  - 2줄로 내려가는 것 방지(한 줄 + … 처리)
+        #  - 개별조회 expander에만 적용: expander 내부에 indview-marker를 심고 :has()로 타겟팅
+        # -------------------------------------------------
+        st.markdown(
+            """
+<style>
+/* 🔎 개별조회 expander(접힌 제목)만: 작게 + 한줄 + 말줄임 */
+div[data-testid="stExpander"]:has(.indview-marker) summary{
+  font-size: 0.82rem !important;
+  line-height: 1.15 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* summary 안쪽 텍스트 래퍼들도 같이 한줄/말줄임 */
+div[data-testid="stExpander"]:has(.indview-marker) summary *{
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+</style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
         if not (is_admin or has_tab_access(my_perms, "🔎 개별조회", is_admin)):
             st.error("접근 권한이 없습니다.")
             st.stop()
@@ -7010,6 +7039,7 @@ if "🔎 개별조회" in tabs:
                     )
 
                     with st.expander(collapsed, expanded=False):
+                        st.markdown("<span class='indview-marker'></span>", unsafe_allow_html=True)
                         # -------------------------
                         # 통장내역(최신 120)
                         # -------------------------
