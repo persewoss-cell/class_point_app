@@ -10477,3 +10477,31 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
+
+
+
+st.markdown("""
+<style>
+
+/* 🔹 Expander box spacing reduction */
+details[data-testid="stExpander"] {
+    margin-bottom: 4px !important;
+}
+
+details[data-testid="stExpander"] > summary {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+
+details[data-testid="stExpander"] div[role="region"] {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+
+details[data-testid="stExpander"] > div {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
