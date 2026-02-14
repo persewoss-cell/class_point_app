@@ -953,14 +953,14 @@ def _fmt_admin_one_line(
     credit_grade: int,
 ) -> str:
     inv_text = str(inv_text or "").strip()
-    inv_part = "투자총액: 없음" if (not inv_text or inv_text == "없음") else f"투자총액: {inv_text}"
+    inv_part = "투자: 없음" if (not inv_text or inv_text == "없음") else f"투자: {inv_text}"
 
     role_part = f"직업: {str(role_name or '없음')}"
-    credit_part = f"신용등급: {int(credit_grade)}등급({int(credit_score)}점)"
+    credit_part = f"신용: {int(credit_grade)}등급({int(credit_score)}점)"
 
     return (
         f"👤 {int(no)}번 {name} | "
-        f"총자산 {int(asset_total)}드림 | 통장잔액 {int(bal_now)}드림 | 적금총액 {int(sv_total)}드림 | "
+        f"총 {int(asset_total)}드림 | 통장: {int(bal_now)}드림 | 적금: {int(sv_total)}드림 | "
         f"{inv_part} | {role_part} | {credit_part}"
     )
 
