@@ -584,6 +584,23 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
     justify-content: center !important;
     text-align: center !important;
 }
+
+    /* ✅ (PATCH) expander 제목 글자 크기 축소 (개별조회 요약이 길어서 두 줄이 되는 문제 완화) */
+    details[data-testid="stExpander"] summary {
+        font-size: 0.78rem !important;
+        line-height: 1.15 !important;
+    }
+    details[data-testid="stExpander"] summary * {
+        font-size: 0.78rem !important;
+        line-height: 1.15 !important;
+    }
+    /* Streamlit이 summary 안에 markdown(p)을 넣는 경우까지 확실히 */
+    details[data-testid="stExpander"] summary div[data-testid="stMarkdownContainer"] p {
+        font-size: 0.78rem !important;
+        line-height: 1.15 !important;
+        margin: 0 !important;
+    }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -6877,29 +6894,6 @@ if "🔎 개별조회" in tabs:
     with tab_map["🔎 개별조회"]:
         st.subheader("🔎 개별조회(번호순)")
 
-        # -------------------------------------------------
-        # ✅ (PATCH) 개별조회 expander(접힌 제목) 글자 크기만 축소
-        #  - 말줄임/한줄 고정 ❌ (사용자 요청)
-        #  - 탭 내부에 'indview-scope' 마커를 두고, 그 뒤에 나오는 expander 제목만 축소
-        # -------------------------------------------------
-        st.markdown(
-            """
-<style>
-/* 🔎 개별조회 탭 내부에서만: expander 제목 글자 크기 축소 */
-.indview-scope ~ div[data-testid="stExpander"] summary p{
-  font-size: 0.75rem !important;
-  line-height: 1.2 !important;
-}
-.indview-scope ~ div[data-testid="stExpander"] summary{
-  line-height: 1.2 !important;
-}
-</style>
-<div class="indview-scope"></div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
         if not (is_admin or has_tab_access(my_perms, "🔎 개별조회", is_admin)):
             st.error("접근 권한이 없습니다.")
             st.stop()
@@ -7033,7 +7027,6 @@ if "🔎 개별조회" in tabs:
                     )
 
                     with st.expander(collapsed, expanded=False):
-                        st.markdown("<span class='indview-marker'></span>", unsafe_allow_html=True)
                         # -------------------------
                         # 통장내역(최신 120)
                         # -------------------------
