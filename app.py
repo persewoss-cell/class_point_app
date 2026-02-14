@@ -19,6 +19,70 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 KST = timezone(timedelta(hours=9))
 
+# =========================
+# ✅ 표(데이터프레임) 공통 렌더: 정렬 규칙 통일
+# - 헤더(제목셀): 가운데
+# - 기본 내용: 가운데
+# - 번호/이름: 가운데 정렬 고정
+# - 금액/수치 컬럼(키워드 기반): 우측 정렬
+# =========================
+_RIGHT_ALIGN_KEYWORDS = [
+    "금액","입금","출금","총액","잔액","세입","세출","월급","이자","원금",
+    "수익","손실","투자","지급","평가","주가","점수",
+    "수수료","가격","단가","현재가","매수가","평가금","수익률","손익","합계","총"
+]
+_CENTER_ALWAYS_COLS = {"번호", "이름"}
+
+def _pick_align_columns(df: pd.DataFrame):
+    """(right_cols, center_cols) 반환"""
+    cols = [str(c) for c in (df.columns.tolist() if df is not None else [])]
+    right_cols = []
+    center_cols = []
+    for c in cols:
+        if c in _CENTER_ALWAYS_COLS:
+            center_cols.append(c)
+            continue
+        if any(k in c for k in _RIGHT_ALIGN_KEYWORDS):
+            right_cols.append(c)
+    return right_cols, center_cols
+
+def render_df(df: pd.DataFrame, *, use_container_width: bool = True, hide_index: bool = True, height=None):
+    """✅ st.dataframe 표 렌더 통일(정렬 규칙 적용).
+    - Styler가 실패해도 표는 반드시 출력되게(안전장치 포함)
+    """
+    if df is None:
+        st.info("표 데이터가 없습니다.")
+        return
+    if isinstance(df, pd.Series):
+        df = df.to_frame()
+
+    try:
+        right_cols, center_cols = _pick_align_columns(df)
+
+        sty = df.style
+
+        # 헤더/기본 정렬
+        sty = sty.set_table_styles(
+            [
+                {"selector": "th", "props": [("text-align", "center"), ("white-space", "nowrap")]},
+                {"selector": "td", "props": [("text-align", "center")]},
+            ],
+            overwrite=False,
+        )
+
+        # 번호/이름 강제 가운데
+        if center_cols:
+            sty = sty.set_properties(subset=center_cols, **{"text-align": "center"})
+
+        # 금액/수치(키워드) 우측
+        if right_cols:
+            sty = sty.set_properties(subset=right_cols, **{"text-align": "right"})
+
+        st.dataframe(sty, use_container_width=use_container_width, hide_index=hide_index, height=height)
+    except Exception:
+        st.dataframe(df, use_container_width=use_container_width, hide_index=hide_index, height=height)
+
+
 # ✅ 기존 관리자 유지(교사)
 ADMIN_PIN = "9999"
 ADMIN_NAME = "관리자"
@@ -3711,7 +3775,7 @@ def render_tx_table(df_tx: pd.DataFrame):
             "balance_after": "총액",
         }
     )
-    st.dataframe(
+    render_df(
         view[["내역", "입금", "출금", "총액", "날짜-시간"]],
         use_container_width=True,
         hide_index=True,
@@ -4342,7 +4406,7 @@ if "🏦 내 통장" in tabs:
                             else:
                                 st.session_state["bank_tpl_bulk_df"] = df
                                 st.success(f"업로드 완료! ({len(df)}행) 아래 미리보기 확인 후 저장을 누르세요.")
-                                st.dataframe(df, use_container_width=True, hide_index=True)
+                                render_df(df, use_container_width=True, hide_index=True)
 
                     except Exception as e:
                         st.error(f"엑셀 읽기 실패: {e}")
@@ -5355,7 +5419,7 @@ if "admin::🏦 내 통장" in tabs:
                             else:
                                 st.session_state["bank_tpl_bulk_df"] = df
                                 st.success(f"업로드 완료! ({len(df)}행) 아래 미리보기 확인 후 저장을 누르세요.")
-                                st.dataframe(df, use_container_width=True, hide_index=True)
+                                render_df(df, use_container_width=True, hide_index=True)
 
                     except Exception as e:
                         st.error(f"엑셀 읽기 실패: {e}")
@@ -6468,7 +6532,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         )
     
     if view_rows:
-        st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
+        render_df(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
                      use_container_width=True, hide_index=True)
     else:
         st.caption("투자 내역이 없습니다.")
@@ -7198,7 +7262,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     "번호","이름","적금기간","신용등급","이자율","적금 금액","이자","만기 금액",
                     "적금 날짜","만기 날짜","처리 결과","지급 금액"
                 ]
-                st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
+                render_df(df[show_cols], use_container_width=True, hide_index=True)
 
                 st.markdown("#### 🧯 중도해지 처리(관리자)")
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
@@ -7613,7 +7677,7 @@ if "👥 계정 정보/활성화" in tabs:
         if not df_status.empty:
             df_status = df_status.sort_values(["번호","이름"]).reset_index(drop=True)
 
-        st.dataframe(df_status, use_container_width=True, hide_index=True)
+        render_df(df_status, use_container_width=True, hide_index=True)
 
         # -------------------------------------------------
         # ✅ (탭 상단) 엑셀 일괄 계정 추가 + 샘플 다운로드
@@ -8448,7 +8512,7 @@ if "💼 직업/월급" in tabs:
                 df_status = df_status.sort_values(["번호_정렬", "이름", "직업"], kind="mergesort").drop(columns=["번호_정렬"])
             except Exception:
                 df_status = df_status.sort_values(["번호", "이름", "직업"], kind="mergesort")
-            st.dataframe(df_status[["번호", "이름", "직업", "월급", "실수령액"]], use_container_width=True, hide_index=True)
+            render_df(df_status[["번호", "이름", "직업", "월급", "실수령액"]], use_container_width=True, hide_index=True)
         else:
             st.info("아직 직업이 배정된 학생이 없습니다.")
 
@@ -8904,7 +8968,7 @@ if "💼 직업/월급" in tabs:
         # -------------------------
         df_preview = st.session_state.get("job_bulk_df")
         if df_preview is not None and not df_preview.empty:
-            st.dataframe(df_preview, use_container_width=True, hide_index=True)
+            render_df(df_preview, use_container_width=True, hide_index=True)
 
         # -------------------------
         # 3) 저장(반영) 버튼: 여기서만 DB 반영
@@ -8978,7 +9042,7 @@ if "🏛️ 국세청(국고)" in tabs:
                     "created_at_kr": "날짜-시간",
                 }
             )
-            st.dataframe(
+            render_df(
                 view[["내역", "세입", "세출", "총액", "날짜-시간"]],
                 use_container_width=True,
                 hide_index=True,
@@ -10455,7 +10519,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     "번호","이름","적금기간","신용등급","이자율","적금 금액","이자","만기 금액",
                     "적금 날짜","만기 날짜","처리 결과","지급 금액"
                 ]
-                st.dataframe(df[show_cols], use_container_width=True, hide_index=True)
+                render_df(df[show_cols], use_container_width=True, hide_index=True)
 
                 st.markdown("#### 🧯 중도해지 처리(관리자)")
                 st.caption("• 진행중인 적금만 중도해지 가능(원금만 지급)")
@@ -10625,7 +10689,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
                 df_my = pd.DataFrame(view)
                 show_cols = ["적금기간","신용등급","이자율","적금 금액","이자","만기 금액","적금 날짜","만기 날짜","처리 결과","지급 금액"]
-                st.dataframe(df_my[show_cols], use_container_width=True, hide_index=True)
+                render_df(df_my[show_cols], use_container_width=True, hide_index=True)
 
                 running_ids = df_my[(df_my["_status"] == "running") & (df_my["처리 결과"] == "진행중")].copy()
                 if not running_ids.empty and can_write:
@@ -10669,7 +10733,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 table_rows.append(row)
 
             df_rate = pd.DataFrame(table_rows)
-            st.dataframe(df_rate, use_container_width=True, hide_index=True)
+            render_df(df_rate, use_container_width=True, hide_index=True)
             st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다.")
 
 # =========================
