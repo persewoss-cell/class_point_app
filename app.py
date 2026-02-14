@@ -124,6 +124,24 @@ st.markdown(
         outline: none !important;
     }
     
+    /* ✅ stat_cellpick_ 버튼묶음(라디오) — 제목셀과 같은 중앙 정렬 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+    }
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
+        width: 100% !important;
+        display: flex !important;
+        justify-content: center !important;
+    }
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) div[role="radiogroup"] {
+        margin: 0 auto !important;
+        justify-content: center !important;
+    }
+
+
 /* ✅ DataFrame/DataEditor: 바깥 네모 박스(테두리/여백)만 줄이기 */
 [data-testid="stDataFrame"]{
     overflow-x: auto;
@@ -9434,24 +9452,6 @@ if "📊 통계청" in tabs:
             st.markdown(
                 """
 <style>
-/* ✅ (FIX) 통계표 셀(stRadio) 자체를 "컬럼 가운데"로 강제 정렬
-   - 제출물(열) 개수가 적을 때 헤더는 중앙인데, 라디오 셀은 왼쪽으로 붙는 현상 해결
-   - stat_cellpick_ 라디오가 들어있는 요소에만 적용(다른 탭 영향 없음)
-*/
-div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-}
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) {
-  width: fit-content !important;
-  margin: 0 auto !important;
-}
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) > div {
-  width: fit-content !important;
-  margin: 0 auto !important;
-}
-
 /* ===== 통계표 셀 라디오( id에 stat_cellpick_ 포함 )만 원형 버튼처럼 + 높이/여백 압축 ===== */
 
 /* 1) radiogroup 자체 여백/정렬 */
