@@ -5568,8 +5568,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         table.inv_hist_table th {
             font-weight: 700;
             background: rgba(0,0,0,0.03);
-            text-align: center;
-        }
+            text-align: center;  /* ✅ 제목셀만 중앙정렬 */
         }
         </style>
         """,
@@ -5983,25 +5982,171 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             if not cdf.empty:
                                 order = cdf["변동사유"].tolist()
     
-                                chart = (
-                                    alt.Chart(cdf)
-                                    .mark_line(point=True)
-                                    .encode(
-                                        x=alt.X(
-                                            "변동사유:N",
-                                            sort=order,
-                                            title=None,
-                                            axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
-                                        ),
-                                        y=alt.Y(
-                                            "변동 후:Q",
-                                            title=None,
-                                            scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
-                                        ),
-                                        tooltip=["변동사유", "변동 후"],
-                                    )
-                                    .properties(height=260)
+                                chart_df = cdf.copy().reset_index(drop=True)
+
+
+    
+                                # ✅ (PATCH) 구간별 상승/하락/보합 색상 + 점(회색) 표시
+
+    
+                                chart_df["prev_price"] = chart_df["변동 후"].shift(1)
+
+
+    
+                                def _dir(_row):
+
+    
+                                    p = _row.get("prev_price")
+
+    
+                                    v = _row.get("변동 후")
+
+    
+                                    if pd.isna(p) or pd.isna(v):
+
+    
+                                        return "same"
+
+    
+                                    if v > p:
+
+    
+                                        return "up"
+
+    
+                                    if v < p:
+
+    
+                                        return "down"
+
+    
+                                    return "same"
+
+
+    
+                                chart_df["direction"] = chart_df.apply(_dir, axis=1)
+
+    
+                                chart_df["x2"] = chart_df["변동사유"].shift(-1)
+
+    
+                                chart_df["y2"] = chart_df["변동 후"].shift(-1)
+
+    
+                                seg_df = chart_df.dropna(subset=["x2"])
+
+
+    
+                                seg_chart = alt.Chart(seg_df).mark_rule(strokeWidth=3).encode(
+
+    
+                                    x=alt.X(
+
+    
+                                        "변동사유:N",
+
+    
+                                        sort=order,
+
+    
+                                        title=None,
+
+    
+                                        axis=alt.Axis(labelAngle=0),
+
+    
+                                    ),
+
+    
+                                    x2="x2:N",
+
+    
+                                    y=alt.Y(
+
+    
+                                        "변동 후:Q",
+
+    
+                                        title=None,
+
+    
+                                        scale=alt.Scale(domain=[50, 100]),
+
+    
+                                    ),
+
+    
+                                    y2="y2:Q",
+
+    
+                                    color=alt.Color(
+
+    
+                                        "direction:N",
+
+    
+                                        scale=alt.Scale(domain=["up", "down", "same"], range=["red", "blue", "black"]),
+
+    
+                                        legend=None,
+
+    
+                                    ),
+
+    
+                                    tooltip=["변동사유", "변동 후"],
+
+    
                                 )
+
+
+    
+                                pt_chart = alt.Chart(chart_df).mark_point(size=55, color="gray").encode(
+
+    
+                                    x=alt.X(
+
+    
+                                        "변동사유:N",
+
+    
+                                        sort=order,
+
+    
+                                        title=None,
+
+    
+                                        axis=alt.Axis(labelAngle=0),
+
+    
+                                    ),
+
+    
+                                    y=alt.Y(
+
+    
+                                        "변동 후:Q",
+
+    
+                                        title=None,
+
+    
+                                        scale=alt.Scale(domain=[50, 100]),
+
+    
+                                    ),
+
+    
+                                    tooltip=["변동사유", "변동 후"],
+
+    
+                                )
+
+
+    
+                                chart = (seg_chart + pt_chart).properties(height=260)
+
+    
                                 st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
@@ -6090,25 +6235,171 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             if not cdf.empty:
                                 order = cdf["변동사유"].tolist()
     
-                                chart = (
-                                    alt.Chart(cdf)
-                                    .mark_line(point=True)
-                                    .encode(
-                                        x=alt.X(
-                                            "변동사유:N",
-                                            sort=order,
-                                            title=None,
-                                            axis=alt.Axis(labelAngle=0),  # ✅ 글자 회전 제거
-                                        ),
-                                        y=alt.Y(
-                                            "변동 후:Q",
-                                            title=None,
-                                            scale=alt.Scale(domain=[50, 100]),  # ✅ 50~100 고정
-                                        ),
-                                        tooltip=["변동사유", "변동 후"],
-                                    )
-                                    .properties(height=260)
+                                chart_df = cdf.copy().reset_index(drop=True)
+
+
+    
+                                # ✅ (PATCH) 구간별 상승/하락/보합 색상 + 점(회색) 표시
+
+    
+                                chart_df["prev_price"] = chart_df["변동 후"].shift(1)
+
+
+    
+                                def _dir(_row):
+
+    
+                                    p = _row.get("prev_price")
+
+    
+                                    v = _row.get("변동 후")
+
+    
+                                    if pd.isna(p) or pd.isna(v):
+
+    
+                                        return "same"
+
+    
+                                    if v > p:
+
+    
+                                        return "up"
+
+    
+                                    if v < p:
+
+    
+                                        return "down"
+
+    
+                                    return "same"
+
+
+    
+                                chart_df["direction"] = chart_df.apply(_dir, axis=1)
+
+    
+                                chart_df["x2"] = chart_df["변동사유"].shift(-1)
+
+    
+                                chart_df["y2"] = chart_df["변동 후"].shift(-1)
+
+    
+                                seg_df = chart_df.dropna(subset=["x2"])
+
+
+    
+                                seg_chart = alt.Chart(seg_df).mark_rule(strokeWidth=3).encode(
+
+    
+                                    x=alt.X(
+
+    
+                                        "변동사유:N",
+
+    
+                                        sort=order,
+
+    
+                                        title=None,
+
+    
+                                        axis=alt.Axis(labelAngle=0),
+
+    
+                                    ),
+
+    
+                                    x2="x2:N",
+
+    
+                                    y=alt.Y(
+
+    
+                                        "변동 후:Q",
+
+    
+                                        title=None,
+
+    
+                                        scale=alt.Scale(domain=[50, 100]),
+
+    
+                                    ),
+
+    
+                                    y2="y2:Q",
+
+    
+                                    color=alt.Color(
+
+    
+                                        "direction:N",
+
+    
+                                        scale=alt.Scale(domain=["up", "down", "same"], range=["red", "blue", "black"]),
+
+    
+                                        legend=None,
+
+    
+                                    ),
+
+    
+                                    tooltip=["변동사유", "변동 후"],
+
+    
                                 )
+
+
+    
+                                pt_chart = alt.Chart(chart_df).mark_point(size=55, color="gray").encode(
+
+    
+                                    x=alt.X(
+
+    
+                                        "변동사유:N",
+
+    
+                                        sort=order,
+
+    
+                                        title=None,
+
+    
+                                        axis=alt.Axis(labelAngle=0),
+
+    
+                                    ),
+
+    
+                                    y=alt.Y(
+
+    
+                                        "변동 후:Q",
+
+    
+                                        title=None,
+
+    
+                                        scale=alt.Scale(domain=[50, 100]),
+
+    
+                                    ),
+
+    
+                                    tooltip=["변동사유", "변동 후"],
+
+    
+                                )
+
+
+    
+                                chart = (seg_chart + pt_chart).properties(height=260)
+
+    
                                 st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
