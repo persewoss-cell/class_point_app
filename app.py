@@ -10485,22 +10485,22 @@ st.markdown("""
 
 /* 🔹 Expander box spacing reduction */
 details[data-testid="stExpander"] {
-    margin-bottom: 4px !important;
+    margin-bottom: 1px !important;
 }
 
 details[data-testid="stExpander"] > summary {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
 }
 
 details[data-testid="stExpander"] div[role="region"] {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
 }
 
 details[data-testid="stExpander"] > div {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
 }
 
 </style>
