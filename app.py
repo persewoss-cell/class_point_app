@@ -17,6 +17,36 @@ import re
 APP_TITLE = "🏫학급 경제 시스템🪙"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
+
+st.markdown("""
+<style>
+
+/* 🔹 Expander box spacing reduction (Streamlit 최신 구조 대응) */
+
+div[data-testid="stExpander"] {
+    margin-bottom: 2px !important;
+}
+
+div[data-testid="stExpander"] > div:first-child {
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+    min-height: unset !important;
+}
+
+div[data-testid="stExpander"] > div:last-child {
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+}
+
+div[data-testid="stExpander"] div[data-testid="column"] {
+    padding-top: 0px !important;
+    padding-bottom: 0px !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
 KST = timezone(timedelta(hours=9))
 
 # ✅ 기존 관리자 유지(교사)
@@ -10477,31 +10507,3 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
-
-
-
-st.markdown("""
-<style>
-
-/* 🔹 Expander box spacing reduction */
-details[data-testid="stExpander"] {
-    margin-bottom: 1px !important;
-}
-
-details[data-testid="stExpander"] > summary {
-    padding-top: 1px !important;
-    padding-bottom: 1px !important;
-}
-
-details[data-testid="stExpander"] div[role="region"] {
-    padding-top: 1px !important;
-    padding-bottom: 1px !important;
-}
-
-details[data-testid="stExpander"] > div {
-    padding-top: 1px !important;
-    padding-bottom: 1px !important;
-}
-
-</style>
-""", unsafe_allow_html=True)
