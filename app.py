@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import altair as alt
 
@@ -16,6 +17,63 @@ import re
 # =========================
 APP_TITLE = "🏫학급 경제 시스템🪙"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
+
+
+
+# =========================================================
+# ✅ (PATCH) Expander(개별조회 포함) 여백/간격 강제 축소 (JS 인라인 스타일)
+# - Streamlit/BaseWeb DOM 버전 차이로 CSS 선택자가 안 먹는 케이스 대비
+# - 화면 렌더 후 accordion 요소에 직접 style을 꽂아 넣음
+# =========================================================
+components.html(
+    """
+<script>
+(function(){
+  const APPLY = () => {
+    // expander(accordion) 아이템 간격
+    document.querySelectorAll('div[data-baseweb="accordion"] > div').forEach(el => {
+      el.style.marginBottom = '4px';
+    });
+
+    // 헤더(둥근 사각형) 버튼 패딩/높이
+    document.querySelectorAll('div[data-baseweb="accordion-item"] button').forEach(btn => {
+      btn.style.paddingTop = '4px';
+      btn.style.paddingBottom = '4px';
+      btn.style.minHeight = '26px';
+      btn.style.lineHeight = '1.15';
+    });
+
+    // 펼친 내용 영역 패딩
+    document.querySelectorAll('div[data-baseweb="accordion-item"] div[role="region"]').forEach(r => {
+      r.style.paddingTop = '4px';
+      r.style.paddingBottom = '4px';
+    });
+
+    // 내부 문단 margin 제거
+    document.querySelectorAll('div[data-baseweb="accordion-item"] p').forEach(p => {
+      p.style.marginTop = '0';
+      p.style.marginBottom = '0';
+    });
+
+    return true;
+  };
+
+  // 여러 번 시도(초기 렌더 타이밍 이슈 대비)
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    const hasAcc = document.querySelector('div[data-baseweb="accordion"]');
+    if (hasAcc) APPLY();
+    if (hasAcc || tries > 40) clearInterval(timer);
+  }, 150);
+
+  // 탭 전환/리런 시에도 재적용
+  window.addEventListener('load', APPLY);
+})();
+</script>
+    """,
+    height=0,
+)
 
 KST = timezone(timedelta(hours=9))
 
@@ -599,35 +657,6 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
         margin: 0 !important;
         padding: 0 !important;
     }
-
-
-/* =========================================================
-   🔥 (최종) 개별조회 expander 여백 축소 - BaseWeb 전용
-   ========================================================= */
-
-/* expander 사이 간격 */
-div[data-baseweb="accordion"] > div {
-    margin-bottom: 2px !important;
-}
-
-/* 둥근 사각형 헤더 버튼 */
-div[data-baseweb="accordion-item"] > div > div > button {
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
-    min-height: 23px !important;
-}
-
-/* 펼쳤을 때 내부 영역 */
-div[data-baseweb="accordion-item"] div[role="region"] {
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
-}
-
-/* 내부 문단 기본 margin 제거 */
-div[data-baseweb="accordion-item"] p {
-    margin-top: 0 !important;
-    margin-bottom: 0 !important;
-}
 
 </style>
     """,
