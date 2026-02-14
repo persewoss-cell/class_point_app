@@ -9526,10 +9526,23 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
             border-color: #3b82f6 !important;
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
         }
+
+/* (FIX) 제출물 개수가 적을 때 헤더/셀 정렬이 어긋나는 문제 해결
+   - Streamlit columns는 내부 콘텐츠의 'min-content width' 영향을 받으면
+     행(헤더/바디)마다 실제 column 폭이 달라질 수 있음
+   - 통계표 영역만 min-width:0 처리해 flex 비율 계산을 동일하게 강제 */
+#stat_table_wrap div[data-testid="column"] { 
+  min-width: 0 !important;
+}
+#stat_table_wrap div[data-testid="column"] > div {
+  width: 100% !important;
+}
 </style>
 """,
                 unsafe_allow_html=True,
             )
+
+            st.markdown("<div id='stat_table_wrap'>", unsafe_allow_html=True)
 
             hdr_cols = st.columns([0.37, 0.7] + [1.2] * len(col_titles))
             with hdr_cols[0]:
@@ -9602,6 +9615,8 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                     st.rerun()
                 else:
                     st.error(res_sv.get("error", "저장 실패"))
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
 
