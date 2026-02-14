@@ -3908,7 +3908,7 @@ if "🏦 내 통장" in tabs:
                         st.session_state["bank_tpl_sort_panel_open"] = not st.session_state.get("bank_tpl_sort_panel_open", False)
                         st.rerun()
                 with h2:
-                    st.markdown("### 🧩 내역 템플릿 순서 정렬")
+                    st.markdown("### ↕️ 내역 템플릿 순서 정렬")
 
                 if not st.session_state.get("bank_tpl_sort_panel_open", False):
                     st.caption("펼치려면 왼쪽 화살표(▸)를 눌러주세요.")
@@ -7476,7 +7476,7 @@ if "👥 계정 정보/활성화" in tabs:
             sel_kind, sel_tab_internal = opt_map.get(sel_opt_label)
         with cpb:
             sel_students = st.multiselect(
-                "대상 학생 선택(복수 가능)",
+                "대상 학생 선택(복수 선택 가능)",
                 options=list(by_label.keys()),
                 default=[],
                 key="perm_sel_students_v2",
@@ -7523,7 +7523,7 @@ if "👥 계정 정보/활성화" in tabs:
         with g2:
             btn_revoke = st.button("➖ 권한 회수", use_container_width=True, key="perm_btn_revoke_v2")
         with g3:
-            confirm_all = st.checkbox("전체 권환 선택", key="perm_confirm_revoke_all_v2")
+            confirm_all = st.checkbox("전체 권한 선택", key="perm_confirm_revoke_all_v2")
         with g4:
             btn_revoke_all = st.button(
                 "🔥 전체 권한 회수",
@@ -7570,7 +7570,7 @@ if "👥 계정 정보/활성화" in tabs:
         # 📌 권한 부여 현황 표
         # -------------------------------------------------
         st.markdown("### 📌 권한 부여 현황")
-        st.caption("students.extra_permissions의 tab:: / admin:: 값을 기준으로 표시합니다.")
+        st.caption("학생이 기존에 사용하던 유형의 탭(괄호 안 관리자 표기)은 관리자 기능 탭으로 구분됩니다.")
 
         docs_perm2 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
         rows_status = []
@@ -7623,7 +7623,7 @@ if "👥 계정 정보/활성화" in tabs:
         #   - 사이드바가 아니라 이 탭 본문 최상단에 표시
         # -------------------------------------------------
         st.markdown("### 📥 일괄 엑셀 계정 추가")
-        st.caption("엑셀을 올리면 아래 리스트(학생 표)에 바로 반영됩니다.")
+        st.caption("엑셀을 올리면 아래 리스트(계정/비번 관리 표)에 바로 반영됩니다.")
 
         # ✅ 샘플 다운로드
         import io
@@ -7769,7 +7769,7 @@ if "👥 계정 정보/활성화" in tabs:
         # -------------------------------------------------
         # ✅ 상단 버튼(2줄): [전체선택/전체해제/계정삭제] + [입출금/투자 일괄]
         # -------------------------------------------------
-        st.markdown("#### 🧰 일괄 관리")
+        st.markdown("#### 👥 계정/비번 관리")
 
         # 1줄: 전체 선택/해제/삭제
         r1c1, r1c2, r1c3 = st.columns(3)
@@ -7972,7 +7972,7 @@ if "💼 직업/월급" in tabs:
             ref = db.collection("config").document("salary_payroll")
             snap = ref.get()
             if not snap.exists:
-                return {"pay_day": 25, "auto_enabled": False}
+                return {"pay_day": 17, "auto_enabled": False}
             d = snap.to_dict() or {}
             return {
                 "pay_day": int(d.get("pay_day", 25) or 25),
@@ -8267,18 +8267,12 @@ if "💼 직업/월급" in tabs:
         rows = _list_job_rows()
 
         # -------------------------------------------------
-        # ✅ 직업/월급 목록
-        # -------------------------------------------------
-        st.markdown("### 📋 직업/월급 목록")
-        st.caption("• 아래에 직업을 추가/수정하면 이 리스트에 반영됩니다. • 체크 후 ⬆️⬇️🗑️ 버튼으로 순서 이동/삭제가 됩니다.")
-
-        # -------------------------------------------------
         # ✅ (PATCH) 직업 지정/회수 UI (계정정보/활성화 탭의 권한 부여 방식과 동일 UX)
         #   - 기존 데이터 구조(job_salary.assigned_ids / student_count) 유지
         #   - 기존 월급 자동/수동지급/공제/국고 로직은 그대로 사용됨
         # -------------------------------------------------
-        st.markdown("### 🧩 직업 지정 / 회수")
-        st.caption("직업을 선택한 뒤, 학생을 선택하고 ‘고용/해제’ 버튼을 누르세요. (직업별 정원(student_count) 내에서 배정됩니다.)")
+        st.markdown("### 🎖️ 직업 지정 / 회수")
+        st.caption("직업을 선택한 뒤, 학생을 선택하고 ‘고용/해제’ 버튼을 누르세요.")
 
         # 직업 선택
         job_pick_labels = [f"{r['order']} | {r['job']} (월급 {int(r['salary'])})" for r in rows]
@@ -8288,7 +8282,7 @@ if "💼 직업/월급" in tabs:
         with assign_c1:
             sel_job_label = st.selectbox("부여할 직업 선택", job_pick_labels, key="job_assign_pick2") if job_pick_labels else None
         with assign_c2:
-            sel_students_labels = st.multiselect("대상 학생 선택(복수)", [lab for lab in acc_options if lab != "(선택 없음)"], key="job_assign_students2")
+            sel_students_labels = st.multiselect("대상 학생 선택(복수 선택 가능)", [lab for lab in acc_options if lab != "(선택 없음)"], key="job_assign_students2")
 
         btn1, btn2 = st.columns([1, 1])
         with btn1:
@@ -8410,7 +8404,7 @@ if "💼 직업/월급" in tabs:
         # -------------------------------------------------
         # ✅ (PATCH) 직업 현황(학생 기준 표) — 학생이 직업 여러 개면 여러 행으로 표시
         # -------------------------------------------------
-        st.markdown("### 👥 직업 현황")
+        st.markdown("### 📋 직업/월급 목록")
         status_rows = []
         # student_id -> (no, name) 빠른 조회
         id_to_no_name = {r["student_id"]: (r["no"], r["name"]) for r in acc_rows}
@@ -8958,9 +8952,9 @@ if "🏛️ 국세청(국고)" in tabs:
         # 1) 상단 잔액 표시: [국고] : 00000드림
         st_res = api_get_treasury_state_cached()
         treasury_bal = int(st_res.get("balance", 0) or 0)
-        st.markdown(f"## [국고] : **{treasury_bal:,}{TREASURY_UNIT}**")
+        st.markdown(f"## 🪙국고: **{treasury_bal:,}{TREASURY_UNIT}**")
 
-        st.markdown("### [세입/세출 내역]")
+        st.markdown("### 🧾세입/세출 내역")
 
         # 2) 세입/세출 내역(최신순 표)
         led = api_list_treasury_ledger_cached(limit=300)
@@ -10044,7 +10038,6 @@ if "💳 신용등급" in tabs:
                     )
 
         st.divider()
-        st.caption("• 왼쪽/오른쪽 버튼으로 날짜(제출물) 열을 이동해서 확인할 수 있어요.")
 
 # =========================
 # 🏦 은행(적금) 탭
@@ -10687,7 +10680,6 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
             df_rate = pd.DataFrame(table_rows)
             st.dataframe(df_rate, use_container_width=True, hide_index=True)
-            st.caption("• 이 표는 Firestore config/bank_rates 값으로 자동 반영됩니다.")
 
 # =========================
 # 10) 🗓️ 일정 (권한별 수정)
