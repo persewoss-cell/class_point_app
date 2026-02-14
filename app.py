@@ -5568,6 +5568,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         table.inv_hist_table th {
             font-weight: 700;
             background: rgba(0,0,0,0.03);
+            text-align: center;
         }
         </style>
         """,
