@@ -1029,10 +1029,6 @@ def _render_user_bank_header(student_id: str):
         inv_eval_text, inv_eval_total = _get_invest_summary_by_student_id(sid)
 
 
-        # 표시 단위 통일(드림 -> 포인트)
-        inv_principal_text = str(inv_principal_text or "").replace("드림", "포인트")
-        inv_eval_text = str(inv_eval_text or "").replace("드림", "포인트")
-
         # 직업 / 신용도
         role_name = _get_role_name_by_student_id(sid)
         credit_score, credit_grade = _safe_credit(sid)
@@ -1044,7 +1040,7 @@ def _render_user_bank_header(student_id: str):
         who = str(st.session_state.get("login_name", "") or "").strip()
         st.markdown(f"## 🧾 {who} 통장" if who else "## 🧾 통장")
 
-        st.markdown(f"### 🧮 총 자산: {int(asset_total)} 포인트")
+        st.markdown(f"### 🧮 총 자산: {int(asset_total)} 드림")
 
         # ✅ (PATCH) 총자산 줄은 유지 + 나머지는 글자/간격만 컴팩트하게
         st.markdown(
@@ -1064,10 +1060,10 @@ def _render_user_bank_header(student_id: str):
 
         st.markdown(
             f"""<div class='bank-info-wrap'>
-            <div class='bank-info-line'>💰 통장 잔액: {int(bal_now)} 포인트</div>
-            <div class='bank-info-line'>🏦 적금 금액: {int(sv_total)} 포인트</div>
-            <div class='bank-info-line'>🪙 투자 원금: 총 {int(inv_principal_total)} 포인트({inv_principal_text})</div>
-            <div class='bank-info-line'>📈 현재 평가: 총 {int(inv_eval_total)} 포인트({inv_eval_text})</div>
+            <div class='bank-info-line'>💰 통장 잔액: {int(bal_now)} 드림</div>
+            <div class='bank-info-line'>🏦 적금 총액: {int(sv_total)} 드림</div>
+            <div class='bank-info-line'>🪙 투자 원금: 총 {int(inv_principal_total)} 드림({inv_principal_text})</div>
+            <div class='bank-info-line'>📈 현재 평가: 총 {int(inv_eval_total)} 드림({inv_eval_text})</div>
             <div class='bank-info-line'>💼 직업: {role_name if role_name else '없음'}</div>
             <div class='bank-info-line'>💳 신용도: {int(credit_grade)}등급({int(credit_score)}점)</div>
             </div>""",
