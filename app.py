@@ -2062,6 +2062,16 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
         rollback_amount = -amount
         rollback_ref = db.collection("transactions").document()
 
+        # ✅ 되돌리기 메모를 "내역명(mm.dd.) 되돌리기" 형식으로 표시
+        _orig_memo = str(tx.get("memo", "") or "").strip()
+        _dt_utc = _to_utc_datetime(tx.get("created_at"))
+        if _dt_utc:
+            _dt_kst = _dt_utc.astimezone(KST)
+            _mmdd = f"{_dt_kst.month:02d}.{_dt_kst.day:02d}."
+        else:
+            _mmdd = "--.--."
+        rollback_memo = f"{(_orig_memo or '내역')}({_mmdd}) 되돌리기"
+
         @firestore.transactional
         def _do_one(transaction):
             st_snap = student_ref.get(transaction=transaction)
@@ -2075,7 +2085,7 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
                     "type": "rollback",
                     "amount": rollback_amount,
                     "balance_after": new_bal,
-                    "memo": f"{tid} 되돌리기",
+                    "memo": rollback_memo,
                     "related_tx": tid,
                     "created_at": firestore.SERVER_TIMESTAMP,
                 },
