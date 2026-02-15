@@ -3765,7 +3765,7 @@ else:
     # -------------------------
     # ✅ 학생 기본 탭(거래/적금/투자/목표)
     # -------------------------
-    base_labels = ["📝 거래", "🏦 적금"]
+    base_labels = ["📝 거래", "🏦 적금", "📊 통계/신용"]
     if inv_ok:
         base_labels.append("📈 투자")
     base_labels.append("🎯 목표")
@@ -3798,7 +3798,7 @@ else:
         if tab_visible(t):
             extra_admin_tabs.append((t, t))  # (표시라벨, 내부키)
 
-    user_tab_labels = base_labels + [lab for (lab, _k) in extra_admin_tabs] + ["📊 통계/신용"]
+    user_tab_labels = base_labels + [lab for (lab, _k) in extra_admin_tabs]
 
     # ✅ (PATCH) 사용자 모드: 탭 위에 통장/정보 요약 표시
 
@@ -3814,23 +3814,22 @@ else:
     # 기본 탭(내부키는 기존 로직 재사용)
     tab_map["🏦 내 통장"] = tab_objs[0]
     tab_map["🏦 은행(적금)"] = tab_objs[1]
+    tab_map["📊 통계/신용"] = tab_objs[2]
 
     if inv_ok:
-        tab_map["📈 투자"] = tab_objs[2]
+        tab_map["📈 투자"] = tab_objs[3]
+        tab_map["🎯 목표"] = tab_objs[4]
+        extra_start = 5
+    else:
         tab_map["🎯 목표"] = tab_objs[3]
         extra_start = 4
-    else:
-        tab_map["🎯 목표"] = tab_objs[2]
-        extra_start = 3
 
     # 추가 관리자 탭 매핑
     for i, (_lab, key_internal) in enumerate(extra_admin_tabs):
         tab_map[key_internal] = tab_objs[extra_start + i]
 
-    # ✅ (NEW) 통계/신용(학생 전용, 읽기 전용)
-    tab_map["📊 통계/신용"] = tab_objs[extra_start + len(extra_admin_tabs)]
 
-    tabs = list(tab_map.keys())
+tabs = list(tab_map.keys())
 
 # =========================
 # (PATCH) 공용: 신용점수/등급 계산 (내 통장 상단 요약에서 먼저 필요)
@@ -10146,7 +10145,7 @@ if "💳 신용등급" in tabs:
         sub_rows_view = sub_rows_desc[start:end]
 
         # ---- 헤더(날짜 + 제출물 내역 2줄) ----
-        hdr_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
+        hdr_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
         with hdr_cols[0]:
             st.markdown("**번호**")
         with hdr_cols[1]:
@@ -10175,7 +10174,7 @@ if "💳 신용등급" in tabs:
             no = int(stx["no"])
             nm = stx["name"]
 
-            row_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
+            row_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
             with row_cols[0]:
                 st.markdown(str(no))
             with row_cols[1]:
@@ -10928,7 +10927,7 @@ if "📊 통계/신용" in tabs and (not is_admin):
             sub_rows_view = sub_rows_desc[start:end]
 
             # ---- 헤더 ----
-            hdr_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
+            hdr_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
             with hdr_cols[0]:
                 st.markdown("**번호**")
             with hdr_cols[1]:
@@ -10941,16 +10940,14 @@ if "📊 통계/신용" in tabs and (not is_admin):
                         date_disp = _fmt_kor_date_short(s.get("created_at_utc", ""))
                     lab = str(s.get("label", "") or "").strip()
                     st.markdown(
-                        f"<div style='text-align:center; font-weight:900; line-height:1.15;'>"
-                        f"{date_disp}<br>{lab}"
-                        f"</div>",
+                        f"<div class='stat_hdr_cell'><div class='stat_hdr_inner'>{date_disp}<br>{lab}</div></div>",
                         unsafe_allow_html=True,
                     )
 
             st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
             # ---- 본문(내 것 1줄) ----
-            row_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
+            row_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
             with row_cols[0]:
                 st.markdown(my_no if my_no else "-")
             with row_cols[1]:
