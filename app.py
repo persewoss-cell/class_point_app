@@ -914,6 +914,86 @@ def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
         return ("없음", 0)
 
 
+
+# =========================
+# ✅ Credit helpers (사용자 헤더에서도 신용도 계산 가능하도록: 정의 위치를 앞쪽으로 배치)
+# =========================
+def _score_to_grade(score: int) -> int:
+    s = int(score or 0)
+    if s >= 90:
+        return 1
+    if s >= 80:
+        return 2
+    if s >= 70:
+        return 3
+    if s >= 60:
+        return 4
+    if s >= 50:
+        return 5
+    if s >= 40:
+        return 6
+    if s >= 30:
+        return 7
+    if s >= 20:
+        return 8
+    if s >= 10:
+        return 9
+    return 10
+
+def _get_credit_cfg():
+    ref = db.collection("config").document("credit_scoring")
+    snap = ref.get()
+    if not snap.exists:
+        return {"base": 50, "o": 1, "x": -3, "tri": 0}
+    d = snap.to_dict() or {}
+    return {
+        "base": int(d.get("base", 50) if d.get("base", None) is not None else 50),
+        "o": int(d.get("o", 1) if d.get("o", None) is not None else 1),
+        "x": int(d.get("x", -3) if d.get("x", None) is not None else -3),
+        "tri": int(d.get("tri", 0) if d.get("tri", None) is not None else 0),
+    }
+
+def _norm_status(v) -> str:
+    v = str(v or "").strip().upper()
+    if v in ("O", "○"):
+        return "O"
+    if v in ("△", "▲", "Δ"):
+        return "△"
+    return "X"
+
+def _calc_credit_score_for_student(student_id: str):
+    credit_cfg = _get_credit_cfg()
+    base = int(credit_cfg.get("base", 50) if credit_cfg.get("base", None) is not None else 50)
+    o_pt = int(credit_cfg.get("o", 1) if credit_cfg.get("o", None) is not None else 1)
+    x_pt = int(credit_cfg.get("x", -3) if credit_cfg.get("x", None) is not None else -3)
+    tri_pt = int(credit_cfg.get("tri", 0) if credit_cfg.get("tri", None) is not None else 0)
+
+    def _delta(v) -> int:
+        v = _norm_status(v)
+        if v == "O":
+            return o_pt
+        if v == "△":
+            return tri_pt
+        return x_pt
+
+    res = api_list_stat_submissions_cached(limit_cols=200)
+    rows_desc = list(res.get("rows", []) or []) if res.get("ok") else []
+
+    score = int(base)
+    # rows_desc는 최신→과거 / 누적은 과거→최신으로
+    for sub in reversed(rows_desc):
+        statuses = dict(sub.get("statuses", {}) or {})
+        v_raw = statuses.get(str(student_id), "X")
+        score = int(score + _delta(v_raw))
+        if score > 100:
+            score = 100
+        if score < 0:
+            score = 0
+
+    grade = _score_to_grade(score)
+    return score, grade
+
+
 def _render_user_bank_header(student_id: str):
     """✅ 사용자 모드: 탭 위에 통장/사용자 정보 요약 표시"""
     try:
@@ -965,12 +1045,34 @@ def _render_user_bank_header(student_id: str):
         st.markdown(f"## 🧾 {who} 통장" if who else "## 🧾 통장")
 
         st.markdown(f"### 🧮 총 자산: {int(asset_total)} 포인트")
-        st.markdown(f"### 💰 통장 잔액: {int(bal_now)} 포인트")
-        st.markdown(f"### 🏦 적금 금액: {int(sv_total)} 포인트")
-        st.markdown(f"### 🪙 투자 원금: 총 {int(inv_principal_total)} 포인트({inv_principal_text})")
-        st.markdown(f"### 📈 현재 평가: 총 {int(inv_eval_total)} 포인트({inv_eval_text})")
-        st.markdown(f"### 💼 직업: {role_name if role_name else '없음'}")
-        st.markdown(f"### 💳 신용도: {int(credit_grade)}등급({int(credit_score)}점)")
+
+        # ✅ (PATCH) 총자산 줄은 유지 + 나머지는 글자/간격만 컴팩트하게
+        st.markdown(
+            """
+            <style>
+              .bank-info-line{
+                font-size: 22px;
+                line-height: 1.20;
+                margin: 0.20rem 0 0.20rem 0;
+              }
+              /* st.markdown 기본 p 마진도 줄이기 */
+              .bank-info-wrap p { margin: 0.20rem 0 !important; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            f"""<div class='bank-info-wrap'>
+            <div class='bank-info-line'>💰 통장 잔액: {int(bal_now)} 포인트</div>
+            <div class='bank-info-line'>🏦 적금 금액: {int(sv_total)} 포인트</div>
+            <div class='bank-info-line'>🪙 투자 원금: 총 {int(inv_principal_total)} 포인트({inv_principal_text})</div>
+            <div class='bank-info-line'>📈 현재 평가: 총 {int(inv_eval_total)} 포인트({inv_eval_text})</div>
+            <div class='bank-info-line'>💼 직업: {role_name if role_name else '없음'}</div>
+            <div class='bank-info-line'>💳 신용도: {int(credit_grade)}등급({int(credit_score)}점)</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
         st.divider()
     except Exception:
         # 헤더는 실패해도 앱 전체가 죽지 않게 조용히 패스
@@ -979,8 +1081,9 @@ def _render_user_bank_header(student_id: str):
 def _safe_credit(student_id: str):
     """
     ✅ (score, grade) 안전 조회
-    - _calc_credit_score_for_student()가 있으면 그걸 우선 사용
-    - 없거나 에러면 (0, 0)
+    - 가능하면 _calc_credit_score_for_student()로 즉시 계산(사용자 헤더에서도 동작)
+    - 그래도 안되면 students 문서에 저장된 credit_score/credit_grade 사용
+    - 실패 시 (0, 0)
     """
     try:
         if not student_id:
@@ -988,16 +1091,31 @@ def _safe_credit(student_id: str):
 
         f = globals().get("_calc_credit_score_for_student")
         if callable(f):
-            sc, gr = f(str(student_id))
-            return (int(sc or 0), int(gr or 0))
+            out = f(str(student_id))
+            # out이 (score, grade) 튜플인 경우
+            if isinstance(out, (tuple, list)) and len(out) >= 2:
+                return (int(out[0] or 0), int(out[1] or 0))
+            # out이 score(int)만 오는 경우
+            try:
+                sc = int(out or 0)
+                return (sc, int(globals().get("_score_to_grade")(sc) if callable(globals().get("_score_to_grade")) else 0))
+            except Exception:
+                pass
 
-        # (혹시 계산 함수가 없을 때) students 문서에 저장된 값이 있으면 사용
+        # students 문서에 저장된 값 사용
         snap = db.collection("students").document(str(student_id)).get()
         if not snap.exists:
             return (0, 0)
         data = snap.to_dict() or {}
         sc = int(data.get("credit_score", 0) or 0)
         gr = int(data.get("credit_grade", 0) or 0)
+
+        # grade가 비어있는데 score는 있으면 grade 계산
+        if (gr == 0) and (sc != 0):
+            gfn = globals().get("_score_to_grade")
+            if callable(gfn):
+                gr = int(gfn(sc))
+
         return (sc, gr)
 
     except Exception:
