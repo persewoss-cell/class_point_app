@@ -9397,40 +9397,36 @@ if "📊 통계청" in tabs:
                     out.append(x)
             return out
 
-        # ✅ 한 줄: [◀ + 페이지 + /전체페이지 + ▶] | [저장/초기화/삭제]
-        row = st.columns([7.6, 2.4], gap="small")
+        # ✅ 한 줄: [◀] [페이지] [/전체페이지] [▶] | [저장/초기화/삭제]
+        row = st.columns([4, 3], gap="small")
 
         with row[0]:
-            items = _page_items(cur_page, total_pages)
+            nav = st.columns([1, 1, 1, 1], gap="small")
 
-            # 폭을 더 촘촘히: 마지막에 ▶가 "/전체페이지" 바로 옆에 붙게
-            widths = [0.9] + [0.6] * len(items) + [1.1] + [0.9]
-            nav_cols = st.columns(widths, gap="small")
-
-            # ◀ : 최신(1페이지)면 비활성
-            with nav_cols[0]:
+            with nav[0]:
                 if st.button("◀", key="stat_nav_left", use_container_width=True, disabled=(cur_page <= 1)):
                     _goto_page(cur_page - 1)
 
-            # 페이지 버튼
-            for i, it in enumerate(items):
-                with nav_cols[i + 1]:
-                    if it == "…":
-                        st.markdown("<div style='text-align:center; opacity:0.55;'>…</div>", unsafe_allow_html=True)
-                    else:
-                        p = int(it)
-                        if st.button(f"{p}", key=f"stat_nav_p_{p}", use_container_width=True, disabled=(p == cur_page)):
-                            _goto_page(p)
+            with nav[1]:
+                page_val = st.number_input(
+                    "",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=cur_page,
+                    step=1,
+                    key="stat_page_num",
+                    label_visibility="collapsed",
+                )
+                if int(page_val) != int(cur_page):
+                    _goto_page(int(page_val))
 
-            # "/전체페이지 N" : 텍스트만
-            with nav_cols[len(items) + 1]:
+            with nav[2]:
                 st.markdown(
-                    f"<div style='text-align:left; font-weight:700; padding-top:6px;'>/ 전체페이지 {total_pages}</div>",
+                    f"<div style='text-align:center; font-weight:700; padding-top:6px;'>/ 전체페이지 {total_pages}</div>",
                     unsafe_allow_html=True,
                 )
 
-            # ▶ : 마지막 페이지면 비활성
-            with nav_cols[len(items) + 2]:
+            with nav[3]:
                 if st.button("▶", key="stat_nav_right", use_container_width=True, disabled=(cur_page >= total_pages)):
                     _goto_page(cur_page + 1)
 
@@ -10083,59 +10079,44 @@ if "💳 신용등급" in tabs:
         # -------------------------
         # 네비게이션 UI
         # -------------------------
-        nav_row = st.columns([7.6, 2.4], gap="small")
+        nav = st.columns([1, 1, 1, 1], gap="small")
 
-        with nav_row[0]:
-            items = _page_items(cur_page, total_pages)
-            widths = [0.9] + [0.6] * len(items) + [1.1] + [0.9]
-            nav_cols = st.columns(widths, gap="small")
+        with nav[0]:
+            if st.button(
+                "◀",
+                key="credit_nav_left",
+                use_container_width=True,
+                disabled=(cur_page <= 1),
+            ):
+                _credit_goto_page(cur_page - 1)
 
-            # ◀
-            with nav_cols[0]:
-                if st.button(
-                    "◀",
-                    key="credit_nav_left",
-                    use_container_width=True,
-                    disabled=(cur_page <= 1),
-                ):
-                    _credit_goto_page(cur_page - 1)
+        with nav[1]:
+            page_val = st.number_input(
+                "",
+                min_value=1,
+                max_value=total_pages,
+                value=cur_page,
+                step=1,
+                key="credit_page_num",
+                label_visibility="collapsed",
+            )
+            if int(page_val) != int(cur_page):
+                _credit_goto_page(int(page_val))
 
-            # 페이지 숫자
-            for i, it in enumerate(items):
-                with nav_cols[i + 1]:
-                    if it == "…":
-                        st.markdown(
-                            "<div style='text-align:center; opacity:0.55;'>…</div>",
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        p = int(it)
-                        if st.button(
-                            f"{p}",
-                            key=f"credit_nav_p_{p}",
-                            use_container_width=True,
-                            disabled=(p == cur_page),
-                        ):
-                            _credit_goto_page(p)
+        with nav[2]:
+            st.markdown(
+                f"<div style='text-align:center; font-weight:700; padding-top:6px;'>/ 전체페이지 {total_pages}</div>",
+                unsafe_allow_html=True,
+            )
 
-            # / 전체페이지 N (텍스트)
-            with nav_cols[len(items) + 1]:
-                st.markdown(
-                    f"<div style='text-align:left; font-weight:700; padding-top:6px;'>"
-                    f"/ 전체페이지 {total_pages}"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-
-            # ▶
-            with nav_cols[len(items) + 2]:
-                if st.button(
-                    "▶",
-                    key="credit_nav_right",
-                    use_container_width=True,
-                    disabled=(cur_page >= total_pages),
-                ):
-                    _credit_goto_page(cur_page + 1)
+        with nav[3]:
+            if st.button(
+                "▶",
+                key="credit_nav_right",
+                use_container_width=True,
+                disabled=(cur_page >= total_pages),
+            ):
+                _credit_goto_page(cur_page + 1)
 
         # -------------------------
         # ✅ page_idx 기준으로 날짜 컬럼 슬라이스
