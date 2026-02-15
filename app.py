@@ -1038,8 +1038,7 @@ def _render_user_bank_header(student_id: str):
 
         # 표시 형식(캡쳐 스타일)
         who = str(st.session_state.get("login_name", "") or "").strip()
-        st.markdown(f"## 🧾 {who} 통장" if who else "## 🧾 통장")
-
+        
         st.markdown(f"### 🧮 총 자산: {int(asset_total)} 드림")
 
         # ✅ (PATCH) 총자산 줄은 유지 + 나머지는 글자/간격만 컴팩트하게
