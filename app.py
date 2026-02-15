@@ -5972,12 +5972,6 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             eval_total = 0
             principal_by_name = {}
             eval_by_name = {}
-
-        st.markdown(f"**💰 통장 잔액:** {cur_bal}드림")
-        st.markdown(f"**🪙 투자 원금:** 총 {principal_total}드림({_fmt_breakdown(principal_by_name)})")
-        st.markdown(f"**📈 현재 평가:** 총 {eval_total}드림({_fmt_breakdown(eval_by_name)})")
-        st.divider()
-
     
     products = _get_products(active_only=True)
     if not products:
