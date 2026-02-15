@@ -11105,7 +11105,8 @@ def can_edit_schedule(area: str, perms: set) -> bool:
 # -------------------------
 if "🎯 목표" in tabs and (not is_admin):
     with tab_map["🎯 목표"]:
-        st.subheader("🎯 나의 목표 자산")
+        # ✅ 타이틀(DDay) 자리
+        title_ph = st.empty()
 
         # 1) 현재 목표 불러오기
         gres = api_get_goal(login_name, login_pin)
@@ -11134,6 +11135,19 @@ if "🎯 목표" in tabs and (not is_admin):
                 except Exception:
                     pass
             g_date = st.date_input("목표 날짜", value=default_date, key=f"goal_date_{login_name}")
+            # ✅ D-Day 표시 (목표 날짜 기준 남은 일수)
+            try:
+                _dday = int((g_date - date.today()).days)
+            except Exception:
+                _dday = 0
+            if _dday >= 0:
+                dday_text = f"(D-{_dday:02d}일)"
+            else:
+                dday_text = f"(D+{abs(_dday):02d}일)"
+            title_ph.markdown(
+                f"## 🎯 나의 목표 자산 <span style='font-size:0.75em;color:#777;'>{dday_text}</span>",
+                unsafe_allow_html=True,
+            )
 
         if st.button("목표 저장", key=f"goal_save_{login_name}", use_container_width=True):
             res = api_set_goal(login_name, login_pin, int(g_amt), g_date.isoformat())
