@@ -10518,20 +10518,20 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                 sc, gr = _calc_credit_score_for_student(my_student_id)
                 st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
 
-# ✅ (PATCH) 적금 총 원금(표시용) 계산
-total_savings_principal = 0
-try:
-    if my_student_id:
-        sdocs = (
-            db.collection("savings")
-            .where(filter=FieldFilter("student_id", "==", str(my_student_id)))
-            .stream()
-        )
-        for d in sdocs:
-            s = d.to_dict() or {}
-            total_savings_principal += int(s.get("principal", 0) or 0)
-except Exception:
-    total_savings_principal = 0
+            # ✅ (PATCH) 적금 총 원금(표시용) 계산
+            total_savings_principal = 0
+            try:
+                if my_student_id:
+                    sdocs = (
+                        db.collection("savings")
+                        .where(filter=FieldFilter("student_id", "==", str(my_student_id)))
+                        .stream()
+                    )
+                    for d in sdocs:
+                        s = d.to_dict() or {}
+                        total_savings_principal += int(s.get("principal", 0) or 0)
+            except Exception:
+                total_savings_principal = 0
 
             st.markdown(f"#### 💰 통장 잔액: **{balance}드림**")
             st.markdown(f"#### 🐷 적금 총액: **{total_savings_principal}드림**")
