@@ -10901,7 +10901,7 @@ if "📊 통계/신용" in tabs and (not is_admin):
                 st.rerun()
 
             # 네비게이션(저장/초기화/삭제 없음) — ✅ 1줄 고정(사용자 모드 전용)
-            nav = st.columns([1.2, 4.0, 2.2, 1.2], gap="small")
+            nav = st.columns([1, 1, 1, 1], gap="small")
             with nav[0]:
                 if st.button("◀", key="user_stat_prev", use_container_width=True, disabled=(cur_page <= 1)):
                     _goto_user_stat_page(cur_page - 1)
@@ -11033,7 +11033,7 @@ if "📊 통계/신용" in tabs and (not is_admin):
                 st.rerun()
 
             # 네비게이션 — ✅ 1줄 고정(사용자 모드 전용)
-            nav2 = st.columns([1.2, 4.0, 2.2, 1.2], gap="small")
+            nav2 = st.columns([1, 1, 1, 1], gap="small")
             with nav2[0]:
                 if st.button("◀", key="user_credit_prev", use_container_width=True, disabled=(cur_page2 <= 1)):
                     _goto_user_credit_page(cur_page2 - 1)
