@@ -10900,25 +10900,32 @@ if "📊 통계/신용" in tabs and (not is_admin):
                 st.session_state["user_stat_page_idx"] = p - 1
                 st.rerun()
 
-            # 네비게이션(저장/초기화/삭제 없음)
-            nav = st.columns([1.6, 6.4], gap="small")
+            # 네비게이션(저장/초기화/삭제 없음) — ✅ 1줄 고정(사용자 모드 전용)
+            nav = st.columns([1.2, 4.0, 2.2, 1.2], gap="small")
             with nav[0]:
                 if st.button("◀", key="user_stat_prev", use_container_width=True, disabled=(cur_page <= 1)):
                     _goto_user_stat_page(cur_page - 1)
             with nav[1]:
-                # 페이지 번호 버튼(간단)
-                page_cols = st.columns(min(total_pages, 9))
-                for i in range(len(page_cols)):
-                    p = i + 1
-                    with page_cols[i]:
-                        if st.button(
-                            str(p),
-                            key=f"user_stat_p_{p}",
-                            use_container_width=True,
-                            disabled=(p == cur_page),
-                        ):
-                            _goto_user_stat_page(p)
-                st.caption(f"/ 전체페이지 {total_pages}")
+                # ✅ 페이지 번호 입력(1줄)
+                page_val = st.number_input(
+                    "",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=cur_page,
+                    step=1,
+                    key="user_stat_page_num",
+                    label_visibility="collapsed",
+                )
+                if int(page_val) != int(cur_page):
+                    _goto_user_stat_page(int(page_val))
+            with nav[2]:
+                st.markdown(
+                    f"""<div style="text-align:center; padding-top:0.45rem;">/ 전체페이지 {total_pages}</div>""",
+                    unsafe_allow_html=True,
+                )
+            with nav[3]:
+                if st.button("▶", key="user_stat_next", use_container_width=True, disabled=(cur_page >= total_pages)):
+                    _goto_user_stat_page(cur_page + 1)
 
             # 최신이 왼쪽이 되도록(내부는 DESC 기준 유지)
             sub_rows_desc = list(sub_rows_all_u)  # created_at DESC
@@ -11025,23 +11032,31 @@ if "📊 통계/신용" in tabs and (not is_admin):
                 st.session_state["user_credit_page_idx"] = p - 1
                 st.rerun()
 
-            nav2 = st.columns([1.6, 6.4], gap="small")
+            # 네비게이션 — ✅ 1줄 고정(사용자 모드 전용)
+            nav2 = st.columns([1.2, 4.0, 2.2, 1.2], gap="small")
             with nav2[0]:
                 if st.button("◀", key="user_credit_prev", use_container_width=True, disabled=(cur_page2 <= 1)):
                     _goto_user_credit_page(cur_page2 - 1)
             with nav2[1]:
-                page_cols2 = st.columns(min(total_pages2, 9))
-                for i in range(len(page_cols2)):
-                    p = i + 1
-                    with page_cols2[i]:
-                        if st.button(
-                            str(p),
-                            key=f"user_credit_p_{p}",
-                            use_container_width=True,
-                            disabled=(p == cur_page2),
-                        ):
-                            _goto_user_credit_page(p)
-                st.caption(f"/ 전체페이지 {total_pages2}")
+                page_val2 = st.number_input(
+                    "",
+                    min_value=1,
+                    max_value=total_pages2,
+                    value=cur_page2,
+                    step=1,
+                    key="user_credit_page_num",
+                    label_visibility="collapsed",
+                )
+                if int(page_val2) != int(cur_page2):
+                    _goto_user_credit_page(int(page_val2))
+            with nav2[2]:
+                st.markdown(
+                    f"""<div style="text-align:center; padding-top:0.45rem;">/ 전체페이지 {total_pages2}</div>""",
+                    unsafe_allow_html=True,
+                )
+            with nav2[3]:
+                if st.button("▶", key="user_credit_next", use_container_width=True, disabled=(cur_page2 >= total_pages2)):
+                    _goto_user_credit_page(cur_page2 + 1)
 
             start2 = page_idx2 * VISIBLE_COLS2
             end2 = start2 + VISIBLE_COLS2
