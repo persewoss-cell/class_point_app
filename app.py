@@ -3798,7 +3798,7 @@ else:
         if tab_visible(t):
             extra_admin_tabs.append((t, t))  # (표시라벨, 내부키)
 
-    user_tab_labels = base_labels + [lab for (lab, _k) in extra_admin_tabs]
+    user_tab_labels = base_labels + [lab for (lab, _k) in extra_admin_tabs] + ["📊 통계/신용"]
 
     # ✅ (PATCH) 사용자 모드: 탭 위에 통장/정보 요약 표시
 
@@ -3826,6 +3826,9 @@ else:
     # 추가 관리자 탭 매핑
     for i, (_lab, key_internal) in enumerate(extra_admin_tabs):
         tab_map[key_internal] = tab_objs[extra_start + i]
+
+    # ✅ (NEW) 통계/신용(학생 전용, 읽기 전용)
+    tab_map["📊 통계/신용"] = tab_objs[extra_start + len(extra_admin_tabs)]
 
     tabs = list(tab_map.keys())
 
@@ -10841,6 +10844,250 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 
             df_rate = pd.DataFrame(table_rows)
             st.dataframe(df_rate, use_container_width=True, hide_index=True)
+
+
+# =========================
+# 📊 통계/신용 (학생 전용 · 읽기 전용)
+# - 통계청 통계표(본인) + 신용등급 변동표(본인)
+# - 저장/초기화/삭제/수정 기능 없음
+# =========================
+if "📊 통계/신용" in tabs and (not is_admin):
+    with tab_map["📊 통계/신용"]:
+        st.subheader("📊 통계/신용")
+
+        if not my_student_id:
+            st.info("로그인 후 확인할 수 있어요.")
+            st.stop()
+
+        # 내 번호/이름
+        my_no = ""
+        my_nm = ""
+        try:
+            ss = db.collection("students").document(str(my_student_id)).get()
+            if ss.exists:
+                d0 = ss.to_dict() or {}
+                my_no = str(d0.get("no", "") or "")
+                my_nm = str(d0.get("name", "") or "").strip()
+        except Exception:
+            pass
+
+        # -------------------------------------------------
+        # 1) 통계표(내 기록)
+        # -------------------------------------------------
+        st.markdown("### 📋 통계표(내 기록)")
+
+        sub_res_u = api_list_stat_submissions_cached(limit_cols=50)
+        sub_rows_all_u = sub_res_u.get("rows", []) if sub_res_u.get("ok") else []
+        if not sub_rows_all_u:
+            st.info("아직 제출물 내역이 없어요.")
+        else:
+            import math
+
+            VISIBLE_COLS = 7
+            total_cols = len(sub_rows_all_u)
+            total_pages = max(1, int(math.ceil(total_cols / VISIBLE_COLS)))
+
+            if "user_stat_page_idx" not in st.session_state:
+                st.session_state["user_stat_page_idx"] = 0  # 0=최신
+
+            st.session_state["user_stat_page_idx"] = max(
+                0, min(int(st.session_state["user_stat_page_idx"]), total_pages - 1)
+            )
+            page_idx = int(st.session_state["user_stat_page_idx"])
+            cur_page = page_idx + 1
+
+            def _goto_user_stat_page(p: int):
+                p = max(1, min(int(p), total_pages))
+                st.session_state["user_stat_page_idx"] = p - 1
+                st.rerun()
+
+            # 네비게이션(저장/초기화/삭제 없음)
+            nav = st.columns([1.6, 6.4], gap="small")
+            with nav[0]:
+                if st.button("◀", key="user_stat_prev", use_container_width=True, disabled=(cur_page <= 1)):
+                    _goto_user_stat_page(cur_page - 1)
+            with nav[1]:
+                # 페이지 번호 버튼(간단)
+                page_cols = st.columns(min(total_pages, 9))
+                for i in range(len(page_cols)):
+                    p = i + 1
+                    with page_cols[i]:
+                        if st.button(
+                            str(p),
+                            key=f"user_stat_p_{p}",
+                            use_container_width=True,
+                            disabled=(p == cur_page),
+                        ):
+                            _goto_user_stat_page(p)
+                st.caption(f"/ 전체페이지 {total_pages}")
+
+            # 최신이 왼쪽이 되도록(내부는 DESC 기준 유지)
+            sub_rows_desc = list(sub_rows_all_u)  # created_at DESC
+            start = page_idx * VISIBLE_COLS
+            end = start + VISIBLE_COLS
+            sub_rows_view = sub_rows_desc[start:end]
+
+            # ---- 헤더 ----
+            hdr_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
+            with hdr_cols[0]:
+                st.markdown("**번호**")
+            with hdr_cols[1]:
+                st.markdown("**이름**")
+
+            for j, s in enumerate(sub_rows_view):
+                with hdr_cols[j + 2]:
+                    date_disp = str(s.get("date_display", "") or "").strip()
+                    if not date_disp:
+                        date_disp = _fmt_kor_date_short(s.get("created_at_utc", ""))
+                    lab = str(s.get("label", "") or "").strip()
+                    st.markdown(
+                        f"<div style='text-align:center; font-weight:900; line-height:1.15;'>"
+                        f"{date_disp}<br>{lab}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+            st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+            # ---- 본문(내 것 1줄) ----
+            row_cols = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view))
+            with row_cols[0]:
+                st.markdown(my_no if my_no else "-")
+            with row_cols[1]:
+                st.markdown(my_nm if my_nm else "-")
+
+            for j, sub in enumerate(sub_rows_view):
+                statuses = dict(sub.get("statuses", {}) or {})
+                stv = _norm_status(statuses.get(str(my_student_id), "X"))
+                opt = ["O", "X", "△"]
+                idx0 = 0 if stv == "O" else (1 if stv == "X" else 2)
+                with row_cols[j + 2]:
+                    st.radio(
+                        "상태",
+                        opt,
+                        index=idx0,
+                        key=f"user_stat_cell_{str(my_student_id)}_{str(sub.get('submission_id') or '')}",
+                        horizontal=True,
+                        label_visibility="collapsed",
+                        disabled=True,
+                    )
+
+        st.divider()
+
+        # -------------------------------------------------
+        # 2) 신용등급 변동표(내 기록)
+        # -------------------------------------------------
+        st.markdown("### 💳 신용등급 변동표(내 기록)")
+
+        sub_res_c = api_list_stat_submissions_cached(limit_cols=50)
+        sub_rows_all_c = sub_res_c.get("rows", []) if sub_res_c.get("ok") else []
+        if not sub_rows_all_c:
+            st.info("표시할 기록이 없어요.")
+        else:
+            import math
+
+            cfg = _get_credit_cfg()
+            base = int(cfg.get("base", 50) or 50)
+
+            def _delta(v: str) -> int:
+                v = _norm_status(v)
+                if v == "O":
+                    return int(cfg.get("o", 1) or 1)
+                if v == "△":
+                    return int(cfg.get("tri", 0) or 0)
+                return int(cfg.get("x", -3) or -3)
+
+            # 누적 점수(오래된→최신 순으로 계산)
+            sub_rows_desc = list(sub_rows_all_c)
+            sub_rows_asc = list(reversed(sub_rows_desc))
+
+            cur = base
+            score_at_sub = {}
+            for s in sub_rows_asc:
+                sid = str(s.get("submission_id") or "")
+                statuses = dict(s.get("statuses", {}) or {})
+                v = statuses.get(str(my_student_id), "X")
+                cur = int(cur) + int(_delta(v))
+                score_at_sub[sid] = int(cur)
+
+            VISIBLE_COLS2 = 7
+            total_cols2 = len(sub_rows_desc)
+            total_pages2 = max(1, int(math.ceil(total_cols2 / VISIBLE_COLS2)))
+
+            if "user_credit_page_idx" not in st.session_state:
+                st.session_state["user_credit_page_idx"] = 0
+
+            st.session_state["user_credit_page_idx"] = max(
+                0, min(int(st.session_state["user_credit_page_idx"]), total_pages2 - 1)
+            )
+            page_idx2 = int(st.session_state["user_credit_page_idx"])
+            cur_page2 = page_idx2 + 1
+
+            def _goto_user_credit_page(p: int):
+                p = max(1, min(int(p), total_pages2))
+                st.session_state["user_credit_page_idx"] = p - 1
+                st.rerun()
+
+            nav2 = st.columns([1.6, 6.4], gap="small")
+            with nav2[0]:
+                if st.button("◀", key="user_credit_prev", use_container_width=True, disabled=(cur_page2 <= 1)):
+                    _goto_user_credit_page(cur_page2 - 1)
+            with nav2[1]:
+                page_cols2 = st.columns(min(total_pages2, 9))
+                for i in range(len(page_cols2)):
+                    p = i + 1
+                    with page_cols2[i]:
+                        if st.button(
+                            str(p),
+                            key=f"user_credit_p_{p}",
+                            use_container_width=True,
+                            disabled=(p == cur_page2),
+                        ):
+                            _goto_user_credit_page(p)
+                st.caption(f"/ 전체페이지 {total_pages2}")
+
+            start2 = page_idx2 * VISIBLE_COLS2
+            end2 = start2 + VISIBLE_COLS2
+            sub_rows_view2 = sub_rows_desc[start2:end2]
+
+            hdr_cols2 = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view2))
+            with hdr_cols2[0]:
+                st.markdown("**번호**")
+            with hdr_cols2[1]:
+                st.markdown("**이름**")
+
+            for j, s in enumerate(sub_rows_view2):
+                with hdr_cols2[j + 2]:
+                    date_disp = str(s.get("date_display", "") or "").strip()
+                    if not date_disp:
+                        date_disp = _fmt_kor_date_short(s.get("created_at_utc", ""))
+                    lab = str(s.get("label", "") or "").strip()
+                    st.markdown(
+                        f"<div style='text-align:center; font-weight:900; line-height:1.15;'>"
+                        f"{date_disp}<br>{lab}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+            st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+            row_cols2 = st.columns([0.55, 1.2] + [1.9] * len(sub_rows_view2))
+            with row_cols2[0]:
+                st.markdown(my_no if my_no else "-")
+            with row_cols2[1]:
+                st.markdown(my_nm if my_nm else "-")
+
+            for j, sub in enumerate(sub_rows_view2):
+                sid = str(sub.get("submission_id") or "")
+                sc = int(score_at_sub.get(sid, base))
+                gr = _score_to_grade(sc)
+                with row_cols2[j + 2]:
+                    st.markdown(
+                        f"<div style='text-align:center; font-weight:900;'>{sc}점/{gr}등급</div>",
+                        unsafe_allow_html=True,
+                    )
+
+        st.divider()
 
 # =========================
 # 10) 🗓️ 일정 (권한별 수정)
