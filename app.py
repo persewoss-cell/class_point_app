@@ -10852,7 +10852,6 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
 # =========================
 if "📊 통계/신용" in tabs and (not is_admin):
     with tab_map["📊 통계/신용"]:
-        st.subheader("📊 통계/신용")
 
         if not my_student_id:
             st.info("로그인 후 확인할 수 있어요.")
