@@ -1161,7 +1161,7 @@ def api_get_goal_by_student_id(student_id: str):
         return {"ok": False, "error": str(e)}
 
 
-def api_set_goal(student_id: str, target_amount: int, goal_date_str: str):
+def api_set_goal_by_student_id(student_id: str, target_amount: int, goal_date_str: str):
     """학생별 목표 저장(학생 1명당 문서 1개: doc_id = student_id)"""
     GOAL_COL = "goals"
     try:
@@ -1189,34 +1189,18 @@ def api_get_goal(name: str, pin: str):
 
 
 def api_set_goal(name: str, pin: str, goal_amount: int, goal_date_str: str):
-    """사용자 인증 후 목표 저장(업데이트)"""
+    """사용자 인증 후 목표 저장(학생 1명당 문서 1개: doc_id = student_id)"""
     goal_amount = int(goal_amount or 0)
     goal_date_str = str(goal_date_str or "").strip()
 
-    student_doc = fs_auth_student(login_name, login_pin)
+    student_doc = fs_auth_student(name, pin)
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
     if goal_amount <= 0:
         return {"ok": False, "error": "목표 금액은 1 이상이어야 합니다."}
 
-    try:
-        q = (
-            db.collection(GOAL_COL)
-            .where(filter=FieldFilter("student_id", "==", student_doc.id))
-            .order_by("created_at", direction=firestore.Query.DESCENDING)
-            .limit(1)
-            .stream()
-        )
-        docs = list(q)
-        payload = {"student_id": student_doc.id, "target_amount": int(goal_amount), "goal_date": goal_date_str}
-        if docs:
-            db.collection(GOAL_COL).document(docs[0].id).set(payload, merge=True)
-        else:
-            payload["created_at"] = firestore.SERVER_TIMESTAMP
-            db.collection(GOAL_COL).document().set(payload)
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    # ✅ 목표 저장은 student_id 문서에 1개로 고정(로그아웃/재로그인 후에도 그대로 불러옴)
+    return api_set_goal_by_student_id(student_doc.id, int(goal_amount), goal_date_str)
 # =========================
 # Firestore helpers (students/auth) - 너 코드 유지
 # =========================
@@ -11147,7 +11131,7 @@ if "🎯 목표" in tabs and (not is_admin):
             default_date = date.today() + timedelta(days=30)
             if cur_goal_date:
                 try:
-                    default_date = datetime.fromisoformat(cur_goal_date).date().date()
+                    default_date = datetime.fromisoformat(cur_goal_date).date()
                 except Exception:
                     pass
             g_date = st.date_input("목표 날짜", value=default_date, key=f"goal_date_{login_name}")
