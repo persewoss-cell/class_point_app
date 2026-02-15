@@ -6605,7 +6605,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         #   (지급은 관리자 또는 '투자증권' 직업 학생만 가능 — 문구는 그대로 유지)
         if (not is_admin) and (not inv_admin_ok):
             mine = [x for x in pending if str(x.get("_student_id", "") or "") == str(my_student_id or "")]
-            st.info("투자 회수는 관리자 또는 '투자증권' 직업 학생만 할 수 있어요.")
+            st.info("투자 회수는 관리자 또는 관련 권한을 가진 학생만 할 수 있어요.")
             if not mine:
                 st.caption("지급 대기 중인 투자 회수 내역이 없습니다.")
             else:
