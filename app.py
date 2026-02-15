@@ -913,6 +913,69 @@ def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
     except Exception:
         return ("없음", 0)
 
+
+def _render_user_bank_header(student_id: str):
+    """✅ 사용자 모드: 탭 위에 통장/사용자 정보 요약 표시"""
+    try:
+        sid = str(student_id or "")
+        if not sid:
+            return
+
+        # 통장잔액
+        bal_now = 0
+        try:
+            snap = db.collection("students").document(sid).get()
+            if snap.exists:
+                bal_now = int((snap.to_dict() or {}).get("balance", 0) or 0)
+        except Exception:
+            bal_now = 0
+
+        # 적금 총 원금(전체)
+        sv_total = 0
+        try:
+            sdocs = (
+                db.collection("savings")
+                .where(filter=FieldFilter("student_id", "==", sid))
+                .stream()
+            )
+            for d in sdocs:
+                s = d.to_dict() or {}
+                sv_total += int(s.get("principal", 0) or 0)
+        except Exception:
+            sv_total = 0
+
+        # 투자: 원금 / 현재평가
+        inv_principal_text, inv_principal_total = _get_invest_principal_by_student_id(sid)
+        inv_eval_text, inv_eval_total = _get_invest_summary_by_student_id(sid)
+
+
+        # 표시 단위 통일(드림 -> 포인트)
+        inv_principal_text = str(inv_principal_text or "").replace("드림", "포인트")
+        inv_eval_text = str(inv_eval_text or "").replace("드림", "포인트")
+
+        # 직업 / 신용도
+        role_name = _get_role_name_by_student_id(sid)
+        credit_score, credit_grade = _safe_credit(sid)
+
+        # 총 자산(투자는 현재평가 기준)
+        asset_total = int(bal_now) + int(sv_total) + int(inv_eval_total)
+
+        # 표시 형식(캡쳐 스타일)
+        who = str(st.session_state.get("login_name", "") or "").strip()
+        st.markdown(f"## 🧾 {who} 통장" if who else "## 🧾 통장")
+
+        st.markdown(f"### 🧮 총 자산: {int(asset_total)} 포인트")
+        st.markdown(f"### 💰 통장 잔액: {int(bal_now)} 포인트")
+        st.markdown(f"### 🏦 적금 금액: {int(sv_total)} 포인트")
+        st.markdown(f"### 🪙 투자 원금: 총 {int(inv_principal_total)} 포인트({inv_principal_text})")
+        st.markdown(f"### 📈 현재 평가: 총 {int(inv_eval_total)} 포인트({inv_eval_text})")
+        st.markdown(f"### 💼 직업: {role_name if role_name else '없음'}")
+        st.markdown(f"### 💳 신용도: {int(credit_grade)}등급({int(credit_score)}점)")
+        st.divider()
+    except Exception:
+        # 헤더는 실패해도 앱 전체가 죽지 않게 조용히 패스
+        pass
+
 def _safe_credit(student_id: str):
     """
     ✅ (score, grade) 안전 조회
@@ -3415,6 +3478,19 @@ else:
     st.subheader("🔐 로그인")
 
 if not st.session_state.logged_in:
+    # ✅ 이름 저장(체크 시 URL에 저장되어 다음에도 자동 입력)
+    _saved_name = ""
+    _remember_default = False
+    try:
+        _saved_name = str(st.query_params.get("saved_name", "") or "")
+        _remember_default = bool(str(st.query_params.get("remember", "") or "") == "1" and _saved_name)
+    except Exception:
+        _saved_name = ""
+        _remember_default = False
+
+    if _saved_name and not str(st.session_state.get("login_name_input", "") or "").strip():
+        st.session_state["login_name_input"] = _saved_name
+
     with st.form("login_form", clear_on_submit=False):
         login_c1, login_c2, login_c3 = st.columns([2, 2, 1])
         with login_c1:
@@ -3435,6 +3511,16 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.login_name = ADMIN_NAME
                 st.session_state.login_pin = ADMIN_PIN
+                # ✅ 이름 저장 처리
+                try:
+                    if bool(st.session_state.get("remember_name_check", False)):
+                        st.query_params["saved_name"] = login_name
+                        st.query_params["remember"] = "1"
+                    else:
+                        st.query_params.pop("saved_name", None)
+                        st.query_params.pop("remember", None)
+                except Exception:
+                    pass
                 toast("관리자 모드 ON", icon="🔓")
                 st.rerun()
             else:
@@ -3446,6 +3532,16 @@ if not st.session_state.logged_in:
                     st.session_state.logged_in = True
                     st.session_state.login_name = login_name
                     st.session_state.login_pin = login_pin
+                # ✅ 이름 저장 처리
+                try:
+                    if bool(st.session_state.get("remember_name_check", False)):
+                        st.query_params["saved_name"] = login_name
+                        st.query_params["remember"] = "1"
+                    else:
+                        st.query_params.pop("saved_name", None)
+                        st.query_params.pop("remember", None)
+                except Exception:
+                    pass
                     toast("로그인 완료!", icon="✅")
                     st.rerun()
 
@@ -3589,6 +3685,10 @@ else:
             extra_admin_tabs.append((t, t))  # (표시라벨, 내부키)
 
     user_tab_labels = base_labels + [lab for (lab, _k) in extra_admin_tabs]
+
+    # ✅ (PATCH) 사용자 모드: 탭 위에 통장/정보 요약 표시
+
+    _render_user_bank_header(my_student_id)
 
     tab_objs = st.tabs(user_tab_labels)
 
@@ -4533,94 +4633,6 @@ if "🏦 내 통장" in tabs:
             if not student_id:
                 st.error("학생 ID를 불러오지 못했어요. (로그인/잔액 조회 확인 필요)")
                 st.stop()
-
-            # ===== 통장 요약 정보 (실데이터 기준) =====
-
-            # 1) 적금 총 원금: running + matured 전부 합(원하신 “총 적금 원금 합계”)
-            total_savings_principal = 0
-            try:
-                sdocs = (
-                    db.collection("savings")  # ✅ SAV_COL 변수 스코프 문제 방지: 문자열로 고정
-                    .where(filter=FieldFilter("student_id", "==", str(student_id)))
-                    .stream()
-                )
-                for d in sdocs:
-                    s = d.to_dict() or {}
-                    total_savings_principal += int(s.get("principal", 0) or 0)
-            except Exception:
-                total_savings_principal = 0
-
-            # 2) 직업: 관리자 '직업/월급 목록'에서 배정한 값(job_salary.assigned_ids)으로 표시
-            job_name = "없음"
-            try:
-                sid = str(student_id)
-
-                # (1) 혹시 students에 저장된 값이 있으면 우선 사용(호환)
-                stu_doc = db.collection("students").document(sid).get()
-                stu = stu_doc.to_dict() if stu_doc.exists else {}
-                job_name = str(stu.get("job_name") or stu.get("job") or stu.get("role_id") or "").strip()
-
-                # (2) 없으면 job_salary 컬렉션에서 assigned_ids에 sid가 들어있는 직업들을 모두 모아서 표시
-                if not job_name:
-                    jobs = []
-                    for jdoc in db.collection("job_salary").stream():
-                        jd = jdoc.to_dict() or {}
-                        assigned = [str(x) for x in (jd.get("assigned_ids", []) or [])]
-                        if sid in assigned:
-                            jname = str(jd.get("job") or "").strip()
-                            if jname:
-                                jobs.append(jname)
-
-                    # 중복 제거(순서 유지) + ", "로 연결
-                    if jobs:
-                        uniq = []
-                        seen = set()
-                        for j in jobs:
-                            if j not in seen:
-                                uniq.append(j)
-                                seen.add(j)
-                        job_name = ", ".join(uniq)
-
-                if not job_name:
-                    job_name = "없음"
-            except Exception:
-                job_name = "없음"
-
-            # 3) 신용도: 공용 계산 함수 사용 (내 통장에서 0으로 뜨는 문제 방지)
-            credit_score, credit_grade = 0, 10
-            try:
-                credit_score, credit_grade = _calc_credit_score_for_student(str(student_id))
-            except Exception:
-                credit_score, credit_grade = 0, 10
-
-            # 4) 투자 현재가치(종목별) + 합계
-            #    - 총자산과 '투자 금액' 표기는 원금이 아니라 '현재 주가 기준'으로 반영
-            invest_text, invest_value_total = "없음", 0
-            try:
-                invest_text, invest_value_total = _get_invest_summary_by_student_id(str(student_id))
-            except Exception:
-                invest_text, invest_value_total = "없음", 0
-
-            asset_total = int(balance + total_savings_principal + invest_value_total)
-
-            st.markdown(f"## 🧾 {login_name} 통장")
-
-            # ✅ 총자산만 따로 출력 (글자 살짝 크게)
-            st.markdown(
-                f'<div class="total-asset">🧮 총 자산: {asset_total}드림</div>',
-                unsafe_allow_html=True
-            )
-
-            # 기존 요약 정보 (총자산 제외)
-            st.markdown(
-                f"""
-**💰 통장 잔액:** {balance}드림  
-**🏦 적금 금액:** {total_savings_principal}드림  
-**📈 투자(현재 평가금액):** {invest_text}  
-**💼 직업:** {job_name}  
-**💳 신용도:** {credit_grade}등급({credit_score}점)
-"""
-            )
 
             # ✅ 거래 기록 (DuplicateElementKey 방지: prefix를 탭 전용으로 변경)
             st.subheader("📝 통장 기록하기")
@@ -6478,82 +6490,118 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     # -------------------------------------------------
     pending = [x for x in view_rows if not any([x.get("지급완료") == "✅"])]
     if pending:
+
         st.markdown("#### 💸 투자 회수(지급)")
-        can_redeem_now = _can_redeem(my_student_id)
-        if (not is_admin) and (not can_redeem_now):
+
+        # ✅ 사용자 모드에서는 "내 것만" 목록으로 보여주되, 지급 버튼은 표시하지 않음
+        #   (지급은 관리자 또는 '투자증권' 직업 학생만 가능 — 문구는 그대로 유지)
+        if (not is_admin) and (not inv_admin_ok):
+            mine = [x for x in pending if str(x.get("_student_id", "") or "") == str(my_student_id or "")]
             st.info("투자 회수는 관리자 또는 '투자증권' 직업 학생만 할 수 있어요.")
+            if not mine:
+                st.caption("지급 대기 중인 투자 회수 내역이 없습니다.")
+            else:
+                for x in mine[:100]:
+                    pid = str(x.get("_product_id", "") or "")
+                    buy_price = _as_price1(x.get("_buy_price", 0.0))
+                    invest_amt = int(x.get("_invest_amount", 0) or 0)
+                    prod_name = str(x.get("종목", "") or "")
+
+                    # 현재 주가 찾기
+                    cur_price = buy_price
+                    for p in products:
+                        if str(p["product_id"]) == pid:
+                            cur_price = _as_price1(p["current_price"])
+                            break
+
+                    diff, profit, redeem_amt = _calc_redeem_amount(invest_amt, buy_price, cur_price)
+
+                    c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
+                    with c1:
+                        st.markdown(f"**{x.get('번호','')}**")
+                    with c2:
+                        st.markdown(f"{x.get('이름','')}")
+                        st.caption(prod_name)
+                    with c3:
+                        st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
+                        st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
+                    with c4:
+                        st.markdown("<div style='text-align:center; opacity:0.65; padding-top:8px;'>지급대기</div>", unsafe_allow_html=True)
+
+        # ✅ 관리자/투자증권(권한) 모드: 기존 지급 버튼 로직 유지
         else:
-            for x in pending[:100]:
-                doc_id = str(x.get("_doc_id", "") or "")
-                sid = str(x.get("_student_id", "") or "")
-                pid = str(x.get("_product_id", "") or "")
-                buy_price = _as_price1(x.get("_buy_price", 0.0))
-                invest_amt = int(x.get("_invest_amount", 0) or 0)
-                prod_name = str(x.get("종목", "") or "")
-    
-                # 현재 주가 찾기
-                cur_price = buy_price
-                for p in products:
-                    if str(p["product_id"]) == pid:
-                        cur_price = _as_price1(p["current_price"])
-                        break
-    
-                diff, profit, redeem_amt = _calc_redeem_amount(invest_amt, buy_price, cur_price)
-    
-                c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
-                with c1:
-                    st.markdown(f"**{x.get('번호','')}**")
-                with c2:
-                    st.markdown(f"{x.get('이름','')}")
-                    st.caption(prod_name)
-                with c3:
-                    st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
-                    st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
-                with c4:
-                    if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
-    
-                        sell_dt = datetime.now(tz=KST)
-                        sell_label = _fmt_kor_date_md(sell_dt)
-                        memo = f"투자 회수({prod_name})"
-    
-                        if inv_admin_ok:
-                            res = api_admin_add_tx_by_student_id(
-                                admin_pin=ADMIN_PIN,
-                                student_id=sid,
-                                memo=memo,
-                                deposit=int(redeem_amt),
-                                withdraw=0,
-                            )
-                        else:
-                            res = api_broker_deposit_by_student_id(
-                                actor_student_id=my_student_id,
-                                student_id=sid,
-                                memo=memo,
-                                deposit=int(redeem_amt),
-                            )
-    
-                        if res.get("ok"):
-                            try:
-                                db.collection(INV_LEDGER_COL).document(doc_id).set(
-                                    {
-                                        "redeemed": True,
-                                        "sell_at": firestore.SERVER_TIMESTAMP,
-                                        "sell_date_label": sell_label,
-                                        "sell_price": _as_price1(cur_price),
-                                        "diff": _as_price1(diff),
-                                        "profit": float(profit),
-                                        "redeem_amount": int(redeem_amt),
-                                    },
-                                    merge=True,
+            can_redeem_now = _can_redeem(my_student_id)
+            if (not is_admin) and (not can_redeem_now):
+                st.info("투자 회수는 관리자 또는 '투자증권' 직업 학생만 할 수 있어요.")
+            else:
+                for x in pending[:100]:
+                    doc_id = str(x.get("_doc_id", "") or "")
+                    sid = str(x.get("_student_id", "") or "")
+                    pid = str(x.get("_product_id", "") or "")
+                    buy_price = _as_price1(x.get("_buy_price", 0.0))
+                    invest_amt = int(x.get("_invest_amount", 0) or 0)
+                    prod_name = str(x.get("종목", "") or "")
+
+                    # 현재 주가 찾기
+                    cur_price = buy_price
+                    for p in products:
+                        if str(p["product_id"]) == pid:
+                            cur_price = _as_price1(p["current_price"])
+                            break
+
+                    diff, profit, redeem_amt = _calc_redeem_amount(invest_amt, buy_price, cur_price)
+
+                    c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
+                    with c1:
+                        st.markdown(f"**{x.get('번호','')}**")
+                    with c2:
+                        st.markdown(f"{x.get('이름','')}")
+                        st.caption(prod_name)
+                    with c3:
+                        st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
+                        st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
+                    with c4:
+                        if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
+
+                            sell_dt = datetime.now(tz=KST)
+                            sell_label = _fmt_kor_date_md(sell_dt)
+                            memo = f"투자 회수({prod_name})"
+
+                            if inv_admin_ok:
+                                res = api_admin_add_tx_by_student_id(
+                                    admin_pin=ADMIN_PIN,
+                                    student_id=sid,
+                                    memo=memo,
+                                    deposit=int(redeem_amt),
+                                    withdraw=0,
                                 )
+                            else:
+                                res = api_broker_deposit_by_student_id(
+                                    actor_student_id=my_student_id,
+                                    student_id=sid,
+                                    memo=memo,
+                                    deposit=int(redeem_amt),
+                                    withdraw=0,
+                                )
+
+                            if res.get("ok"):
+                                # 지급완료 처리 + 지급일 기록
+                                try:
+                                    db.collection(INV_LEDGER_COL).document(doc_id).update(
+                                        {
+                                            "redeemed": True,
+                                            "redeemed_at": firestore.SERVER_TIMESTAMP,
+                                            "redeemed_label": sell_label,
+                                            "redeemed_amount": int(redeem_amt),
+                                        }
+                                    )
+                                except Exception:
+                                    pass
+
                                 toast("지급 완료!", icon="✅")
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"장부 업데이트 실패: {e}")
-                        else:
-                            st.error(res.get("error", "지급 실패"))
-    
-    st.divider()
+                            else:
+                                st.error(res.get("error", "지급 실패"))
     
     # -------------------------------------------------
     # 3) (사용자) 투자 실행
