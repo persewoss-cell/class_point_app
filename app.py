@@ -10562,6 +10562,16 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
             balance = int(slot.get("balance", 0) or 0)
             my_student_id = slot.get("student_id")
 
+            # ✅ (FIX) 적금 총액(진행중) 계산: NameError 방지
+            total_savings_principal = 0
+            try:
+                if my_student_id:
+                    sres = api_savings_list_by_student_id(str(my_student_id))
+                    if sres.get("ok"):
+                        total_savings_principal = savings_active_total(sres.get("savings", []))
+            except Exception:
+                total_savings_principal = 0
+
             if my_student_id:
                 sc, gr = _calc_credit_score_for_student(my_student_id)
                 st.info(f"신용등급: {gr}등급  (점수 {sc}점)")
