@@ -691,6 +691,13 @@ def _is_savings_memo(memo: str) -> bool:
     memo = str(memo or "")
     return ("적금 가입" in memo) or ("적금 해지" in memo) or ("적금 만기" in memo)
 
+def _is_invest_memo(memo: str) -> bool:
+    """✅ 투자 내역 판별(되돌리기 대상에서 제외 용도)
+    - 통장 내역에 '투자 매입(...), 투자 회수(...)'가 들어오므로 memo 기반으로 차단
+    """
+    memo = str(memo or "").strip()
+    return memo.startswith("투자 ") or ("투자 매입" in memo) or ("투자 회수" in memo)
+
 def render_asset_summary(balance_now: int, savings_list: list[dict]):
     sv_total = sum(
         int(s.get("principal", 0) or 0)
@@ -1783,6 +1790,9 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
                 "amount": amount,
                 "balance_after": new_bal,
                 "memo": memo,
+                "apply_treasury": bool(apply_treasury),
+                "treasury_signed": int(tre_signed),
+                "treasury_memo": str(treasury_memo or memo),
                 "created_at": firestore.SERVER_TIMESTAMP,
             },
         )
@@ -1844,6 +1854,9 @@ def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, d
                 "amount": amount,
                 "balance_after": new_bal,
                 "memo": memo,
+                "apply_treasury": bool(apply_treasury),
+                "treasury_signed": int(tre_signed),
+                "treasury_memo": str(treasury_memo or memo),
                 "created_at": firestore.SERVER_TIMESTAMP,
             },
         )
@@ -2039,6 +2052,9 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
         if _is_savings_memo(memo) or ttype in ("maturity",):
             blocked.append((tid, "적금 관련 내역"))
             continue
+        if _is_invest_memo(memo):
+            blocked.append((tid, "투자 내역"))
+            continue
         if _already_rolled_back(student_id, tid):
             blocked.append((tid, "이미 되돌린 거래"))
             continue
@@ -2072,10 +2088,24 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
             _mmdd = "--.--."
         rollback_memo = f"{(_orig_memo or '내역')}({_mmdd}) 되돌리기"
 
+        # ✅ 원거래가 국고(국세청) 반영된 경우: 되돌리기도 국고장부에 반영
+        orig_tre_signed = int(tx.get("treasury_signed", 0) or 0)
+        orig_tre_memo = str(tx.get("treasury_memo", "") or "").strip() or _orig_memo
+
         @firestore.transactional
         def _do_one(transaction):
             st_snap = student_ref.get(transaction=transaction)
             bal = int((st_snap.to_dict() or {}).get("balance", 0))
+
+            # ✅ 국고 되돌리기(원거래가 국고 반영된 경우에만)
+            if int(orig_tre_signed) != 0:
+                _treasury_apply_in_transaction(
+                    transaction,
+                    memo=str(rollback_memo),
+                    signed_amount=int(-orig_tre_signed),
+                    actor="rollback",
+                )
+
             new_bal = bal + rollback_amount
             transaction.update(student_ref, {"balance": new_bal})
             transaction.set(
@@ -2086,6 +2116,9 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
                     "amount": rollback_amount,
                     "balance_after": new_bal,
                     "memo": rollback_memo,
+                    "apply_treasury": (int(orig_tre_signed) != 0),
+                    "treasury_signed": int(-orig_tre_signed),
+                    "treasury_memo": str(rollback_memo),
                     "related_tx": tid,
                     "created_at": firestore.SERVER_TIMESTAMP,
                 },
@@ -4075,7 +4108,11 @@ if "🏦 내 통장" in tabs:
                             def _can_rollback_row(row):
                                 if str(row.get("type", "")) == "rollback":
                                     return False
-                                if _is_savings_memo(row.get("memo", "")) or str(row.get("type", "")) in ("maturity",):
+                                memo = str(row.get("memo", "") or "")
+                                if _is_savings_memo(memo) or str(row.get("type", "")) in ("maturity",):
+                                    return False
+                                # ✅ 투자 내역은 되돌리기 비활성화
+                                if _is_invest_memo(memo):
                                     return False
                                 return True
 
@@ -5000,7 +5037,11 @@ if "admin::🏦 내 통장" in tabs:
                             def _can_rollback_row(row):
                                 if str(row.get("type", "")) == "rollback":
                                     return False
-                                if _is_savings_memo(row.get("memo", "")) or str(row.get("type", "")) in ("maturity",):
+                                memo = str(row.get("memo", "") or "")
+                                if _is_savings_memo(memo) or str(row.get("type", "")) in ("maturity",):
+                                    return False
+                                # ✅ 투자 내역은 되돌리기 비활성화
+                                if _is_invest_memo(memo):
                                     return False
                                 return True
 
