@@ -2029,6 +2029,14 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
 
     student_ref = db.collection("students").document(student_id)
 
+    # ✅ 되돌리기 메모에 학생 이름을 붙이기 위해 조회
+    try:
+        _stu_snap = student_ref.get()
+        _stu_d = _stu_snap.to_dict() if _stu_snap.exists else {}
+    except Exception:
+        _stu_d = {}
+    student_name = str(_stu_d.get("name") or _stu_d.get("student_name") or "").strip() or "사용자"
+
     tx_docs = []
     for tid in tx_ids:
         snap = db.collection("transactions").document(tid).get()
@@ -2078,7 +2086,7 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
         rollback_amount = -amount
         rollback_ref = db.collection("transactions").document()
 
-        # ✅ 되돌리기 메모를 "내역명(mm.dd.) 되돌리기" 형식으로 표시
+        # ✅ 되돌리기 메모: "내역명(mm.dd.)-사용자명 되돌리기"
         _orig_memo = str(tx.get("memo", "") or "").strip()
         _dt_utc = _to_utc_datetime(tx.get("created_at"))
         if _dt_utc:
@@ -2086,23 +2094,34 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
             _mmdd = f"{_dt_kst.month:02d}.{_dt_kst.day:02d}."
         else:
             _mmdd = "--.--."
-        rollback_memo = f"{(_orig_memo or '내역')}({_mmdd}) 되돌리기"
+        rollback_memo = f"{(_orig_memo or '내역')}({_mmdd})-{student_name} 되돌리기"
 
-        # ✅ 원거래가 국고(국세청) 반영된 경우: 되돌리기도 국고장부에 반영
-        orig_tre_signed = int(tx.get("treasury_signed", 0) or 0)
-        orig_tre_memo = str(tx.get("treasury_memo", "") or "").strip() or _orig_memo
+        # ✅ 국고(세입/세출) 반영 여부 판단
+        # - 원거래가 '국고 반영'이었으면 되돌리기 시에도 국고장부를 반대로 적용
+        # - (예외) 과거 데이터에서 treasury_signed가 비어도 apply_treasury가 True면 반영
+        _kw = _orig_memo
+        needs_treasury = bool(tx.get("apply_treasury")) or int(tx.get("treasury_signed", 0) or 0) != 0
+        if not needs_treasury:
+            # 월급/지급/벌금 등은 보통 국고 반영으로 쓰이므로 키워드로 한 번 더 잡아줌
+            if any(k in _kw for k in ["월급", "지급", "보상", "벌금"]):
+                needs_treasury = True
+
+        # ✅ 되돌리기(학생 통장 변화) → 국고는 반대로 적용
+        # - 되돌리기 거래가 '입금(+)'이면 국고 '세출(-)'
+        # - 되돌리기 거래가 '출금(-)'이면 국고 '세입(+)'
+        tre_signed = int(-rollback_amount) if needs_treasury else 0
 
         @firestore.transactional
         def _do_one(transaction):
             st_snap = student_ref.get(transaction=transaction)
             bal = int((st_snap.to_dict() or {}).get("balance", 0))
 
-            # ✅ 국고 되돌리기(원거래가 국고 반영된 경우에만)
-            if int(orig_tre_signed) != 0:
+            # ✅ 국고 반영(필요한 경우에만): 되돌리기(학생 변화)만큼 반대로 적용
+            if int(tre_signed) != 0:
                 _treasury_apply_in_transaction(
                     transaction,
                     memo=str(rollback_memo),
-                    signed_amount=int(-orig_tre_signed),
+                    signed_amount=int(tre_signed),
                     actor="rollback",
                 )
 
@@ -2116,8 +2135,8 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
                     "amount": rollback_amount,
                     "balance_after": new_bal,
                     "memo": rollback_memo,
-                    "apply_treasury": (int(orig_tre_signed) != 0),
-                    "treasury_signed": int(-orig_tre_signed),
+                    "apply_treasury": (int(tre_signed) != 0),
+                    "treasury_signed": int(tre_signed),
                     "treasury_memo": str(rollback_memo),
                     "related_tx": tid,
                     "created_at": firestore.SERVER_TIMESTAMP,
@@ -2132,6 +2151,13 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
     info_msg = None
     if blocked:
         info_msg = f"되돌리기 제외 {len(blocked)}건(적금/이미 되돌림 등)은 건너뛰었습니다."
+
+    # ✅ 국고/계정 캐시 갱신
+    try:
+        api_get_treasury_state_cached.clear()
+        api_list_treasury_ledger_cached.clear()
+    except Exception:
+        pass
 
     return {"ok": True, "undone": undone, "delta": total_delta, "message": info_msg}
 
