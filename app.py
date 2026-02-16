@@ -2586,6 +2586,9 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
                 "amount": amount,
                 "balance_after": new_bal,
                 "memo": memo,
+                "apply_treasury": bool(tre_signed != 0),
+                "treasury_signed": int(tre_signed),
+                "treasury_memo": str(treasury_memo or memo),
                 "created_at": firestore.SERVER_TIMESTAMP,
             },
         )
@@ -2658,6 +2661,9 @@ def api_admin_add_tx_by_student_id_with_treasury(admin_pin: str, student_id: str
                 "amount": amount,
                 "balance_after": new_bal,
                 "memo": memo,
+                "apply_treasury": bool(tre_signed != 0),
+                "treasury_signed": int(tre_signed),
+                "treasury_memo": str(treasury_memo or memo),
                 "created_at": firestore.SERVER_TIMESTAMP,
             },
         )
@@ -4114,6 +4120,9 @@ if "🏦 내 통장" in tabs:
                                 # ✅ 투자 내역은 되돌리기 비활성화
                                 if _is_invest_memo(memo):
                                     return False
+                                txid = str(row.get("tx_id", "") or "")
+                                if txid and _already_rolled_back(sid_rb, txid):
+                                    return False
                                 return True
 
                             view_df["가능"] = view_df.apply(_can_rollback_row, axis=1)
@@ -4874,7 +4883,15 @@ if "🏦 내 통장" in tabs:
                     def _can_rollback_row(row):
                         if str(row.get("type", "")) == "rollback":
                             return False
-                        if _is_savings_memo(row.get("memo", "")) or str(row.get("type", "")) in ("maturity",):
+                        memo = str(row.get("memo", "") or "")
+                        if _is_savings_memo(memo) or str(row.get("type", "")) in ("maturity",):
+                            return False
+                        # ✅ 투자 내역은 되돌리기 비활성화
+                        if _is_invest_memo(memo):
+                            return False
+                        # ✅ 이미 되돌린(rollback 생성된) 원거래는 비활성화
+                        txid = str(row.get("tx_id", "") or "")
+                        if txid and _already_rolled_back(student_id, txid):
                             return False
                         return True
 
@@ -5042,6 +5059,9 @@ if "admin::🏦 내 통장" in tabs:
                                     return False
                                 # ✅ 투자 내역은 되돌리기 비활성화
                                 if _is_invest_memo(memo):
+                                    return False
+                                txid = str(row.get("tx_id", "") or "")
+                                if txid and _already_rolled_back(sid_rb, txid):
                                     return False
                                 return True
 
@@ -8230,14 +8250,17 @@ if "💼 직업/월급" in tabs:
                 merge=True,
             )
 
-        def _pay_one_student(student_id: str, amount: int, memo: str):
-            # 관리자 지급으로 통장 입금(+)
-            return api_admin_add_tx_by_student_id(
+        def _pay_one_student(student_id: str, amount: int, memo: str, treasury_memo: str = "", actor: str = "system_salary"):
+            # ✅ 월급 지급은 '국고(세출)'도 함께 반영(학생에게 입금 = 국고 세출)
+            return api_admin_add_tx_by_student_id_with_treasury(
                 admin_pin=ADMIN_PIN,
                 student_id=student_id,
                 memo=memo,
                 deposit=int(amount),
                 withdraw=0,
+                apply_treasury=True,
+                treasury_memo=str(treasury_memo or memo),
+                actor=str(actor or "system_salary"),
             )
 
         def _run_auto_payroll_if_due(cfg_pay: dict):
@@ -8285,7 +8308,7 @@ if "💼 직업/월급" in tabs:
 
                     nm = id_to_name.get(sid, "")
                     memo = f"월급 {job_name}"
-                    res = _pay_one_student(sid, net_amt, memo)
+                    res = _pay_one_student(sid, net_amt, memo, treasury_memo=f"월급 지급({mkey}) {job_name}" + (f" - {nm}" if nm else ""), actor="system_salary")
                                         # ✅ (국고 세입) 월급 공제액을 국고로 입금
                     deduction = int(max(0, gross - net_amt))
                     if deduction > 0:
@@ -8403,7 +8426,7 @@ if "💼 직업/월급" in tabs:
                 for sid, amt, jb, gross, job_id2 in targets:
                     nm = id_to_name2.get(sid, "")
                     memo = f"월급 {jb}"
-                    res = _pay_one_student(sid, int(amt), memo)
+                    res = _pay_one_student(sid, int(amt), memo, treasury_memo=f"월급 지급({cur_mkey}) {jb}" + (f" - {nm}" if nm else ""), actor="system_salary")
                     # ✅ (국고 세입) 월급 공제액을 국고로 입금
                     deduction = int(max(0, int(gross) - int(amt))) if "gross" in locals() else 0
                     if deduction > 0:
