@@ -1771,32 +1771,52 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
+    # 🔵 입금은 관리자 승인 대기로 저장
+    if deposit > 0:
+        db.collection("pending_deposits").add(
+            {
+                "student_id": str(student_id),
+                "amount": int(deposit),
+                "memo": memo,
+                "apply_treasury": bool(apply_treasury),
+                "treasury_memo": str(treasury_memo or memo),
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "status": "pending",
+            }
+        )
+        return {"ok": True, "pending": True}
+
+    # 🔵 출금은 기존대로 즉시 처리
     @firestore.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
+        if not snap.exists:
+            raise ValueError("계정을 찾지 못했습니다.")
+
         bal = int((snap.to_dict() or {}).get("balance", 0))
 
-        # 일반 출금은 잔액 부족이면 불가
-        if tx_type == "withdraw" and bal < withdraw:
+        if bal < withdraw:
             raise ValueError("잔액보다 큰 출금은 불가합니다.")
 
-        new_bal = bal + amount
+        new_bal = bal - withdraw
         transaction.update(student_ref, {"balance": new_bal})
+
         transaction.set(
             tx_ref,
             {
-                "student_id": student_doc.id,
-                "type": tx_type,
-                "amount": amount,
+                "student_id": str(student_id),
+                "type": "withdraw",
+                "amount": -withdraw,
                 "balance_after": new_bal,
                 "memo": memo,
-                "apply_treasury": bool(apply_treasury),
-                "treasury_signed": int(tre_signed),
-                "treasury_memo": str(treasury_memo or memo),
                 "created_at": firestore.SERVER_TIMESTAMP,
             },
         )
+
         return new_bal
+
+    new_bal = _do(db.transaction())
+    return {"ok": True, "balance": new_bal}
 
     try:
         new_bal = _do(db.transaction())
@@ -10227,6 +10247,68 @@ if "🏦 은행(적금)" in tabs:
 
         bank_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::🏦 은행(적금))에서만 표시
 
+        # ========================================
+        # 🔵 관리자 입금 승인 화면
+        # ========================================
+        if bank_admin_ok:
+
+            st.markdown("### 📥 입금 승인 대기 목록")
+
+            pending_docs = (
+                db.collection("pending_deposits")
+                .where("status", "==", "pending")
+                .order_by("created_at")
+                .stream()
+            )
+
+            for i, doc in enumerate(pending_docs, start=1):
+                d = doc.to_dict()
+                student_id = d.get("student_id")
+                amount = int(d.get("amount", 0))
+                memo = d.get("memo", "")
+                apply_treasury = bool(d.get("apply_treasury", False))
+                treasury_memo = d.get("treasury_memo", memo)
+
+                student_snap = db.collection("students").document(student_id).get()
+                student_name = student_snap.to_dict().get("name", "") if student_snap.exists else ""
+
+                c1, c2, c3, c4, c5, c6 = st.columns([1,2,2,2,2,2])
+
+                with c1:
+                    st.write(i)
+                with c2:
+                    st.write(student_name)
+                with c3:
+                    st.write(amount)
+                with c4:
+                    st.write("O" if apply_treasury else "X")
+
+                with c5:
+                    if st.button("승인", key=f"approve_{doc.id}"):
+
+                        res = api_admin_add_tx_by_student_id_with_treasury(
+                            admin_pin=ADMIN_PIN,
+                            student_id=student_id,
+                            memo=memo,
+                            deposit=amount,
+                            withdraw=0,
+                            apply_treasury=apply_treasury,
+                            treasury_memo=treasury_memo,
+                            actor="admin_approve"
+                        )
+
+                        if res.get("ok"):
+                            doc.reference.update({"status": "approved"})
+                            st.success("승인 완료")
+                            st.rerun()
+
+                with c6:
+                    if st.button("거절", key=f"reject_{doc.id}"):
+                        doc.reference.update({"status": "rejected"})
+                        st.warning("거절 처리됨")
+                        st.rerun()
+
+        
         # -------------------------------------------------
         # 공통 유틸
         # -------------------------------------------------
