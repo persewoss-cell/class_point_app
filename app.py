@@ -23,8 +23,6 @@ KST = timezone(timedelta(hours=9))
 ADMIN_PIN = "9999"
 ADMIN_NAME = "관리자"
 
-PENDING_DEP_COL = "pending_deposits"
-
 # =========================
 # 모바일 UI CSS + 템플릿 정렬(촘촘) CSS
 # (너가 준 CSS 그대로)
@@ -2532,52 +2530,78 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
     )
 
 
-def def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury: bool, treasury_memo: str, actor: str = "auto"):
-    """
-    학생 거래 → 입금은 승인 대기 저장
-    출금만 즉시 처리
-    """
-
+def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury: bool, treasury_memo: str, actor: str = "auto"):
+    """학생 거래 + (선택)국고 반영을 한 트랜잭션에서 처리"""
     memo = (memo or "").strip()
     deposit = int(deposit or 0)
     withdraw = int(withdraw or 0)
 
     if not memo:
         return {"ok": False, "error": "내역이 필요합니다."}
-
-    if deposit > 0 and withdraw > 0:
+    if (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
         return {"ok": False, "error": "입금/출금 중 하나만 입력하세요."}
 
-    # 🔹 입금은 승인 대기
-    if deposit > 0:
+    student_doc = fs_auth_student(login_name, login_pin)  # ✅ 기존 로그인 정보 사용(원코드 유지)
+    if not student_doc:
+        return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
 
-        student_doc = fs_auth_student(name, pin)
-        if not student_doc:
-            return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
+    student_ref = db.collection("students").document(student_doc.id)
+    tx_ref = db.collection("transactions").document()
 
-        db.collection("pending_deposits").add({
-            "student_id": student_doc.id,
-            "name": name,
-            "amount": deposit,
-            "memo": memo,
-            "treasury_apply": bool(apply_treasury),
-            "status": "pending",
-            "created_at": firestore.SERVER_TIMESTAMP,
-        })
+    amount = deposit if deposit > 0 else -withdraw
+    tx_type = "deposit" if deposit > 0 else "withdraw"
 
-        return {"ok": True, "balance": None}
+    # ✅ 국고 반영 금액(학생 기준)
+    # - 학생 입금  -> 국고 세출(음수)
+    # - 학생 출금  -> 국고 세입(양수)
+    tre_signed = 0
+    if bool(apply_treasury):
+        tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
-    # 🔹 출금은 기존 방식 유지
-    if withdraw > 0:
-        return api_admin_add_tx_by_student_id(
-            admin_pin=ADMIN_PIN,
-            student_id=fs_auth_student(name, pin).id,
-            memo=memo,
-            deposit=0,
-            withdraw=withdraw,
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
+        bal = int((snap.to_dict() or {}).get("balance", 0))
+
+        # 일반 출금은 잔액 부족이면 불가
+        if tx_type == "withdraw" and bal < withdraw:
+            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+
+        # ✅ 국고 반영(같은 트랜잭션) - 반드시 WRITE(학생/tx) 전에 처리(READ 먼저!)
+        if tre_signed != 0:
+            _treasury_apply_in_transaction(
+                transaction,
+                memo=str(treasury_memo or memo),
+                signed_amount=int(tre_signed),
+                actor=str(actor or "auto"),
+            )
+
+        new_bal = bal + amount
+        transaction.update(student_ref, {"balance": new_bal})
+        transaction.set(
+            tx_ref,
+            {
+                "student_id": student_doc.id,
+                "type": tx_type,
+                "amount": amount,
+                "balance_after": new_bal,
+                "memo": memo,
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
         )
 
-    return {"ok": False, "error": "금액이 잘못되었습니다."}
+        return new_bal
+
+    try:
+        new_bal = _do(db.transaction())
+        # 캐시 갱신
+        api_get_treasury_state_cached.clear()
+        api_list_treasury_ledger_cached.clear()
+        return {"ok": True, "balance": new_bal}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"저장 실패: {e}"}
 
 
 def api_admin_add_tx_by_student_id_with_treasury(admin_pin: str, student_id: str, memo: str, deposit: int, withdraw: int, apply_treasury: bool, treasury_memo: str, actor: str = "admin_auto"):
@@ -6956,77 +6980,6 @@ if "admin::🏦 은행(적금)" in tabs:
         else:
             bank_admin_ok = True
 
-st.markdown("## 💰 입금 승인 관리")
-
-pending_q = db.collection(PENDING_DEP_COL) \
-    .where(filter=FieldFilter("status", "==", "pending")) \
-    .order_by("created_at") \
-    .stream()
-
-rows = list(pending_q)
-
-if not rows:
-    st.info("승인 대기 입금이 없습니다.")
-else:
-    for idx, d in enumerate(rows, start=1):
-        x = d.to_dict()
-        col1, col2, col3, col4, col5, col6, col7 = st.columns([0.4,1,1,1,1,1,1])
-
-        with col1:
-            st.write(idx)
-        with col2:
-            st.write(x.get("name"))
-        with col3:
-            dt = x.get("created_at")
-            if dt:
-                st.write(_fmt_kor_date_short_from_dt(dt))
-        with col4:
-            st.write(int(x.get("amount", 0)))
-        with col5:
-            st.write("O" if x.get("treasury_apply") else "X")
-        with col6:
-            if st.button("승인", key=f"approve_{d.id}"):
-
-                # ✅ 통장 반영
-                res = api_admin_add_tx_by_student_id(
-                    admin_pin=ADMIN_PIN,
-                    student_id=x.get("student_id"),
-                    memo=x.get("memo"),
-                    deposit=int(x.get("amount")),
-                    withdraw=0,
-                )
-
-                if res.get("ok"):
-
-                    # ✅ 국고 반영 체크되어 있으면 국고도 반영
-                    if x.get("treasury_apply"):
-                        api_add_treasury_tx(
-                            memo=f"{x.get('name')} 입금",
-                            income=int(x.get("amount")),
-                            expense=0,
-                        )
-
-                    db.collection(PENDING_DEP_COL).document(d.id).update({
-                        "status": "approved",
-                        "approved_at": firestore.SERVER_TIMESTAMP,
-                    })
-
-                    toast("입금 승인 완료")
-                    st.rerun()
-
-        with col7:
-            if st.button("거절", key=f"reject_{d.id}"):
-
-                db.collection(PENDING_DEP_COL).document(d.id).update({
-                    "status": "rejected",
-                    "rejected_at": firestore.SERVER_TIMESTAMP,
-                })
-
-                toast("입금 거절 처리 완료")
-                st.rerun()
-
-st.divider()
-        
         # -------------------------------------------------
         # 공통 유틸
         # -------------------------------------------------
