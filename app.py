@@ -2969,6 +2969,8 @@ def api_list_deposit_requests(limit: int = 200, status: str = "pending"):
     """
     ✅ (관리자) 입금 승인 요청 목록 조회
     status: pending/approved/rejected/"all"
+    - (중요) where(status==) + order_by(created_at) 는 인덱스 필요할 수 있음
+      → 실패하면 order_by 없이 fallback
     """
     try:
         limit = int(limit or 200)
@@ -2980,11 +2982,16 @@ def api_list_deposit_requests(limit: int = 200, status: str = "pending"):
         else:
             q = col
 
-        # created_at DESC (인덱스 필요할 수 있어 try/fallback)
+        # ✅ 1차: created_at DESC (인덱스 없으면 실패 가능)
         try:
-            docs = q.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit).stream()
+            docs = list(
+                q.order_by("created_at", direction=firestore.Query.DESCENDING)
+                 .limit(limit)
+                 .stream()
+            )
         except Exception:
-            docs = q.limit(limit).stream()
+            # ✅ 2차: fallback (order_by 없이)
+            docs = list(q.limit(limit).stream())
 
         rows = []
         for d in docs:
@@ -3007,12 +3014,12 @@ def api_list_deposit_requests(limit: int = 200, status: str = "pending"):
                 }
             )
 
-        # fallback에서는 정렬이 안될 수 있어 최종 정렬
+        # 최종 정렬(혹시 fallback에서 섞였을 때)
         rows.sort(key=lambda r: (r.get("created_at") is not None, r.get("created_at")), reverse=True)
         return {"ok": True, "rows": rows}
+
     except Exception as e:
         return {"ok": False, "error": str(e), "rows": []}
-
 
 def api_admin_decide_deposit_request(admin_pin: str, request_id: str, approve: bool, decided_by: str = "admin"):
     """
@@ -3141,8 +3148,11 @@ def render_deposit_approval_panel(*, admin_pin: str, decided_by: str, limit: int
     st.caption("학생이 '입금'을 하면 여기로 승인 요청이 들어옵니다. 승인 시에만 통장에 반영됩니다.")
 
     res = api_list_deposit_requests(limit=limit, status="pending")
-    rows = res.get("rows", []) if res.get("ok") else []
+    if not res.get("ok"):
+        st.error(f"입금 요청 조회 실패: {res.get('error', '')}")
+        return
 
+    rows = res.get("rows", []) or []
     if not rows:
         st.info("승인 대기 중인 입금 요청이 없습니다.")
         return
