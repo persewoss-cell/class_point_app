@@ -2220,6 +2220,11 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
 
 def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve"):
     """✅ 관리자 화면: 입금 승인 목록 + 승인/거절 버튼"""
+
+    # ✅ 학생 화면에서는 절대 노출하지 않기(관리자만)
+    if not bool(st.session_state.get("admin_ok", False)):
+        return
+    
     st.markdown("### ✅ 입금 승인(승인 대기 목록)")
 
     res = api_list_pending_deposit_requests(limit=300)
