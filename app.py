@@ -10565,12 +10565,9 @@ if "🏦 은행(적금)" in tabs:
 
 st.markdown("### ⏳ 입금 승인 대기")
 
-pending_docs = (
-    db.collection("pending_deposits")
-    .where("status", "==", "pending")
-    .order_by("created_at", direction=firestore.Query.DESCENDING)
-    .stream()
-)
+all_docs = db.collection("pending_deposits").stream()
+pending_docs = [d for d in all_docs if d.to_dict().get("status") == "pending"]
+
 
 for i, doc in enumerate(pending_docs, start=1):
     d = doc.to_dict()
