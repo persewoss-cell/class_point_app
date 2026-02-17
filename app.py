@@ -2894,6 +2894,312 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
     return memo, inc, exp
 
 # =========================
+# ✅ Deposit Approval(입금 승인) - helpers + UI
+# =========================
+DEPOSIT_REQ_COL = "deposit_requests"
+
+
+def _ox(v: bool) -> str:
+    return "O" if bool(v) else "X"
+
+
+def _req_status_kr(s: str) -> str:
+    s = str(s or "").strip().lower()
+    if s == "approved":
+        return "승인"
+    if s == "rejected":
+        return "거절"
+    return "대기"
+
+
+def api_create_deposit_request(
+    name: str,
+    pin: str,
+    memo: str,
+    amount: int,
+    apply_treasury: bool,
+    treasury_memo: str,
+):
+    """
+    ✅ (학생) 입금 승인 요청 생성
+    - 입금만 대상 (amount > 0)
+    - 학생 통장/거래내역에는 아직 반영하지 않음
+    """
+    try:
+        memo = str(memo or "").strip()
+        amount = int(amount or 0)
+        apply_treasury = bool(apply_treasury)
+        treasury_memo = str(treasury_memo or memo).strip()
+
+        if not memo:
+            return {"ok": False, "error": "내역이 필요합니다."}
+        if amount <= 0:
+            return {"ok": False, "error": "입금 금액은 1 이상이어야 합니다."}
+
+        student_doc = fs_auth_student(name, pin)
+        if not student_doc:
+            return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
+
+        sdata = student_doc.to_dict() or {}
+        no = int(sdata.get("no", 0) or 0)
+        nm = str(sdata.get("name", "") or "").strip() or str(name or "").strip()
+
+        db.collection(DEPOSIT_REQ_COL).document().set(
+            {
+                "student_id": str(student_doc.id),
+                "no": int(no),
+                "name": nm,
+                "amount": int(amount),
+                "memo": memo,
+                "apply_treasury": bool(apply_treasury),
+                "treasury_memo": treasury_memo,
+                "status": "pending",
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "decided_at": None,
+                "decided_by": "",
+                "tx_id": "",
+            }
+        )
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def api_list_deposit_requests(limit: int = 200, status: str = "pending"):
+    """
+    ✅ (관리자) 입금 승인 요청 목록 조회
+    status: pending/approved/rejected/"all"
+    """
+    try:
+        limit = int(limit or 200)
+        status = str(status or "pending").strip().lower()
+
+        col = db.collection(DEPOSIT_REQ_COL)
+        if status in ("pending", "approved", "rejected"):
+            q = col.where(filter=FieldFilter("status", "==", status))
+        else:
+            q = col
+
+        # created_at DESC (인덱스 필요할 수 있어 try/fallback)
+        try:
+            docs = q.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit).stream()
+        except Exception:
+            docs = q.limit(limit).stream()
+
+        rows = []
+        for d in docs:
+            x = d.to_dict() or {}
+            rows.append(
+                {
+                    "request_id": d.id,
+                    "student_id": str(x.get("student_id", "") or ""),
+                    "no": int(x.get("no", 0) or 0),
+                    "name": str(x.get("name", "") or ""),
+                    "created_at": _to_utc_datetime(x.get("created_at")),
+                    "amount": int(x.get("amount", 0) or 0),
+                    "memo": str(x.get("memo", "") or ""),
+                    "apply_treasury": bool(x.get("apply_treasury", False)),
+                    "treasury_memo": str(x.get("treasury_memo", "") or ""),
+                    "status": str(x.get("status", "pending") or "pending"),
+                    "decided_at": _to_utc_datetime(x.get("decided_at")),
+                    "decided_by": str(x.get("decided_by", "") or ""),
+                    "tx_id": str(x.get("tx_id", "") or ""),
+                }
+            )
+
+        # fallback에서는 정렬이 안될 수 있어 최종 정렬
+        rows.sort(key=lambda r: (r.get("created_at") is not None, r.get("created_at")), reverse=True)
+        return {"ok": True, "rows": rows}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "rows": []}
+
+
+def api_admin_decide_deposit_request(admin_pin: str, request_id: str, approve: bool, decided_by: str = "admin"):
+    """
+    ✅ (관리자) 입금 승인/거절
+    - 승인: 학생 balance 증가 + transactions 기록 생성 + (선택)국고 반영
+    - 거절: 요청 상태만 rejected로 변경
+    전부 1개의 Firestore transaction으로 처리
+    """
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    request_id = str(request_id or "").strip()
+    if not request_id:
+        return {"ok": False, "error": "request_id가 필요합니다."}
+
+    decided_by = str(decided_by or "admin").strip() or "admin"
+    approve = bool(approve)
+
+    req_ref = db.collection(DEPOSIT_REQ_COL).document(request_id)
+
+    @firestore.transactional
+    def _do(transaction):
+        req_snap = req_ref.get(transaction=transaction)
+        if not req_snap.exists:
+            raise ValueError("요청을 찾지 못했습니다.")
+        req = req_snap.to_dict() or {}
+
+        status = str(req.get("status", "pending") or "pending")
+        if status != "pending":
+            raise ValueError("이미 처리된 요청입니다.")
+
+        student_id = str(req.get("student_id", "") or "").strip()
+        if not student_id:
+            raise ValueError("요청에 student_id가 없습니다.")
+
+        amount = int(req.get("amount", 0) or 0)
+        memo = str(req.get("memo", "") or "").strip()
+        apply_treasury = bool(req.get("apply_treasury", False))
+        treasury_memo = str(req.get("treasury_memo", "") or memo).strip()
+
+        if amount <= 0:
+            raise ValueError("요청 금액이 올바르지 않습니다.")
+        if not memo:
+            raise ValueError("요청 내역이 비어있습니다.")
+
+        if not approve:
+            transaction.update(
+                req_ref,
+                {
+                    "status": "rejected",
+                    "decided_at": firestore.SERVER_TIMESTAMP,
+                    "decided_by": decided_by,
+                },
+            )
+            return {"status": "rejected"}
+
+        # approve == True
+        student_ref = db.collection("students").document(student_id)
+        st_snap = student_ref.get(transaction=transaction)
+        if not st_snap.exists:
+            raise ValueError("학생 계정을 찾지 못했습니다.")
+
+        bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+        new_bal = bal + int(amount)
+
+        # (선택) 국고 반영: 학생 입금 => 국고 세출(-amount)
+        if apply_treasury:
+            _treasury_apply_in_transaction(
+                transaction,
+                memo=treasury_memo,
+                signed_amount=int(-amount),
+                actor="deposit_approval",
+            )
+
+        # 거래 기록 생성
+        tx_ref = db.collection("transactions").document()
+        transaction.update(student_ref, {"balance": int(new_bal)})
+        transaction.set(
+            tx_ref,
+            {
+                "student_id": student_id,
+                "type": "deposit",
+                "amount": int(amount),
+                "balance_after": int(new_bal),
+                "memo": memo,
+                "apply_treasury": bool(apply_treasury),
+                "treasury_signed": int(-amount) if apply_treasury else 0,
+                "treasury_memo": treasury_memo if apply_treasury else "",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+
+        # 요청 상태 업데이트
+        transaction.update(
+            req_ref,
+            {
+                "status": "approved",
+                "decided_at": firestore.SERVER_TIMESTAMP,
+                "decided_by": decided_by,
+                "tx_id": tx_ref.id,
+            },
+        )
+        return {"status": "approved", "tx_id": tx_ref.id, "new_balance": int(new_bal)}
+
+    try:
+        out = _do(db.transaction())
+
+        # 캐시 갱신
+        api_list_accounts_cached.clear()
+        api_get_treasury_state_cached.clear()
+        api_list_treasury_ledger_cached.clear()
+
+        return {"ok": True, **out}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"처리 실패: {e}"}
+
+
+def render_deposit_approval_panel(*, admin_pin: str, decided_by: str, limit: int = 200):
+    """
+    ✅ 관리자 '입금 승인' 화면
+    - pending 요청을 리스트로 보여주고 승인/거절 버튼 제공
+    """
+    st.markdown("### ✅ 입금 승인")
+    st.caption("학생이 '입금'을 하면 여기로 승인 요청이 들어옵니다. 승인 시에만 통장에 반영됩니다.")
+
+    res = api_list_deposit_requests(limit=limit, status="pending")
+    rows = res.get("rows", []) if res.get("ok") else []
+
+    if not rows:
+        st.info("승인 대기 중인 입금 요청이 없습니다.")
+        return
+
+    # 헤더
+    head = st.columns([0.8, 1.4, 2.0, 1.2, 1.0, 1.0, 1.6], vertical_alignment="center")
+    head[0].markdown("**번호**")
+    head[1].markdown("**이름**")
+    head[2].markdown("**날짜**")
+    head[3].markdown("**금액**")
+    head[4].markdown("**국고반영**")
+    head[5].markdown("**승인여부**")
+    head[6].markdown("**처리**")
+
+    for r in rows:
+        req_id = str(r.get("request_id"))
+        no = int(r.get("no", 0) or 0)
+        nm = str(r.get("name", "") or "")
+        created = r.get("created_at")
+        created_kr = format_kr_datetime(created.astimezone(KST)) if isinstance(created, datetime) else ""
+        amt = int(r.get("amount", 0) or 0)
+        tre = _ox(bool(r.get("apply_treasury", False)))
+        status_kr = _req_status_kr(r.get("status", "pending"))
+
+        row = st.columns([0.8, 1.4, 2.0, 1.2, 1.0, 1.0, 0.8, 0.8], vertical_alignment="center")
+        row[0].markdown(str(no))
+        row[1].markdown(nm)
+        row[2].markdown(created_kr)
+        row[3].markdown(f"{amt}")
+        row[4].markdown(tre)
+        row[5].markdown(status_kr)
+
+        # 승인 / 거절 버튼
+        if row[6].button("승인", key=f"dep_req_appr_{req_id}", use_container_width=True):
+            out = api_admin_decide_deposit_request(admin_pin, req_id, approve=True, decided_by=decided_by)
+            if out.get("ok"):
+                toast("승인 완료! 통장에 반영되었습니다.", icon="✅")
+                st.rerun()
+            else:
+                st.error(out.get("error", "승인 실패"))
+
+        if row[7].button("거절", key=f"dep_req_rej_{req_id}", use_container_width=True):
+            out = api_admin_decide_deposit_request(admin_pin, req_id, approve=False, decided_by=decided_by)
+            if out.get("ok"):
+                toast("거절 처리 완료", icon="🛑")
+                st.rerun()
+            else:
+                st.error(out.get("error", "거절 실패"))
+
+        # 요청 메모는 펼침으로
+        with st.expander(f"내역 보기 ({no} {nm})", expanded=False):
+            st.write(f"- 내역: {str(r.get('memo','') or '')}")
+            st.write(f"- 국고반영: {tre}")
+            st.write(f"- 국고내역: {str(r.get('treasury_memo','') or '')}")
+            st.write(f"- 요청ID: {req_id}")
+
+# =========================
 # Templates (공용) - 너 코드 유지
 # =========================
 tpl_res = api_list_templates_cached()
@@ -4826,16 +5132,88 @@ if "🏦 내 통장" in tabs:
 
                         tre_memo = f"{disp_name} {memo}".strip()
 
-                        res = api_add_tx_with_treasury(
-                            login_name,
-                            login_pin,
-                            memo,
-                            deposit,
-                            withdraw,
-                            tre_apply,
-                            tre_memo,
-                            actor=disp_name,
-                        )
+                        # ✅ 입금은 '승인 요청'으로만 등록 (즉시 반영 X)
+                        if deposit > 0 and withdraw == 0:
+                            tre_apply = bool(st.session_state.get(f"bank_trade_{login_name}_treasury_apply", False))
+
+                            disp_name = str(login_name or "")
+                            try:
+                                if student_id:
+                                    _s = db.collection("students").document(str(student_id)).get()
+                                    if _s.exists:
+                                        _d = _s.to_dict() or {}
+                                        _no = int(_d.get("no", 0) or 0)
+                                        _nm = str(_d.get("name", "") or disp_name)
+                                        disp_name = f"{_no}번 {_nm}" if _no > 0 else _nm
+                            except Exception:
+                                pass
+
+                            tre_memo = f"{disp_name} {memo}".strip()
+
+                            req = api_create_deposit_request(
+                                name=login_name,
+                                pin=login_pin,
+                                memo=memo,
+                                amount=int(deposit),
+                                apply_treasury=bool(tre_apply),
+                                treasury_memo=str(tre_memo),
+                            )
+                            if req.get("ok"):
+                                toast("입금 승인 요청 완료! (승인 후 통장에 반영됩니다)", icon="🕒")
+                                pfx = f"user_trade_{login_name}"
+                                st.session_state[f"{pfx}_reset_request"] = True
+                                st.rerun()
+                            else:
+                                st.error(req.get("error", "승인 요청 실패"))
+
+                        # ✅ 출금은 기존처럼 즉시 반영
+                        else:
+                            tre_apply = bool(st.session_state.get(f"bank_trade_{login_name}_treasury_apply", False))
+
+                            disp_name = str(login_name or "")
+                            try:
+                                if student_id:
+                                    _s = db.collection("students").document(str(student_id)).get()
+                                    if _s.exists:
+                                        _d = _s.to_dict() or {}
+                                        _no = int(_d.get("no", 0) or 0)
+                                        _nm = str(_d.get("name", "") or disp_name)
+                                        disp_name = f"{_no}번 {_nm}" if _no > 0 else _nm
+                            except Exception:
+                                pass
+
+                            tre_memo = f"{disp_name} {memo}".strip()
+
+                            res = api_add_tx_with_treasury(
+                                login_name,
+                                login_pin,
+                                memo,
+                                deposit,
+                                withdraw,
+                                tre_apply,
+                                tre_memo,
+                                actor=disp_name,
+                            )
+                            if res.get("ok"):
+                                toast("저장 완료!", icon="✅")
+                                new_bal = int(res.get("balance", balance) or balance)
+                                st.session_state.data.setdefault(login_name, {})
+                                st.session_state.data[login_name]["balance"] = new_bal
+
+                                if student_id:
+                                    tx_res = api_get_txs_by_student_id(student_id, limit=120)
+                                    if tx_res.get("ok"):
+                                        df_new = pd.DataFrame(tx_res.get("rows", []))
+                                        if not df_new.empty:
+                                            df_new = df_new.sort_values("created_at_utc", ascending=False)
+                                        st.session_state.data[login_name]["df_tx"] = df_new
+
+                                pfx = f"user_trade_{login_name}"
+                                st.session_state[f"{pfx}_reset_request"] = True
+                                st.rerun()
+                            else:
+                                st.error(res.get("error", "저장 실패"))
+
                         if res.get("ok"):
                             toast("저장 완료!", icon="✅")
 
@@ -6980,6 +7358,12 @@ if "admin::🏦 은행(적금)" in tabs:
         else:
             bank_admin_ok = True
 
+        # ✅ (PATCH) 입금 승인 패널(권한 관리자 탭)
+        if bank_admin_ok:
+            render_deposit_approval_panel(admin_pin=ADMIN_PIN, decided_by=str(st.session_state.get("login_name","") or "admin"))
+            st.divider()
+
+
         # -------------------------------------------------
         # 공통 유틸
         # -------------------------------------------------
@@ -7326,6 +7710,11 @@ if "admin::🏦 은행(적금)" in tabs:
         if bank_admin_ok:
             _ensure_maturity_processing_once()
 
+        # ✅ (PATCH) 입금 승인 패널(관리자)
+        if bank_admin_ok:
+            render_deposit_approval_panel(admin_pin=ADMIN_PIN, decided_by="관리자")
+            st.divider()
+        
         # -------------------------------------------------
         # (A) 관리자: 적금 관리 장부 (엑셀형 표 느낌) + 최신순
         # -------------------------------------------------
