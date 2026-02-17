@@ -2218,11 +2218,11 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
     except Exception as e:
         return {"ok": False, "error": f"거절 실패: {e}"}
 
-def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve"):
+def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allow: bool = False):
     """✅ 관리자 화면: 입금 승인 목록 + 승인/거절 버튼"""
 
     # ✅ 학생 화면에서는 절대 노출하지 않기(관리자만)
-    if not bool(st.session_state.get("admin_ok", False)):
+    if not bool(allow):
         return
     
     st.markdown("### ✅ 입금 승인(승인 대기 목록)")
@@ -7284,12 +7284,13 @@ if "admin::📈 투자" in tabs:
 if "admin::🏦 은행(적금)" in tabs:
     with tab_map["admin::🏦 은행(적금)"]:
         st.subheader("🏦 은행(적금)(관리자)")
+        bank_admin_ok = True
         if is_admin:
             st.info("관리자 모드에서는 상단 '🏦 은행(적금)' 탭에서 사용합니다.")
         else:
             bank_admin_ok = True
             
-        render_deposit_approval_ui(ADMIN_PIN, prefix="bank_dep_req")
+        render_deposit_approval_ui(ADMIN_PIN, prefix="bank_dep_req", allow=bank_admin_ok)
 
         # -------------------------------------------------
         # 공통 유틸
@@ -10538,7 +10539,7 @@ if "🏦 은행(적금)" in tabs:
 
         bank_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::🏦 은행(적금))에서만 표시
 
-        render_deposit_approval_ui(ADMIN_PIN, prefix="bank_dep_req_main")
+        render_deposit_approval_ui(ADMIN_PIN, prefix="bank_dep_req_main", allow=bank_admin_ok)
 
         # -------------------------------------------------
         # 공통 유틸
