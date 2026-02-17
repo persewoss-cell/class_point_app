@@ -7280,7 +7280,7 @@ if "admin::🏦 은행(적금)" in tabs:
         else:
             bank_admin_ok = True
             
-                render_deposit_approval_ui(ADMIN_PIN, prefix="bank_dep_req")
+        render_deposit_approval_ui(ADMIN_PIN, prefix="bank_dep_req")
 
         # -------------------------------------------------
         # 공통 유틸
