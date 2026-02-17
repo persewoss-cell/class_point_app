@@ -2530,79 +2530,59 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
     )
 
 
-def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury: bool, treasury_memo: str, actor: str = "auto"):
-    """학생 거래 + (선택)국고 반영을 한 트랜잭션에서 처리"""
+
+def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw,
+                             apply_treasury: bool,
+                             treasury_memo: str,
+                             actor: str = "auto"):
+
     memo = (memo or "").strip()
     deposit = int(deposit or 0)
     withdraw = int(withdraw or 0)
 
     if not memo:
         return {"ok": False, "error": "내역이 필요합니다."}
+
     if (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
         return {"ok": False, "error": "입금/출금 중 하나만 입력하세요."}
 
-    student_doc = fs_auth_student(login_name, login_pin)  # ✅ 기존 로그인 정보 사용(원코드 유지)
+    student_doc = fs_auth_student(name, pin)
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
 
     student_ref = db.collection("students").document(student_doc.id)
-    tx_ref = db.collection("transactions").document()
 
-    amount = deposit if deposit > 0 else -withdraw
-    tx_type = "deposit" if deposit > 0 else "withdraw"
+    # 출금은 즉시 반영
+    if withdraw > 0:
+        student_ref.update({
+            "balance": firestore.Increment(-withdraw)
+        })
 
-    # ✅ 국고 반영 금액(학생 기준)
-    # - 학생 입금  -> 국고 세출(음수)
-    # - 학생 출금  -> 국고 세입(양수)
-    tre_signed = 0
-    if bool(apply_treasury):
-        tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
+        db.collection("transactions").add({
+            "student_id": student_doc.id,
+            "name": name,
+            "type": "withdraw",
+            "amount": withdraw,
+            "memo": memo,
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
 
-    @firestore.transactional
-    def _do(transaction):
-        snap = student_ref.get(transaction=transaction)
-        bal = int((snap.to_dict() or {}).get("balance", 0))
+        return {"ok": True}
 
-        # 일반 출금은 잔액 부족이면 불가
-        if tx_type == "withdraw" and bal < withdraw:
-            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+    # 입금은 관리자 승인 대기
+    if deposit > 0:
+        db.collection("pending_deposits").add({
+            "student_id": student_doc.id,
+            "name": name,
+            "amount": deposit,
+            "memo": memo,
+            "apply_treasury": apply_treasury,
+            "treasury_memo": treasury_memo,
+            "status": "pending",
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
 
-        # ✅ 국고 반영(같은 트랜잭션) - 반드시 WRITE(학생/tx) 전에 처리(READ 먼저!)
-        if tre_signed != 0:
-            _treasury_apply_in_transaction(
-                transaction,
-                memo=str(treasury_memo or memo),
-                signed_amount=int(tre_signed),
-                actor=str(actor or "auto"),
-            )
-
-        new_bal = bal + amount
-        transaction.update(student_ref, {"balance": new_bal})
-        transaction.set(
-            tx_ref,
-            {
-                "student_id": student_doc.id,
-                "type": tx_type,
-                "amount": amount,
-                "balance_after": new_bal,
-                "memo": memo,
-                "created_at": firestore.SERVER_TIMESTAMP,
-            },
-        )
-
-        return new_bal
-
-    try:
-        new_bal = _do(db.transaction())
-        # 캐시 갱신
-        api_get_treasury_state_cached.clear()
-        api_list_treasury_ledger_cached.clear()
-        return {"ok": True, "balance": new_bal}
-    except ValueError as e:
-        return {"ok": False, "error": str(e)}
-    except Exception as e:
-        return {"ok": False, "error": f"저장 실패: {e}"}
-
+        return {"ok": True, "message": "관리자 승인 대기중입니다."}
 
 def api_admin_add_tx_by_student_id_with_treasury(admin_pin: str, student_id: str, memo: str, deposit: int, withdraw: int, apply_treasury: bool, treasury_memo: str, actor: str = "admin_auto"):
     """관리자 개별 지급/벌금 + (선택)국고 반영"""
