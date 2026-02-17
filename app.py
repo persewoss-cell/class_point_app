@@ -2230,13 +2230,14 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve"):
         return
 
     # 헤더(번호 | 이름 | 날짜 | 금액 | 국고반영 | 승인여부)
-    h = st.columns([0.9, 1.4, 2.4, 1.2, 1.1, 1.9], vertical_alignment="center")
+    h = st.columns([0.9, 1.4, 2.2, 3.2, 1.2, 1.1, 1.9], vertical_alignment="center")
     h[0].markdown("**번호**")
     h[1].markdown("**이름**")
     h[2].markdown("**날짜**")
-    h[3].markdown("**금액**")
-    h[4].markdown("**국고반영**")
-    h[5].markdown("**승인여부**")
+    h[3].markdown("**내역**")
+    h[4].markdown("**금액**")
+    h[5].markdown("**국고반영**")
+    h[6].markdown("**승인여부**")
 
     def _fmt_md(dt_utc):
         try:
@@ -2257,14 +2258,17 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve"):
         amt = int(r.get("amount", 0) or 0)
         tre = "O" if bool(r.get("apply_treasury", False)) else "X"
 
-        c = st.columns([0.9, 1.4, 2.4, 1.2, 1.1, 1.9], vertical_alignment="center")
+        memo = str(r.get("memo", "") or "")
+
+        c = st.columns([0.9, 1.4, 2.2, 3.2, 1.2, 1.1, 1.9], vertical_alignment="center")
         c[0].write(str(no if no > 0 else i))
         c[1].write(nm)
         c[2].write(when)
-        c[3].write(str(amt))
-        c[4].write(tre)
+        c[3].write(memo)
+        c[4].write(str(amt))
+        c[5].write(tre)
 
-        b1, b2 = c[5].columns(2)
+        b1, b2 = c[6].columns(2)
         with b1:
             if st.button("승인", key=f"{prefix}_ok_{rid}", use_container_width=True):
                 out = api_admin_approve_deposit_request(admin_pin, rid)
