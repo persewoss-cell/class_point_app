@@ -1301,7 +1301,7 @@ def _compose_template_label(base_label: str, category: str):
     return base_label
 
 
-def request_pending_deposit_wrapper_bulk(admin_pin: str, amount: int, memo: str):
+def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
     """✅ 전체 일괄 지급"""
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
@@ -1806,7 +1806,7 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
     except Exception as e:
         return {"ok": False, "error": f"저장 실패: {e}"}
 
-def request_pending_deposit_wrapper(admin_pin: str, student_id: str, memo: str, deposit: int, withdraw: int):
+def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, deposit: int, withdraw: int):
     """
     ✅ 관리자 전용: 개별 학생에게 입금/출금
     - 학생 PIN 불필요
@@ -2530,7 +2530,7 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
     )
 
 
-def request_pending_deposit_wrapper(name, pin, memo, deposit, withdraw, apply_treasury: bool, treasury_memo: str, actor: str = "auto"):
+def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury: bool, treasury_memo: str, actor: str = "auto"):
     """학생 거래 + (선택)국고 반영을 한 트랜잭션에서 처리"""
     memo = (memo or "").strip()
     deposit = int(deposit or 0)
@@ -4006,7 +4006,6 @@ if "🏦 내 통장" in tabs:
     with tab_map["🏦 내 통장"]:
         trade_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::🏦 내 통장)에서만 표시
         if trade_admin_ok:
-            render_pending_approval_ui()
 
             # ✅ (보상/벌금) 내부 작은 탭
             sub_tab_all, sub_tab_personal = st.tabs(["전체", "개인"])
@@ -4041,7 +4040,7 @@ if "🏦 내 통장" in tabs:
                             tre_apply_bulk = bool(st.session_state.get("admin_bulk_reward_treasury_apply", False))
 
                             if dep_bulk > 0:
-                                res = request_pending_deposit_wrapper_bulk(ADMIN_PIN, dep_bulk, memo_bulk)
+                                res = api_admin_bulk_deposit(ADMIN_PIN, dep_bulk, memo_bulk)
                                 if res.get("ok"):
                                     toast(f"일괄 지급 완료! ({res.get('count')}명)", icon="🎉")
                                     # ✅ 국고 반영(체크 시): 전체 지급 → 국고 세출(합산)
@@ -4827,7 +4826,7 @@ if "🏦 내 통장" in tabs:
 
                         tre_memo = f"{disp_name} {memo}".strip()
 
-                        res = request_pending_deposit_wrapper(
+                        res = api_add_tx_with_treasury(
                             login_name,
                             login_pin,
                             memo,
@@ -4970,7 +4969,7 @@ if "admin::🏦 내 통장" in tabs:
                             tre_apply_bulk = bool(st.session_state.get("admin_bulk_reward_treasury_apply", False))
 
                             if dep_bulk > 0:
-                                res = request_pending_deposit_wrapper_bulk(ADMIN_PIN, dep_bulk, memo_bulk)
+                                res = api_admin_bulk_deposit(ADMIN_PIN, dep_bulk, memo_bulk)
                                 if res.get("ok"):
                                     toast(f"일괄 지급 완료! ({res.get('count')}명)", icon="🎉")
                                     # ✅ 국고 반영(체크 시): 전체 지급 → 국고 세출(합산)
@@ -6718,7 +6717,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             memo = f"투자 회수({prod_name})"
 
                             if inv_admin_ok:
-                                res = request_pending_deposit_wrapper(
+                                res = api_admin_add_tx_by_student_id(
                                     admin_pin=ADMIN_PIN,
                                     student_id=sid,
                                     memo=memo,
@@ -7202,7 +7201,7 @@ if "admin::🏦 은행(적금)" in tabs:
 
                     payout = int(x.get("maturity_amount", 0) or 0)
                     memo = f"적금 만기 지급 ({x.get('weeks')}주)"
-                    res = request_pending_deposit_wrapper(
+                    res = api_admin_add_tx_by_student_id(
                         admin_pin=ADMIN_PIN,
                         student_id=student_id,
                         memo=memo,
@@ -7238,7 +7237,7 @@ if "admin::🏦 은행(적금)" in tabs:
             student_id = str(x.get("student_id") or "")
             principal = int(x.get("principal", 0) or 0)
 
-            res = request_pending_deposit_wrapper(
+            res = api_admin_add_tx_by_student_id(
                 admin_pin=ADMIN_PIN,
                 student_id=student_id,
                 memo=f"적금 중도해지 지급 ({x.get('weeks')}주)",
@@ -7281,7 +7280,7 @@ if "admin::🏦 은행(적금)" in tabs:
             maturity_utc = now_utc + timedelta(days=int(weeks) * 7)
 
             # 1) 통장에서 출금(적금 넣기)
-            res_wd = request_pending_deposit_wrapper(
+            res_wd = api_admin_add_tx_by_student_id(
                 admin_pin=ADMIN_PIN,
                 student_id=student_id,
                 memo=f"적금 가입 ({weeks}주)",
@@ -8233,7 +8232,7 @@ if "💼 직업/월급" in tabs:
 
         def _pay_one_student(student_id: str, amount: int, memo: str):
             # 관리자 지급으로 통장 입금(+)
-            return request_pending_deposit_wrapper(
+            return api_admin_add_tx_by_student_id(
                 admin_pin=ADMIN_PIN,
                 student_id=student_id,
                 memo=memo,
@@ -10449,7 +10448,7 @@ if "🏦 은행(적금)" in tabs:
 
                     payout = int(x.get("maturity_amount", 0) or 0)
                     memo = f"적금 만기 지급 ({x.get('weeks')}주)"
-                    res = request_pending_deposit_wrapper(
+                    res = api_admin_add_tx_by_student_id(
                         admin_pin=ADMIN_PIN,
                         student_id=student_id,
                         memo=memo,
@@ -10485,7 +10484,7 @@ if "🏦 은행(적금)" in tabs:
             student_id = str(x.get("student_id") or "")
             principal = int(x.get("principal", 0) or 0)
 
-            res = request_pending_deposit_wrapper(
+            res = api_admin_add_tx_by_student_id(
                 admin_pin=ADMIN_PIN,
                 student_id=student_id,
                 memo=f"적금 중도해지 지급 ({x.get('weeks')}주)",
@@ -10528,7 +10527,7 @@ if "🏦 은행(적금)" in tabs:
             maturity_utc = now_utc + timedelta(days=int(weeks) * 7)
 
             # 1) 통장에서 출금(적금 넣기)
-            res_wd = request_pending_deposit_wrapper(
+            res_wd = api_admin_add_tx_by_student_id(
                 admin_pin=ADMIN_PIN,
                 student_id=student_id,
                 memo=f"적금 가입 ({weeks}주)",
@@ -11284,93 +11283,3 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
-
-
-
-# ==========================================================
-# 🔐 통합 입금 승인 시스템 (자동 통합 버전)
-# ==========================================================
-
-PENDING_DEPOSIT_COL = "pending_deposits"
-
-def request_pending_deposit_wrapper(*args, **kwargs):
-    try:
-        student_id = kwargs.get("student_id") or (args[1] if len(args) > 1 else None)
-        memo = kwargs.get("memo") or (args[2] if len(args) > 2 else "")
-        deposit = kwargs.get("deposit") or (args[3] if len(args) > 3 else 0)
-
-        db.collection(PENDING_DEPOSIT_COL).add({
-            "student_id": student_id,
-            "memo": memo,
-            "amount": int(deposit),
-            "status": "pending",
-            "created_at": firestore.SERVER_TIMESTAMP,
-        })
-
-        toast("입금 승인 요청으로 전환되었습니다.", icon="🕒")
-        return {"ok": True}
-
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-def request_pending_deposit_wrapper_bulk(*args, **kwargs):
-    return request_pending_deposit_wrapper(*args, **kwargs)
-
-
-def render_pending_approval_ui():
-    st.divider()
-    st.subheader("📥 입금 승인 관리")
-
-    try:
-        pending_docs = (
-            db.collection(PENDING_DEPOSIT_COL)
-            .where("status", "==", "pending")
-            .stream()
-        )
-    except Exception:
-        st.warning("승인 대기 데이터를 불러올 수 없습니다.")
-        return
-
-    rows = []
-    for doc in pending_docs:
-        d = doc.to_dict()
-        d["_doc_id"] = doc.id
-        rows.append(d)
-
-    if not rows:
-        st.info("승인 대기 중인 입금이 없습니다.")
-        return
-
-    for p in rows:
-        c1, c2, c3, c4, c5 = st.columns([2,2,2,1,1])
-
-        c1.write(p.get("student_id"))
-        c2.write(p.get("memo"))
-        c3.write(int(p.get("amount",0)))
-        c4.write("대기")
-
-        if c4.button("승인", key=f"approve_{p['_doc_id']}"):
-            api_admin_add_tx_by_student_id(
-                admin_pin=ADMIN_PIN,
-                student_id=p["student_id"],
-                memo=p["memo"],
-                deposit=int(p["amount"]),
-                withdraw=0,
-            )
-
-            db.collection(PENDING_DEPOSIT_COL).document(p["_doc_id"]).update({
-                "status": "approved"
-            })
-
-            toast("입금 승인 완료", icon="✅")
-            st.rerun()
-
-        if c5.button("거절", key=f"reject_{p['_doc_id']}"):
-            db.collection(PENDING_DEPOSIT_COL).document(p["_doc_id"]).update({
-                "status": "rejected"
-            })
-            toast("입금 거절 처리됨", icon="❌")
-            st.rerun()
-
-# ==========================================================
