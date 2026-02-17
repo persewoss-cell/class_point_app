@@ -11283,3 +11283,70 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
+
+
+
+# =====================================================
+# 🔐 입금 승인 시스템 (추가)
+# - 출금은 즉시 반영
+# - 입금은 관리자 승인 후 반영
+# =====================================================
+
+def request_deposit(student_id, student_name, amount, memo, apply_treasury):
+    db.collection("deposit_requests").add({
+        "student_id": student_id,
+        "student_name": student_name,
+        "amount": int(amount),
+        "memo": memo,
+        "apply_treasury": bool(apply_treasury),
+        "status": "pending",
+        "requested_at": firestore.SERVER_TIMESTAMP,
+        "processed_at": None,
+    })
+
+
+def approve_deposit(req_id, data):
+    sid = data["student_id"]
+    amt = int(data["amount"])
+    memo = data.get("memo", "")
+    apply_treasury = bool(data.get("apply_treasury", False))
+
+    sref = db.collection("students").document(sid)
+
+    @firestore.transactional
+    def _do(tx):
+        snap = sref.get(transaction=tx)
+        bal = int((snap.to_dict() or {}).get("balance", 0))
+        new_bal = bal + amt
+        tx.update(sref, {"balance": new_bal})
+        tx.set(db.collection("transactions").document(), {
+            "student_id": sid,
+            "type": "deposit",
+            "amount": amt,
+            "balance_after": new_bal,
+            "memo": memo,
+            "created_at": firestore.SERVER_TIMESTAMP,
+        })
+
+    _do(db.transaction())
+
+    if apply_treasury:
+        db.collection("treasury_ledger").add({
+            "type": "deposit",
+            "amount": amt,
+            "memo": f"{memo} ({data.get('student_name')})",
+            "created_at": firestore.SERVER_TIMESTAMP,
+        })
+
+    db.collection("deposit_requests").document(req_id).update({
+        "status": "approved",
+        "processed_at": firestore.SERVER_TIMESTAMP,
+    })
+
+
+def reject_deposit(req_id):
+    db.collection("deposit_requests").document(req_id).update({
+        "status": "rejected",
+        "processed_at": firestore.SERVER_TIMESTAMP,
+    })
+
