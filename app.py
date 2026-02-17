@@ -11283,3 +11283,72 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
+
+
+# =====================================================
+# 📌 관리자 은행 탭 - 입금 승인 대기 (국고 연동)
+try:
+    if st.session_state.get("is_admin"):
+        st.markdown("---")
+        st.subheader("📌 입금 승인 대기")
+
+        pending_ref = db.collection("pending_transactions")\
+            .where("status", "==", "pending")\
+            .stream()
+
+        for doc in pending_ref:
+            data = doc.to_dict()
+            pending_id = doc.id
+
+            col1, col2, col3 = st.columns([3,1,1])
+
+            with col1:
+                treasury_text = " | 🏦국고반영" if data.get("reflect_treasury") else ""
+                st.write(f"{data.get('student_name')} | {data.get('amount')}원 | {data.get('memo','')}{treasury_text}")
+
+            with col2:
+                if st.button("승인", key=f"approve_{pending_id}"):
+
+                    student_ref = db.collection("students").document(data["student_id"])
+                    student_doc = student_ref.get()
+                    student_data = student_doc.to_dict()
+
+                    new_balance = student_data.get("balance", 0) + data["amount"]
+                    student_ref.update({"balance": new_balance})
+
+                    # 정식 거래 기록
+                    db.collection("transactions").add({
+                        "student_id": data["student_id"],
+                        "student_name": data["student_name"],
+                        "amount": data["amount"],
+                        "memo": data.get("memo",""),
+                        "type": "입금",
+                        "created_at": firestore.SERVER_TIMESTAMP
+                    })
+
+                    # 🔥 국고 반영
+                    if data.get("reflect_treasury"):
+                        db.collection("treasury_ledger").add({
+                            "amount": data["amount"],
+                            "memo": f"{data.get('student_name')} 입금 승인 반영",
+                            "created_at": firestore.SERVER_TIMESTAMP
+                        })
+
+                    db.collection("pending_transactions").document(pending_id).update({
+                        "status": "approved"
+                    })
+
+                    st.success("승인 완료")
+                    st.rerun()
+
+            with col3:
+                if st.button("거절", key=f"reject_{pending_id}"):
+                    db.collection("pending_transactions").document(pending_id).update({
+                        "status": "rejected"
+                    })
+                    st.warning("거절 처리됨")
+                    st.rerun()
+
+except Exception:
+    pass
+# =====================================================
