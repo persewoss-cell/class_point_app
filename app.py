@@ -10257,7 +10257,12 @@ if "🏦 은행(적금)" in tabs:
             pending_docs = (
                 db.collection("pending_deposits")
                 .where("status", "==", "pending")
-                .order_by("created_at")
+                pending_docs = (
+                    db.collection("pending_deposits")
+                    .where("status", "==", "pending")
+                    .stream()
+                )
+
                 .stream()
             )
 
