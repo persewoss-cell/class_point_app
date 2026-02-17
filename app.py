@@ -10565,8 +10565,11 @@ if "🏦 은행(적금)" in tabs:
 
 st.markdown("### ⏳ 입금 승인 대기")
 
-all_docs = db.collection("pending_deposits").stream()
-pending_docs = [d for d in all_docs if d.to_dict().get("status") == "pending"]
+pending_docs = (
+    db.collection("pending_deposits")
+    .where("status", "==", "pending")
+    .stream()
+)
 
 
 for i, doc in enumerate(pending_docs, start=1):
