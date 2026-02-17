@@ -3687,8 +3687,8 @@ if not st.session_state.logged_in:
                         st.query_params.pop("remember", None)
                 except Exception:
                     pass
-                    toast("로그인 완료!", icon="✅")
-                    st.rerun()
+                toast("로그인 완료!", icon="✅")
+                st.rerun()
 
 else:
     if st.button("로그아웃", key="logout_btn", use_container_width=True):
