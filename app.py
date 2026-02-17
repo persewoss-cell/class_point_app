@@ -11283,3 +11283,92 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
+
+
+
+# ==========================================================
+# 🔐 입금 승인 시스템 (자동 삽입 영역)
+# ==========================================================
+
+PENDING_DEPOSIT_COL = "pending_deposits"
+
+def request_pending_deposit(student_id, name, amount, memo, treasury_apply):
+    try:
+        db.collection(PENDING_DEPOSIT_COL).add({
+            "student_id": student_id,
+            "name": name,
+            "amount": int(amount),
+            "memo": memo,
+            "treasury_apply": bool(treasury_apply),
+            "status": "pending",
+            "created_at": firestore.SERVER_TIMESTAMP,
+        })
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def render_pending_approval_ui():
+    st.divider()
+    st.subheader("📥 입금 승인 관리")
+
+    try:
+        pending_docs = (
+            db.collection(PENDING_DEPOSIT_COL)
+            .where("status", "==", "pending")
+            .stream()
+        )
+    except Exception:
+        st.warning("승인 대기 데이터를 불러올 수 없습니다.")
+        return
+
+    rows = []
+    for doc in pending_docs:
+        d = doc.to_dict()
+        d["_doc_id"] = doc.id
+        rows.append(d)
+
+    if not rows:
+        st.info("승인 대기 중인 입금이 없습니다.")
+        return
+
+    for p in rows:
+        c1, c2, c3, c4, c5, c6, c7 = st.columns([1,2,2,2,1,1,1])
+        c1.write(p.get("student_id"))
+        c2.write(p.get("name"))
+        c3.write(str(p.get("created_at",""))[:16])
+        c4.write(int(p.get("amount",0)))
+        c5.write("O" if p.get("treasury_apply") else "X")
+        c6.write("대기")
+
+        if c6.button("승인", key=f"approve_{p['_doc_id']}"):
+            api_admin_add_tx_by_student_id(
+                admin_pin=ADMIN_PIN,
+                student_id=p["student_id"],
+                memo=p["memo"],
+                deposit=int(p["amount"]),
+                withdraw=0,
+            )
+
+            if p.get("treasury_apply"):
+                api_treasury_auto_adjust(
+                    memo=f"{p['name']} {p['memo']}",
+                    signed_amount=-(int(p["amount"])),
+                    actor=p["name"],
+                )
+
+            db.collection(PENDING_DEPOSIT_COL).document(p["_doc_id"]).update({
+                "status": "approved"
+            })
+
+            toast("입금 승인 완료", icon="✅")
+            st.rerun()
+
+        if c7.button("거절", key=f"reject_{p['_doc_id']}"):
+            db.collection(PENDING_DEPOSIT_COL).document(p["_doc_id"]).update({
+                "status": "rejected"
+            })
+            toast("입금이 거절되었습니다.", icon="❌")
+            st.rerun()
+
+# ==========================================================
