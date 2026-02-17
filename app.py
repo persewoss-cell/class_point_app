@@ -1753,19 +1753,11 @@ def api_admin_set_role(admin_pin: str, student_id: str, role_id: str):
 # Transactions (너 코드 그대로)
 # =========================
 def api_add_tx(name, pin, memo, deposit, withdraw):
-    """
-    학생 거래:
-    - 출금은 즉시 처리
-    - 입금은 관리자 승인 대기
-    """
-
     memo = (memo or "").strip()
     deposit = int(deposit or 0)
     withdraw = int(withdraw or 0)
-
     if not memo:
         return {"ok": False, "error": "내역이 필요합니다."}
-
     if (deposit > 0 and withdraw > 0) or (deposit == 0 and withdraw == 0):
         return {"ok": False, "error": "입금/출금 중 하나만 입력하세요."}
 
@@ -1773,28 +1765,46 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
 
-    student_id = student_doc.id
+    student_ref = db.collection("students").document(student_doc.id)
+    tx_ref = db.collection("transactions").document()
 
-    # ✅ 출금은 기존 로직 유지
-    if withdraw > 0:
-        return api_add_tx_withdraw_only(student_id, memo, withdraw)
+    amount = deposit if deposit > 0 else -withdraw
+    tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    # ✅ 입금은 승인 대기 컬렉션에 저장
-    try:
-        db.collection("pending_deposits").document().set(
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
+        bal = int((snap.to_dict() or {}).get("balance", 0))
+
+        # 일반 출금은 잔액 부족이면 불가
+        if tx_type == "withdraw" and bal < withdraw:
+            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+
+        new_bal = bal + amount
+        transaction.update(student_ref, {"balance": new_bal})
+        transaction.set(
+            tx_ref,
             {
-                "student_id": str(student_id),
-                "student_name": str(name),
-                "amount": int(deposit),
+                "student_id": student_doc.id,
+                "type": tx_type,
+                "amount": amount,
+                "balance_after": new_bal,
                 "memo": memo,
-                "apply_treasury": False,
-                "status": "pending",
+                "apply_treasury": bool(apply_treasury),
+                "treasury_signed": int(tre_signed),
+                "treasury_memo": str(treasury_memo or memo),
                 "created_at": firestore.SERVER_TIMESTAMP,
-            }
+            },
         )
-        return {"ok": True, "message": "입금 요청이 관리자 승인 대기 상태로 등록되었습니다."}
+        return new_bal
+
+    try:
+        new_bal = _do(db.transaction())
+        return {"ok": True, "balance": new_bal}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     except Exception as e:
-        return {"ok": False, "error": f"요청 저장 실패: {e}"}
+        return {"ok": False, "error": f"저장 실패: {e}"}
 
 def api_admin_add_tx_by_student_id(admin_pin: str, student_id: str, memo: str, deposit: int, withdraw: int):
     """
@@ -10563,37 +10573,6 @@ if "🏦 은행(적금)" in tabs:
         if bank_admin_ok:
             _ensure_maturity_processing_once()
 
-st.markdown("### ⏳ 입금 승인 대기")
-
-pending_docs = (
-    db.collection("pending_deposits")
-    .where("status", "==", "pending")
-    .stream()
-)
-
-
-for i, doc in enumerate(pending_docs, start=1):
-    d = doc.to_dict()
-
-    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
-
-    col1.write(i)
-    col2.write(d.get("student_name"))
-    col3.write(d.get("created_at"))
-    col4.write(d.get("amount"))
-    col5.write("O" if d.get("apply_treasury") else "X")
-    col6.write("대기")
-
-    with col7:
-        if st.button("승인", key=f"ap_{doc.id}"):
-            api_admin_approve_deposit(admin_pin_input, doc.id)
-            st.rerun()
-
-        if st.button("거절", key=f"rej_{doc.id}"):
-            api_admin_reject_deposit(admin_pin_input, doc.id)
-            st.rerun()
-
-        
         # -------------------------------------------------
         # (A) 관리자: 적금 관리 장부 (엑셀형 표 느낌) + 최신순
         # -------------------------------------------------
@@ -11304,80 +11283,3 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
-
-def api_admin_approve_deposit(admin_pin: str, pending_id: str):
-
-    if not is_admin_pin(admin_pin):
-        return {"ok": False, "error": "관리자 PIN 오류"}
-
-    pending_ref = db.collection("pending_deposits").document(pending_id)
-    snap = pending_ref.get()
-
-    if not snap.exists:
-        return {"ok": False, "error": "요청이 존재하지 않습니다."}
-
-    data = snap.to_dict()
-    if data.get("status") != "pending":
-        return {"ok": False, "error": "이미 처리된 요청입니다."}
-
-    student_id = data["student_id"]
-    amount = int(data["amount"])
-    memo = data.get("memo", "")
-    apply_treasury = bool(data.get("apply_treasury", False))
-
-    student_ref = db.collection("students").document(student_id)
-    tx_ref = db.collection("transactions").document()
-
-    @firestore.transactional
-    def _do(transaction):
-
-        snap = student_ref.get(transaction=transaction)
-        bal = int((snap.to_dict() or {}).get("balance", 0))
-        new_bal = bal + amount
-
-        transaction.update(student_ref, {"balance": new_bal})
-
-        transaction.set(
-            tx_ref,
-            {
-                "student_id": student_id,
-                "type": "deposit",
-                "amount": amount,
-                "balance_after": new_bal,
-                "memo": memo,
-                "created_at": firestore.SERVER_TIMESTAMP,
-            },
-        )
-
-        # 국고 반영
-        if apply_treasury:
-            _treasury_apply_in_transaction(
-                transaction,
-                memo=memo,
-                signed_amount=-int(amount),
-                actor="admin_approve",
-            )
-
-        transaction.update(pending_ref, {"status": "approved"})
-
-    try:
-        _do(db.transaction())
-        api_list_accounts_cached.clear()
-        api_get_treasury_state_cached.clear()
-        api_list_treasury_ledger_cached.clear()
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-def api_admin_reject_deposit(admin_pin: str, pending_id: str):
-
-    if not is_admin_pin(admin_pin):
-        return {"ok": False, "error": "관리자 PIN 오류"}
-
-    db.collection("pending_deposits").document(pending_id).update(
-        {"status": "rejected"}
-    )
-
-    return {"ok": True}
-
-
