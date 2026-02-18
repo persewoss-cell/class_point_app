@@ -11597,14 +11597,14 @@ if "🏷️ 경매" in tabs:
                     f"소속 {str(open_round.get('affiliation', '') or '')}"
                 )
             else:
-                st.info("(평상시) 개시된 경매가 없습니다.")
+                st.info("개시된 경매가 없습니다.")
 
             st.divider()
             st.markdown("### 경매 결과")
 
             closed_res = api_get_latest_closed_auction_round()
             if not closed_res.get("ok"):
-                st.info("(평상시) 개시된 경매가 없습니다.")
+                st.info("개시된 경매가 없습니다.")
             else:
                 cl_round = closed_res.get("round", {}) or {}
                 cl_round_id = str(cl_round.get("round_id", "") or "")
@@ -11669,7 +11669,7 @@ if "🏷️ 경매" in tabs:
 
         else:
             if not open_round:
-                st.info("(평상시) 개시된 경매가 없습니다.")
+                st.info("개시된 경매가 없습니다.")
             else:
                 sid = str(my_student_id or "")
                 me_snap = db.collection("students").document(sid).get() if sid else None
