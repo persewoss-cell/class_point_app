@@ -3742,17 +3742,35 @@ def api_list_auction_bids(round_id: str):
     return {"ok": True, "rows": rows}
 
 def api_get_latest_closed_auction_round():
-    q = (
-        db.collection("auction_rounds")
-        .where(filter=FieldFilter("status", "==", "closed"))
-        .order_by("round_no", direction=firestore.Query.DESCENDING)
-        .limit(1)
-        .stream()
-    )
-    for d in q:
-        row = d.to_dict() or {}
-        row["round_id"] = d.id
-        return {"ok": True, "round": row}
+    try:
+        q = (
+            db.collection("auction_rounds")
+            .where(filter=FieldFilter("status", "==", "closed"))
+            .order_by("round_no", direction=firestore.Query.DESCENDING)
+            .limit(1)
+            .stream()
+        )
+        for d in q:
+            row = d.to_dict() or {}
+            row["round_id"] = d.id
+            return {"ok": True, "round": row}
+    except FailedPrecondition:
+        # 복합 인덱스가 아직 준비되지 않은 환경(예: 신규 Streamlit Cloud 배포) 대비
+        fallback_docs = (
+            db.collection("auction_rounds")
+            .where(filter=FieldFilter("status", "==", "closed"))
+            .stream()
+        )
+        best_row = None
+        for d in fallback_docs:
+            row = d.to_dict() or {}
+            row["round_id"] = d.id
+            round_no = int(row.get("round_no", 0) or 0)
+            if not best_row or round_no > best_row["round_no"]:
+                best_row = {"round_no": round_no, "row": row}
+        if best_row:
+            return {"ok": True, "round": best_row["row"]}
+            
     return {"ok": False, "error": "마감된 경매가 없습니다."}
 
 def api_apply_auction_ledger(admin_pin: str, round_id: str):
