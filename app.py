@@ -3485,7 +3485,10 @@ def _fmt_auction_dt(val) -> str:
     if not dt:
         return ""
     kst_dt = dt.astimezone(KST)
-    return f"{kst_dt.year}년 {kst_dt.month:02d}월 {kst_dt.day:02d}일 {kst_dt.hour:02d}시 {kst_dt.minute:02d}분 {kst_dt.second:02d}초"
+    ampm = "오전" if kst_dt.hour < 12 else "오후"
+    hour12 = kst_dt.hour % 12
+    hour12 = 12 if hour12 == 0 else hour12
+    return f"{kst_dt.year}년 {kst_dt.month:02d}월 {kst_dt.day:02d}일 {ampm} {hour12}시 {kst_dt.minute:02d}분 {kst_dt.second:02d}초"
 
 def _get_auction_state() -> dict:
     snap = db.collection("config").document(AUC_STATE_DOC).get()
@@ -3604,8 +3607,8 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
 
 def api_submit_auction_bid(name: str, pin: str, amount: int):
     amount = int(amount or 0)
-    if amount <= 0:
-        return {"ok": False, "error": "입찰 가격은 1 이상이어야 합니다."}
+    if amount < 0:
+        return {"ok": False, "error": "입찰 가격은 0 이상이어야 합니다."}
 
     student_doc = fs_auth_student(name, pin)
     if not student_doc:
@@ -11689,7 +11692,7 @@ if "🏷️ 경매" in tabs:
                         f"제출시각 {_fmt_auction_dt(pb.get('submitted_at'))}"
                     )
                 else:
-                    amt = st.number_input("입찰 가격(드림)", min_value=1, step=1, key="auc_user_amount")
+                    amt = st.number_input("입찰 가격(드림)", min_value=0, step=1, key="auc_user_amount")
                     confirm = st.radio("입찰표를 제출하시겠습니까?", ["아니오", "예"], horizontal=True, key="auc_user_confirm")
                     if st.button("입찰표 제출", use_container_width=True, key="auc_user_submit_btn"):
                         if confirm != "예":
