@@ -4026,30 +4026,48 @@ def api_list_lottery_entries(round_id: str):
     rid = str(round_id or "").strip()
     if not rid:
         return {"ok": True, "rows": []}
-    q = (
-        db.collection("lottery_entries")
-        .where(filter=FieldFilter("round_id", "==", rid))
-        .order_by("submitted_at", direction=firestore.Query.ASCENDING)
-        .stream()
-    )
-    rows = []
-    for d in q:
-        x = d.to_dict() or {}
-        nums = _normalize_lottery_numbers(x.get("numbers", []))
-        rows.append(
-            {
-                "entry_id": d.id,
-                "round_id": rid,
-                "round_no": int(x.get("round_no", 0) or 0),
-                "student_id": str(x.get("student_id", "") or ""),
-                "student_no": int(x.get("student_no", 0) or 0),
-                "student_name": str(x.get("student_name", "") or ""),
-                "numbers": nums,
-                "numbers_text": ", ".join([f"{n:02d}" for n in nums]),
-                "submitted_at": x.get("submitted_at"),
-                "submitted_at_text": _fmt_lottery_dt(x.get("submitted_at")),
-            }
+
+    def _rows_from_stream(stream_docs):
+        out = []
+        for d in stream_docs:
+            x = d.to_dict() or {}
+            nums = _normalize_lottery_numbers(x.get("numbers", []))
+            out.append(
+                {
+                    "entry_id": d.id,
+                    "round_id": rid,
+                    "round_no": int(x.get("round_no", 0) or 0),
+                    "student_id": str(x.get("student_id", "") or ""),
+                    "student_no": int(x.get("student_no", 0) or 0),
+                    "student_name": str(x.get("student_name", "") or ""),
+                    "numbers": nums,
+                    "numbers_text": ", ".join([f"{n:02d}" for n in nums]),
+                    "submitted_at": x.get("submitted_at"),
+                    "submitted_at_text": _fmt_lottery_dt(x.get("submitted_at")),
+                }
+            )
+        return out
+
+    try:
+        q = (
+            db.collection("lottery_entries")
+            .where(filter=FieldFilter("round_id", "==", rid))
+            .order_by("submitted_at", direction=firestore.Query.ASCENDING)
+            .stream()
         )
+        rows = _rows_from_stream(q)
+    except FailedPrecondition:
+        # 복합 인덱스가 없어도 동작하도록 서버 정렬 없이 조회 후 앱에서 정렬
+        q = db.collection("lottery_entries").where(filter=FieldFilter("round_id", "==", rid)).stream()
+        rows = _rows_from_stream(q)
+        rows.sort(
+            key=lambda r: (
+                r.get("submitted_at") is None,
+                r.get("submitted_at") or datetime.min.replace(tzinfo=timezone.utc),
+                str(r.get("entry_id", "") or ""),
+            )
+        )
+
     return {"ok": True, "rows": rows}
 
 def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
