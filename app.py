@@ -3509,17 +3509,35 @@ def api_get_open_auction_round() -> dict:
                 row["round_id"] = snap.id
                 return {"ok": True, "round": row}
 
-    q = (
-        db.collection("auction_rounds")
-        .where(filter=FieldFilter("status", "==", "open"))
-        .order_by("round_no", direction=firestore.Query.DESCENDING)
-        .limit(1)
-        .stream()
-    )
-    for d in q:
-        row = d.to_dict() or {}
-        row["round_id"] = d.id
-        return {"ok": True, "round": row}
+    try:
+        q = (
+            db.collection("auction_rounds")
+            .where(filter=FieldFilter("status", "==", "open"))
+            .order_by("round_no", direction=firestore.Query.DESCENDING)
+            .limit(1)
+            .stream()
+        )
+        for d in q:
+            row = d.to_dict() or {}
+            row["round_id"] = d.id
+            return {"ok": True, "round": row}
+    except FailedPrecondition:
+        # 복합 인덱스가 아직 준비되지 않은 프로젝트에서도 앱이 중단되지 않도록
+        # 정렬 없이 조회한 뒤 round_no 최대값을 선택한다.
+        fallback_docs = (
+            db.collection("auction_rounds")
+            .where(filter=FieldFilter("status", "==", "open"))
+            .stream()
+        )
+        best_row = None
+        for d in fallback_docs:
+            row = d.to_dict() or {}
+            row["round_id"] = d.id
+            round_no = int(row.get("round_no", 0) or 0)
+            if not best_row or round_no > best_row["round_no"]:
+                best_row = {"round_no": round_no, "row": row}
+        if best_row:
+            return {"ok": True, "round": best_row["row"]}
 
     return {"ok": False, "error": "진행 중인 경매가 없습니다."}
 
