@@ -12469,22 +12469,48 @@ if "🎟️ 복권" in tabs:
             my_sid = str(my_student_id or "")
             hist_rows = []
             if my_sid:
-                q = (
-                    db.collection("lottery_entries")
-                    .where(filter=FieldFilter("student_id", "==", my_sid))
-                    .order_by("submitted_at", direction=firestore.Query.DESCENDING)
-                    .stream()
-                )
-                for d in q:
-                    x = d.to_dict() or {}
-                    hist_rows.append(
-                        {
-                            "회차": int(x.get("round_no", 0) or 0),
-                            "번호": int(x.get("student_no", 0) or 0),
-                            "이름": str(x.get("student_name", "") or ""),
-                            "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
-                        }
+                try:
+                    q = (
+                        db.collection("lottery_entries")
+                        .where(filter=FieldFilter("student_id", "==", my_sid))
+                        .order_by("submitted_at", direction=firestore.Query.DESCENDING)
+                        .stream()
                     )
+                    for d in q:
+                        x = d.to_dict() or {}
+                        hist_rows.append(
+                            {
+                                "회차": int(x.get("round_no", 0) or 0),
+                                "번호": int(x.get("student_no", 0) or 0),
+                                "이름": str(x.get("student_name", "") or ""),
+                                "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
+                                "_submitted_at": x.get("submitted_at"),
+                            }
+                        )
+                except FailedPrecondition:
+                    # 복합 인덱스 미생성 환경 대응: 정렬 없는 조회 후 앱에서 submitted_at 역순 정렬
+                    q = db.collection("lottery_entries").where(filter=FieldFilter("student_id", "==", my_sid)).stream()
+                    for d in q:
+                        x = d.to_dict() or {}
+                        hist_rows.append(
+                            {
+                                "회차": int(x.get("round_no", 0) or 0),
+                                "번호": int(x.get("student_no", 0) or 0),
+                                "이름": str(x.get("student_name", "") or ""),
+                                "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
+                                "_submitted_at": x.get("submitted_at"),
+                            }
+                        )
+
+                if hist_rows:
+                    hist_rows.sort(
+                        key=lambda r: (
+                            _to_kst_dt(r.get("_submitted_at")).timestamp() if r.get("_submitted_at") else float("-inf")
+                        ),
+                        reverse=True,
+                    )
+                    for r in hist_rows:
+                        r.pop("_submitted_at", None)
             if hist_rows:
                 st.dataframe(pd.DataFrame(hist_rows), use_container_width=True, hide_index=True)
             else:
