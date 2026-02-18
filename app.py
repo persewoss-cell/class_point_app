@@ -12523,7 +12523,7 @@ if "🎟️ 복권" in tabs:
                 if hist_rows:
                     hist_rows.sort(
                         key=lambda r: (
-                            _to_kst_dt(r.get("_submitted_at")).timestamp() if r.get("_submitted_at") else float("-inf")
+                            _to_utc_datetime(r.get("_submitted_at")).timestamp() if r.get("_submitted_at") else float("-inf")
                         ),
                         reverse=True,
                     )
