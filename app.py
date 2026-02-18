@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import altair as alt
 from io import BytesIO
@@ -8,6 +9,7 @@ from datetime import datetime, timezone, timedelta, date
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+from google.api_core.exceptions import FailedPrecondition
 
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
@@ -620,7 +622,15 @@ def init_firestore():
         firebase_admin.initialize_app(cred)
     return firestore.client()
 
-db = init_firestore()
+try:
+    db = init_firestore()
+except StreamlitSecretNotFoundError:
+    st.error("Firebase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 firebase 설정을 추가해 주세요.")
+    st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Firestore 연결 초기화 실패입니다.")
+    st.stop()
+except Exception as e:
+    st.error(f"Firestore 초기화 실패: {e}")
+    st.stop()
 
 # =========================
 # Utils (너 코드 유지 + 권한 유틸 추가)
