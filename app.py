@@ -4963,25 +4963,33 @@ else:
 
     # 1) 관리자 기능(같은 탭 안에 있던 관리자 UI)을 별도 탭으로 빼서 제공
     #    ※ 이 탭을 만들면, 원래 탭(📝 거래/🏦 적금/📈 투자)에서는 학생에게 관리자 UI를 숨깁니다.
+        def _append_extra_tab(label: str, key_internal: str):
+        # 사용자 기본 탭과 중복 라벨이 생기지 않도록 방지
+        if label in base_labels:
+            return
+        if any(str(label) == str(lab) for (lab, _k) in extra_admin_tabs):
+            return
+        extra_admin_tabs.append((label, key_internal))
+
     if has_admin_feature_access(my_perms, "🏦 내 통장", is_admin=False):
-        extra_admin_tabs.append(("💰보상/벌금(관리자)", "admin::🏦 내 통장"))
+        _append_extra_tab("💰보상/벌금(관리자)", "admin::🏦 내 통장")
 
     if has_admin_feature_access(my_perms, "🏦 은행(적금)", is_admin=False):
-        extra_admin_tabs.append(("🏦 은행(적금)(관리자)", "admin::🏦 은행(적금)"))
+        _append_extra_tab("🏦 은행(적금)(관리자)", "admin::🏦 은행(적금)")
 
     if inv_ok and has_admin_feature_access(my_perms, "📈 투자", is_admin=False):
-        extra_admin_tabs.append(("📈 투자(관리자)", "admin::📈 투자"))
+        _append_extra_tab("📈 투자(관리자)", "admin::📈 투자")
 
     # 2) 관리자 전용 탭(계정 정보/활성화 제외) — tab_visible() = tab::<탭이름> 권한 기반
     for t in ALL_TABS:
         if t in ("👥 계정 정보/활성화",):
             continue
         # 이미 기본 탭(거래/적금/투자)으로 구현된 것들은 제외
-        if t in ("🏦 내 통장", "🏦 은행(적금)", "📈 투자", "🏷️ 경매"):
+        if t in ("🏦 내 통장", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🎟️ 복권"):
             continue
         if tab_visible(t):
-            extra_admin_tabs.append((t, t))  # (표시라벨, 내부키)
-
+            _append_extra_tab(t, t)  # (표시라벨, 내부키)
+            
     user_tab_labels = base_labels + [lab for (lab, _k) in extra_admin_tabs]
 
     # ✅ (PATCH) 사용자 모드: 탭 위에 통장/정보 요약 표시
