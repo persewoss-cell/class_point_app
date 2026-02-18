@@ -4963,7 +4963,7 @@ else:
 
     # 1) 관리자 기능(같은 탭 안에 있던 관리자 UI)을 별도 탭으로 빼서 제공
     #    ※ 이 탭을 만들면, 원래 탭(📝 거래/🏦 적금/📈 투자)에서는 학생에게 관리자 UI를 숨깁니다.
-        def _append_extra_tab(label: str, key_internal: str):
+    def _append_extra_tab(label: str, key_internal: str):
         # 사용자 기본 탭과 중복 라벨이 생기지 않도록 방지
         if label in base_labels:
             return
