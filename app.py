@@ -3851,6 +3851,14 @@ def _fmt_lottery_dt(val) -> str:
     hour12 = 12 if hour12 == 0 else hour12
     return f"{kst_dt.month:02d}월 {kst_dt.day:02d}일 {ampm} {hour12:02d}시 {kst_dt.minute:02d}분 {kst_dt.second:02d}초"
 
+def _fmt_lottery_draw_date(val) -> str:
+    dt = _to_utc_datetime(val)
+    if not dt:
+        return ""
+    kst_dt = dt.astimezone(KST)
+    weekday_ko = ["월", "화", "수", "목", "금", "토", "일"][kst_dt.weekday()]
+    return f"{kst_dt.month}월 {kst_dt.day}일({weekday_ko})"
+
 def _normalize_lottery_numbers(nums) -> list[int]:
     out = []
     for n in (nums or []):
@@ -4218,7 +4226,10 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
     winner_rows.sort(key=lambda x: (int(x.get("rank", 9) or 9), int(x.get("student_no", 0) or 0)))
 
     payout_total = int(sum(int(x.get("prize", 0) or 0) for x in winner_rows))
-    tax_total = int(max(first_gross_total - (first_each * len(winners1)), 0) + max(second_gross_total - (second_each * len(winners2)), 0))
+    first_tax_total = int(max(first_gross_total - (first_each * len(winners1)), 0)) if winners1 else 0
+    second_tax_total = int(max(second_gross_total - (second_each * len(winners2)), 0)) if winners2 else 0
+    tax_total = int(first_tax_total + second_tax_total)
+    participant_count = int(len({str(e.get("student_id", "") or "") for e in entries if str(e.get("student_id", "") or "")}))
 
     r_ref.set(
         {
@@ -4226,7 +4237,8 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
             "winning_numbers": win_nums,
             "winners": winner_rows,
             "total_sales": int(total_sales),
-            "participants": int(len(entries)),
+            "participants": int(participant_count),
+            "ticket_count": int(len(entries)),
             "payout_total": int(payout_total),
             "tax_total": int(tax_total),
             "drawn_at": firestore.SERVER_TIMESTAMP,
@@ -4299,7 +4311,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
 
     round_no = int(r.get("round_no", 0) or 0)
     participants = int(r.get("participants", 0) or 0)
-    ticket_count = int(participants)
+    ticket_count = int(r.get("ticket_count", participants) or participants)
     total_sales = int(r.get("total_sales", 0) or 0)
     payout_total = int(r.get("payout_total", 0) or 0)
     tax_total = int(r.get("tax_total", 0) or 0)
@@ -4320,6 +4332,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
             "payout_total": int(payout_total),
             "tax_total": int(tax_total),
             "national_amount": int(national_amount),
+            "drawn_at": r.get("drawn_at"),
             "created_at": firestore.SERVER_TIMESTAMP,
         }
     )
@@ -4336,7 +4349,7 @@ def api_list_lottery_admin_ledger(limit=200):
         rows.append(
             {
                 "회차": int(x.get("round_no", 0) or 0),
-                "복권추첨일": _fmt_lottery_dt(x.get("created_at")),
+                "복권추첨일": _fmt_lottery_draw_date(x.get("drawn_at") or x.get("created_at")),
                 "참여자 수": int(x.get("participants", 0) or 0),
                 "참여 복권 수": int(x.get("ticket_count", 0) or 0),
                 "총 액수": int(x.get("total_sales", 0) or 0),
