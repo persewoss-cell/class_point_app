@@ -4226,11 +4226,25 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
     winner_rows.sort(key=lambda x: (int(x.get("rank", 9) or 9), int(x.get("student_no", 0) or 0)))
 
     payout_total = int(sum(int(x.get("prize", 0) or 0) for x in winner_rows))
-    first_tax_total = int(max(first_gross_total - (first_each * len(winners1)), 0)) if winners1 else 0
-    second_tax_total = int(max(second_gross_total - (second_each * len(winners2)), 0)) if winners2 else 0
+    # 1·2등 세금은 "총 당첨금(세전) - 세후 총액" 기준으로 계산한다.
+    # (개별 지급액 반올림으로 생기는 차액이 세금에 섞이지 않도록 분리)
+    first_tax_total = int(max(first_gross_total - first_net_total, 0)) if winners1 else 0
+    second_tax_total = int(max(second_gross_total - second_net_total, 0)) if winners2 else 0
     tax_total = int(first_tax_total + second_tax_total)
-    participant_count = int(len({str(e.get("student_id", "") or "") for e in entries if str(e.get("student_id", "") or "")}))
 
+    participant_keys = set()
+    for e in entries:
+        sid = str(e.get("student_id", "") or "").strip()
+        if sid:
+            participant_keys.add(f"sid:{sid}")
+            continue
+        sno = int(e.get("student_no", 0) or 0)
+        sname = str(e.get("student_name", "") or "").strip()
+        if sno > 0:
+            participant_keys.add(f"sno:{sno}")
+        elif sname:
+            participant_keys.add(f"name:{sname}")
+    participant_count = int(len(participant_keys))
     r_ref.set(
         {
             "status": "drawn",
@@ -4315,6 +4329,23 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     total_sales = int(r.get("total_sales", 0) or 0)
     payout_total = int(r.get("payout_total", 0) or 0)
     tax_total = int(r.get("tax_total", 0) or 0)
+    
+    # 레거시 회차 보정: 참여자 수는 "복권 수"가 아닌 "실제 참여 학생 수"로 유지
+    if participants <= 0:
+        entries = api_list_lottery_entries(rid).get("rows", [])
+        participant_keys = set()
+        for e in entries:
+            sid = str(e.get("student_id", "") or "").strip()
+            if sid:
+                participant_keys.add(f"sid:{sid}")
+                continue
+            sno = int(e.get("student_no", 0) or 0)
+            sname = str(e.get("student_name", "") or "").strip()
+            if sno > 0:
+                participant_keys.add(f"sno:{sno}")
+            elif sname:
+                participant_keys.add(f"name:{sname}")
+        participants = int(len(participant_keys))
     national_amount = int(total_sales - payout_total)
 
     if national_amount > 0:
