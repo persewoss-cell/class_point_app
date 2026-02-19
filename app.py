@@ -68,8 +68,6 @@ st.markdown(
         min-width: 14px !important;
         min-height: 14px !important;
     }
-
-
     
     /* 라벨 내부 마진 초기화로 쏠림 방지 */
     div[role="radiogroup"] label > div:first-child {
@@ -82,13 +80,6 @@ st.markdown(
     div[role="radiogroup"] > label div[data-testid="stMarkdownContainer"] p {
         margin: 0 !important;
         line-height: 1 !important;
-    }
-
-
-    /* 3. 클릭 시 주변에 생기는 빨간색 잔상(포커스 링) 제거 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
-        box-shadow: none !important;
-        outline: none !important;
     }
     
 /* ✅ DataFrame/DataEditor: 바깥 네모 박스(테두리/여백)만 줄이기 */
