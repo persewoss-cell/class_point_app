@@ -5288,6 +5288,7 @@ if "💰보상/벌금" in tabs:
     with tab_map["💰보상/벌금"]:
         trade_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::💰보상/벌금)에서만 표시
 
+        if trade_admin_ok:
             # ✅ (보상/벌금) 내부 작은 탭
             sub_tab_all, sub_tab_personal = st.tabs(["전체", "개인"])
 
