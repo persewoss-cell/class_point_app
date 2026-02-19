@@ -69,11 +69,7 @@ st.markdown(
         min-height: 14px !important;
     }
 
-    /* 원형 버튼을 감싸는 컨테이너 여백 조정 */
-    div[role="radiogroup"] > label [data-testid="stNumericInput-StepDown"] {
-        display: flex !important;
-        align-items: center !important;
-    }
+
     
     /* 라벨 내부 마진 초기화로 쏠림 방지 */
     div[role="radiogroup"] label > div:first-child {
