@@ -4226,10 +4226,11 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
     winner_rows.sort(key=lambda x: (int(x.get("rank", 9) or 9), int(x.get("student_no", 0) or 0)))
 
     payout_total = int(sum(int(x.get("prize", 0) or 0) for x in winner_rows))
-    # 1·2등 세금은 "총 당첨금(세전) - 세후 총액" 기준으로 계산한다.
-    # (개별 지급액 반올림으로 생기는 차액이 세금에 섞이지 않도록 분리)
-    first_tax_total = int(max(first_gross_total - first_net_total, 0)) if winners1 else 0
-    second_tax_total = int(max(second_gross_total - second_net_total, 0)) if winners2 else 0
+    # 세금 계산식(요청사항):
+    # (총액-3등총액)*1등백분율*0.01*(세금백분율*0.01)
+    # +(총액-3등총액)*2등백분율*0.01*(세금백분율*0.01)
+    first_tax_total = int(round(base_pool * (first_pct / 100.0) * (tax_rate / 100.0), 0)) if winners1 else 0
+    second_tax_total = int(round(base_pool * (second_pct / 100.0) * (tax_rate / 100.0), 0)) if winners2 else 0
     tax_total = int(first_tax_total + second_tax_total)
 
     participant_keys = set()
@@ -4307,6 +4308,37 @@ def api_pay_lottery_prizes(admin_pin: str, round_id: str):
     )
     return {"ok": True, "paid_total": int(paid_total)}
 
+def _calc_lottery_financials(round_row: dict) -> dict:
+    r = round_row or {}
+    winners = list(r.get("winners", []) or [])
+    total_sales = int(r.get("total_sales", 0) or 0)
+
+    payout_total = int(sum(int(w.get("prize", 0) or 0) for w in winners))
+
+    tax_rate = int(r.get("tax_rate", 40) or 40)
+    first_pct = int(r.get("first_pct", 80) or 80)
+    second_pct = int(r.get("second_pct", 20) or 20)
+    third_prize = int(r.get("third_prize", 20) or 20)
+
+    third_winner_count = int(sum(1 for w in winners if int(w.get("rank", 0) or 0) == 3))
+    third_total = int(third_prize * third_winner_count)
+    base_pool = max(int(total_sales - third_total), 0)
+
+    first_winner_count = int(sum(1 for w in winners if int(w.get("rank", 0) or 0) == 1))
+    second_winner_count = int(sum(1 for w in winners if int(w.get("rank", 0) or 0) == 2))
+
+    first_tax_total = int(round(base_pool * (first_pct / 100.0) * (tax_rate / 100.0), 0)) if first_winner_count > 0 else 0
+    second_tax_total = int(round(base_pool * (second_pct / 100.0) * (tax_rate / 100.0), 0)) if second_winner_count > 0 else 0
+    tax_total = int(first_tax_total + second_tax_total)
+    national_amount = int(total_sales - payout_total)
+
+    return {
+        "payout_total": int(payout_total),
+        "tax_total": int(tax_total),
+        "national_amount": int(national_amount),
+    }
+
+
 def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
@@ -4327,8 +4359,11 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     participants = int(r.get("participants", 0) or 0)
     ticket_count = int(r.get("ticket_count", participants) or participants)
     total_sales = int(r.get("total_sales", 0) or 0)
-    payout_total = int(r.get("payout_total", 0) or 0)
-    tax_total = int(r.get("tax_total", 0) or 0)
+
+    financials = _calc_lottery_financials(r)
+    payout_total = int(financials.get("payout_total", 0) or 0)
+    tax_total = int(financials.get("tax_total", 0) or 0)
+    national_amount = int(financials.get("national_amount", 0) or 0)
     
     # 레거시 회차 보정: 참여자 수는 "복권 수"가 아닌 "실제 참여 학생 수"로 유지
     if participants <= 0:
@@ -4346,7 +4381,6 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
             elif sname:
                 participant_keys.add(f"name:{sname}")
         participants = int(len(participant_keys))
-    national_amount = int(total_sales - payout_total)
 
     if national_amount > 0:
         tre_res = api_add_treasury_tx(ADMIN_PIN, f"복권 {round_no}회 국고 반영", income=national_amount, expense=0, actor="lottery")
@@ -4370,13 +4404,43 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     r_ref.set({"ledger_applied": True, "ledger_applied_at": firestore.SERVER_TIMESTAMP}, merge=True)
     return {"ok": True}
 
+
 def api_list_lottery_admin_ledger(limit=200):
     q = db.collection("lottery_admin_ledger").order_by("round_no", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
+        rid = str(x.get("round_id", "") or "").strip()
+        
         payout_total = int(x.get("payout_total", 0) or 0)
         tax_total = int(x.get("tax_total", 0) or 0)
+        national_amount = int(x.get("national_amount", 0) or 0)
+
+        if rid:
+            r_snap = db.collection("lottery_rounds").document(rid).get()
+            if r_snap.exists:
+                r = r_snap.to_dict() or {}
+                financials = _calc_lottery_financials(r)
+                payout_total = int(financials.get("payout_total", payout_total) or payout_total)
+                tax_total = int(financials.get("tax_total", tax_total) or tax_total)
+                national_amount = int(financials.get("national_amount", national_amount) or national_amount)
+
+                # 기존 장부 데이터가 잘못 저장된 경우 조회 시 자동 보정
+                if (
+                    payout_total != int(x.get("payout_total", 0) or 0)
+                    or tax_total != int(x.get("tax_total", 0) or 0)
+                    or national_amount != int(x.get("national_amount", 0) or 0)
+                ):
+                    d.reference.set(
+                        {
+                            "payout_total": int(payout_total),
+                            "tax_total": int(tax_total),
+                            "national_amount": int(national_amount),
+                            "updated_at": firestore.SERVER_TIMESTAMP,
+                        },
+                        merge=True,
+                    )
+                    
         rows.append(
             {
                 "회차": int(x.get("round_no", 0) or 0),
@@ -4386,7 +4450,7 @@ def api_list_lottery_admin_ledger(limit=200):
                 "총 액수": int(x.get("total_sales", 0) or 0),
                 "당첨금 지급 총액": ("-" if payout_total <= 0 else payout_total),
                 "세금": ("-" if tax_total <= 0 else tax_total),
-                "국고 반영액": int(x.get("national_amount", 0) or 0),
+                "국고 반영액": int(national_amount),
             }
         )
     return {"ok": True, "rows": rows}
@@ -12430,30 +12494,37 @@ if "🎟️ 복권" in tabs:
                     html.append("</tbody></table>")
                     st.markdown("".join(html), unsafe_allow_html=True)
 
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        payout_done = bool((r_dat or {}).get("payout_done", False))
-                        if st.button("당첨금 지급", key="lot_pay_btn", use_container_width=True, disabled=payout_done):
-                            res = api_pay_lottery_prizes(ADMIN_PIN, current_round_id)
-                            if res.get("ok"):
-                                toast("당첨금 지급 완료", icon="✅")
-                                st.rerun()
-                            else:
-                                st.error(res.get("error", "당첨금 지급 실패"))
-                        if payout_done:
-                            st.caption("이미 당첨금 지급이 완료되었습니다.")
+                    payout_done = bool((r_dat or {}).get("payout_done", False))
+                    led_done = bool((r_dat or {}).get("ledger_applied", False))
+                    action_done = payout_done and led_done
 
-                    with c2:
-                        led_done = bool((r_dat or {}).get("ledger_applied", False))
-                        if st.button("장부 반영", key="lot_ledger_btn", use_container_width=True, disabled=led_done):
-                            res = api_apply_lottery_ledger(ADMIN_PIN, current_round_id)
-                            if res.get("ok"):
-                                toast("복권 관리 장부 반영 완료", icon="✅")
-                                st.rerun()
-                            else:
-                                st.error(res.get("error", "장부 반영 실패"))
-                        if led_done:
-                            st.caption("이미 장부 반영된 회차입니다.")
+                    if st.button(
+                        "당첨금 지급 및 장부 반영",
+                        key="lot_finalize_btn",
+                        use_container_width=True,
+                        disabled=action_done,
+                    ):
+                        finalize_ok = True
+                        if not payout_done:
+                            pay_res = api_pay_lottery_prizes(ADMIN_PIN, current_round_id)
+                            if not pay_res.get("ok"):
+                                st.error(pay_res.get("error", "당첨금 지급 실패"))
+                                finalize_ok = False
+
+                        if finalize_ok and (not led_done):
+                            led_res = api_apply_lottery_ledger(ADMIN_PIN, current_round_id)
+                            if not led_res.get("ok"):
+                                st.error(led_res.get("error", "장부 반영 실패"))
+                                finalize_ok = False
+
+                        if finalize_ok:
+                            toast("당첨금 지급 및 장부 반영 완료", icon="✅")
+                            st.rerun()
+
+                    if payout_done:
+                        st.caption("당첨금 지급: 완료")
+                    if led_done:
+                        st.caption("장부 반영: 완료")
                 else:
                     st.info("당첨자가 없습니다.")
 
