@@ -118,10 +118,13 @@ st.markdown(
         white-space: normal;
         word-break: keep-all;
     }
-    @media (max-768px) {
-        .app-title { font-size: clamp(2.05rem, 7.9vw, 3.3rem); }
+    
+    @media (max-width: 768px) {
+        .app-title { 
+            font-size: clamp(2.05rem, 7.9vw, 3.3rem); 
+        }
     }
-
+   
     /* ✅ 전체적으로 줄간격 조금 촘촘하게 */
     p, .stMarkdown { margin-bottom: 0.35rem !important; }
     .stCaptionContainer { margin-top: 0.15rem !important; }
