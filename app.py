@@ -188,18 +188,6 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
     color: #fff !important;
 }
 
-/* ✅ 선택 시 가운데 빨간 점(svg) 숨기기(원하면 유지) */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
-  label:has(input:checked) svg {
-    display: none !important;
-}
-
-/* ✅ 포커스 링 제거 */
-div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
-    box-shadow: none !important;
-    outline: none !important;
-}
-
     /* ✅ 버튼(특히 화살표) 작게 + 가운데 */
     div[data-testid="stButton"] > button {
         padding: 0.05rem 0.28rem !important;
