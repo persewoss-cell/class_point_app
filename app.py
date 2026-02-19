@@ -91,35 +91,7 @@ st.markdown(
     div[role="radiogroup"] [data-testid="stWidgetLabel"] {
         margin-bottom: 0 !important;
     }
-/* --- 기존 63라인 부근의 스타일을 아래 내용으로 교체 또는 추가 --- */
 
-    /* 1. 선택 시 나타나는 중앙의 빨간색 점(svg) 아예 안 보이게 제거 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:checked) svg {
-        display: none !important;
-    }
-
-    /* 2. 통계청 전용: O, X, △ 값에 따라 배경색을 선명하게 꽉 채우기 */
-    
-    /* [O] 선택 시: 선명한 초록색 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="O"]:checked) {
-        background-color: #10b981 !important;
-        border-color: #059669 !important;
-        color: white !important;
-    }
-
-    /* [X] 선택 시: 선명한 빨간색 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="X"]:checked) {
-        background-color: #ef4444 !important;
-        border-color: #dc2626 !important;
-        color: white !important;
-    }
-
-    /* [△] 선택 시: 선명한 파란색 */
-    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="△"]:checked) {
-        background-color: #3b82f6 !important;
-        border-color: #2563eb !important;
-        color: white !important;
-    }
 
     /* 3. 클릭 시 주변에 생기는 빨간색 잔상(포커스 링) 제거 */
     div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
