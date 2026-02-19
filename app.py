@@ -88,10 +88,6 @@ st.markdown(
         line-height: 1 !important;
     }
 
-    div[role="radiogroup"] [data-testid="stWidgetLabel"] {
-        margin-bottom: 0 !important;
-    }
-
 
     /* 3. 클릭 시 주변에 생기는 빨간색 잔상(포커스 링) 제거 */
     div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
