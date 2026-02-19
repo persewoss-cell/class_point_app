@@ -4567,15 +4567,15 @@ def upsert_roles_from_paytable(admin_pin: str, pay_df: pd.DataFrame):
     # permissions 기본 템플릿(직업명에 따라 자동 부여는 “초기값”만)
     def default_perms(job_name: str):
         job_name = str(job_name or "")
-        perms = ["schedule_read"]
+        perms = []
         if "은행" in job_name:
-            perms += ["bank_read", "bank_write", "schedule_bank_write"]
+            perms += ["bank_read", "bank_write"]
         if "통계" in job_name:
             perms += ["stats_write"]
         if "환경" in job_name:
             perms += ["schedule_env_write"]
         if "국세" in job_name or "세무" in job_name:
-            perms += ["treasury_read", "treasury_write", "schedule_treasury_write"]
+            perms += ["treasury_read", "treasury_write"]
         if "대통령" in job_name or "장관" in job_name:
             perms += ["treasury_read"]
         return list(sorted(set(perms)))
@@ -4998,7 +4998,7 @@ my_perms = get_my_permissions(my_student_id, is_admin=is_admin)
 # (관리자) 학급 시스템 탭 + (학생) 접근 가능한 탭만
 # =========================
 ALL_TABS = [
-    "🏦 내 통장",
+    "💰보상/벌금",
     "🔎 개별조회",
     "💼 직업/월급",
     "🏛️ 국세청(국고)",
@@ -5017,7 +5017,7 @@ def tab_visible(tab_name: str):
         return True
 
     # 학생 기본 탭(항상 표시)
-    if t in ("🏦 내 통장", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🍀 복권"):
+    if tab_name in ("💰보상/벌금", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🍀 복권"):
         return True
 
     # ✅ 학생에게 '탭 권한(tab::<탭이름>)'이 부여된 경우 표시
@@ -5035,14 +5035,10 @@ def tab_visible(tab_name: str):
         return can(my_perms, "bank_read") or can(my_perms, "bank_write")
     if tab_name == "💼 직업/월급":
         return can(my_perms, "jobs_write")
-    if tab_name == "🗓️ 일정":
-        return can(my_perms, "schedule_write") or can(my_perms, "schedule_read")
 
     # 계정 정보/활성화는 학생에게 기본 숨김(권한 관리 UI가 있어서)
     if tab_name == "👥 계정 정보/활성화":
         return False
-
-    return False
 
     return False
 
@@ -5053,9 +5049,7 @@ def tab_visible(tab_name: str):
 # -------------------------
 if is_admin:
     tabs = [t for t in ALL_TABS if tab_visible(t)]
-    # ✅ 관리자 탭에서만 '🏦 내 통장' 탭 이름을 변경(학생 탭에는 영향 없음)
-    tabs_display = [("💰보상/벌금" if t == "🏦 내 통장" else t) for t in tabs]
-    tab_objs = st.tabs(tabs_display)
+    tab_objs = st.tabs(tabs)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
     # ✅ 투자 탭 노출 여부(계정 정보/활성화에서 '투자활성화' 꺼진 학생은 숨김)
@@ -5095,8 +5089,8 @@ else:
             return
         extra_admin_tabs.append((label, key_internal))
 
-    if has_admin_feature_access(my_perms, "🏦 내 통장", is_admin=False):
-        _append_extra_tab("💰보상/벌금(관리자)", "admin::🏦 내 통장")
+    if has_admin_feature_access(my_perms, "💰보상/벌금", is_admin=False):
+        _append_extra_tab("💰보상/벌금(관리자)", "admin::💰보상/벌금")
 
     if has_admin_feature_access(my_perms, "🏦 은행(적금)", is_admin=False):
         _append_extra_tab("🏦 은행(적금)(관리자)", "admin::🏦 은행(적금)")
@@ -5109,7 +5103,7 @@ else:
         if t in ("👥 계정 정보/활성화",):
             continue
         # 이미 기본 탭(거래/적금/투자)으로 구현된 것들은 제외
-        if t in ("🏦 내 통장", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🍀 복권"):
+        if t in ("💰보상/벌금", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🍀 복권"):
             continue
         if tab_visible(t):
             _append_extra_tab(t, t)  # (표시라벨, 내부키)
@@ -5129,7 +5123,7 @@ else:
 
     # 기본 탭(내부키는 기존 로직 재사용)
     idx = 0
-    tab_map["🏦 내 통장"] = tab_objs[idx]; idx += 1
+    tab_map["💰보상/벌금"] = tab_objs[idx]; idx += 1
     tab_map["🏦 은행(적금)"] = tab_objs[idx]; idx += 1
     tab_map["📊 통계/신용"] = tab_objs[idx]; idx += 1
     if inv_ok:
@@ -5231,7 +5225,7 @@ def _calc_credit_score_for_student(student_id: str):
 
 
 # =========================
-# 1) 🏦 내 통장 (기존 사용자 화면 거의 그대로)
+# 1) 💰보상/벌금 (기존 사용자 화면 거의 그대로)
 # =========================
 def render_tx_table(df_tx: pd.DataFrame):
     if df_tx is None or df_tx.empty:
@@ -5288,12 +5282,11 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
 
 
 # =========================
-# 🏦 내 통장 탭
+# 💰보상/벌금 탭
 # =========================
-if "🏦 내 통장" in tabs:
-    with tab_map["🏦 내 통장"]:
-        trade_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::🏦 내 통장)에서만 표시
-        if trade_admin_ok:
+if "💰보상/벌금" in tabs:
+    with tab_map["💰보상/벌금"]:
+        trade_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::💰보상/벌금)에서만 표시
 
             # ✅ (보상/벌금) 내부 작은 탭
             sub_tab_all, sub_tab_personal = st.tabs(["전체", "개인"])
@@ -6233,10 +6226,10 @@ if "🏦 내 통장" in tabs:
 # =========================
 
 # =========================
-# (학생) 💰보상/벌금(관리자) — 별도 탭 (admin::🏦 내 통장)
+# (학생) 💰보상/벌금(관리자) — 별도 탭 (admin::💰보상/벌금)
 # =========================
-if "admin::🏦 내 통장" in tabs:
-    with tab_map["admin::🏦 내 통장"]:
+if "admin::💰보상/벌금" in tabs:
+    with tab_map["admin::💰보상/벌금"]:
         st.subheader("💰보상/벌금 부여")
         if is_admin:
             st.info("관리자 모드에서는 상단 '💰보상/벌금' 탭에서 사용합니다.")
@@ -8902,7 +8895,7 @@ if "👥 계정 정보/활성화" in tabs:
         #
         # 1) "tab::<탭이름>"  : 학생에게 '관리자 탭' 자체를 추가로 노출(기본 탭이 아닌 것들)
         # 2) "admin::<탭이름>": 이미 학생에게 기본으로 보이는 탭 안에서 '관리자 기능(관리 UI)'을 열어줌
-        #    - 💰보상/벌금(관리자)  -> admin::🏦 내 통장
+        #    - 💰보상/벌금(관리자)  -> admin::💰보상/벌금
         #    - 🏦 은행(적금)(관리자)      -> admin::🏦 은행(적금)
         #    - 📈 투자(관리자)            -> admin::📈 투자
         # -------------------------------------------------
@@ -8912,13 +8905,13 @@ if "👥 계정 정보/활성화" in tabs:
         # ✅ 부여 가능한 항목(탭/관리자기능)
         # - (관리자기능) 항목은 학생에게 기본으로 보이는 탭 안에서 관리자 UI를 열어주는 용도입니다.
         GRANT_OPTIONS = [
-            ("💰보상/벌금(관리자)", ("admin", "🏦 내 통장")),
+            ("💰보상/벌금(관리자)", ("admin", "💰보상/벌금")),
             ("🏦 은행(적금)(관리자)", ("admin", "🏦 은행(적금)")),
             ("📈 투자(관리자)", ("admin", "📈 투자")),
         ] + [
             (t, ("tab", t))
             for t in ALL_TABS
-            if t not in ("👥 계정 정보/활성화", "🏦 내 통장", "🏦 은행(적금)", "📈 투자")
+            if t not in ("👥 계정 정보/활성화", "💰보상/벌금", "🏦 은행(적금)", "📈 투자")
         ]
 
         # ✅ 탭별로 함께 부여할 기능 권한(조작 가능하게)
@@ -8928,7 +8921,6 @@ if "👥 계정 정보/활성화" in tabs:
             "💳 신용등급": ["credit_write"],
             "💼 직업/월급": ["jobs_write"],
             "🏦 은행(적금)": ["bank_read", "bank_write"],
-            "🗓️ 일정": ["schedule_read", "schedule_write"],
         }
 
         # ✅ 학생 목록(활성 학생)
@@ -9077,7 +9069,7 @@ if "👥 계정 정보/활성화" in tabs:
             # 표시용(관리자기능은 라벨을 보기 좋게 바꿈)
             admin_disp = []
             for t in admin_tabs:
-                if t == "🏦 내 통장":
+                if t == "💰보상/벌금":
                     admin_disp.append("💰보상/벌금(관리자)")
                 elif t == "🏦 은행(적금)":
                     admin_disp.append("🏦 은행(적금)(관리자)")
@@ -12858,43 +12850,6 @@ if "📊 통계/신용" in tabs and (not is_admin):
                         f"<div style='text-align:center; font-weight:900;'>{sc}점/{gr}등급</div>",
                         unsafe_allow_html=True,
                     )
-
-
-# =========================
-# 10) 🗓️ 일정 (권한별 수정)
-# =========================
-def add_schedule(area: str, d: date, title: str, owner_roles: list[str], created_by: str):
-    db.collection("schedule_items").document().set(
-        {
-            "area": area,
-            "date": d.isoformat(),
-            "title": title,
-            "owner_role_ids": owner_roles,
-            "created_by": created_by,
-            "created_at": firestore.SERVER_TIMESTAMP,
-        }
-    )
-    return {"ok": True}
-
-def list_schedule(limit=200):
-    q = db.collection("schedule_items").order_by("date", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
-    rows = []
-    for d in q:
-        x = d.to_dict() or {}
-        rows.append(x)
-    return rows
-
-def can_edit_schedule(area: str, perms: set) -> bool:
-    if "admin_all" in perms:
-        return True
-    if area == "bank":
-        return "schedule_bank_write" in perms
-    if area == "treasury":
-        return "schedule_treasury_write" in perms
-    if area == "env":
-        return "schedule_env_write" in perms
-    return False
-
 
 # -------------------------
 # 🎯 목표 저금 (학생 개별로그인 전용 탭)
