@@ -240,38 +240,30 @@ div[role="radiogroup"] > label {
    ✅ 라디오 3개(O, X, △) 선택 색상
    =============================== */
 
-div[role="radiogroup"] label:has(input[value="O"]:checked),
-div[role="radiogroup"] label:has(input[value="X"]:checked),
-div[role="radiogroup"] label:has(input[value="△"]:checked) {
+div[role="radiogroup"] label:has(input:checked) {
     background-color: #e5e7eb !important;
     border-color: #9ca3af !important;
 }
 
-div[role="radiogroup"] label:has(input[value="O"]:checked) svg,
-div[role="radiogroup"] label:has(input[value="X"]:checked) svg,
-div[role="radiogroup"] label:has(input[value="△"]:checked) svg {
+div[role="radiogroup"] label:has(input:checked) svg {
     display: none !important;
 }
 
-div[role="radiogroup"] label:has(input[value="O"]:checked) p,
-div[role="radiogroup"] label:has(input[value="X"]:checked) p,
-div[role="radiogroup"] label:has(input[value="△"]:checked) p,
-div[role="radiogroup"] label:has(input[value="O"]:checked) span,
-div[role="radiogroup"] label:has(input[value="X"]:checked) span,
-div[role="radiogroup"] label:has(input[value="△"]:checked) span {
+div[role="radiogroup"] label:has(input:checked) p,
+div[role="radiogroup"] label:has(input:checked) span {
     color: #fff !important;
 }
 
 /* 1=O */
-div[role="radiogroup"] > label:has(input[value="O"]:checked),
-div[role="radiogroup"] > div label:has(input[value="O"]:checked) {
+div[role="radiogroup"] > label:nth-of-type(1):has(input:checked),
+div[role="radiogroup"] > div:nth-of-type(1) label:has(input:checked) {
     background-color: #10b981 !important;
     border-color: #059669 !important;
 }
 
 /* 2=X */
-div[role="radiogroup"] > label:has(input[value="△"]:checked),
-div[role="radiogroup"] > div label:has(input[value="△"]:checked) {
+div[role="radiogroup"] > label:nth-of-type(2):has(input:checked),
+div[role="radiogroup"] > div:nth-of-type(2) label:has(input:checked) {
     background-color: #ef4444 !important;
     border-color: #dc2626 !important;
 }
@@ -5194,9 +5186,11 @@ def render_tx_table(df_tx: pd.DataFrame):
             "balance_after": "총액",
         }
     )
-    # ✅ 모바일에서 st.dataframe이 열 순서를 카드형으로 재배치하는 경우가 있어
-    #    st.table로 고정 렌더링(내역→입금→출금→총액→날짜-시간 순)합니다.
-    st.table(view[["내역", "입금", "출금", "총액", "날짜-시간"]])
+    st.dataframe(
+        view[["내역", "입금", "출금", "총액", "날짜-시간"]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 def refresh_account_data_light(name: str, pin: str, force: bool = False):
     now = datetime.now(KST)
