@@ -290,6 +290,49 @@ div[role="radiogroup"] > label {
     margin-bottom: 0 !important;
 }
 
+/* ===============================
+   ✅ 라디오 3개(O, X, △) 선택 색상
+   =============================== */
+
+div[role="radiogroup"] label:has(input:checked) {
+    background-color: #e5e7eb !important;
+    border-color: #9ca3af !important;
+}
+
+div[role="radiogroup"] label:has(input:checked) svg {
+    display: none !important;
+}
+
+div[role="radiogroup"] label:has(input:checked) p,
+div[role="radiogroup"] label:has(input:checked) span {
+    color: #fff !important;
+}
+
+/* 1=O */
+div[role="radiogroup"] > label:nth-of-type(1):has(input:checked),
+div[role="radiogroup"] > div:nth-of-type(1) label:has(input:checked) {
+    background-color: #10b981 !important;
+    border-color: #059669 !important;
+}
+
+/* 2=X */
+div[role="radiogroup"] > label:nth-of-type(2):has(input:checked),
+div[role="radiogroup"] > div:nth-of-type(2) label:has(input:checked) {
+    background-color: #ef4444 !important;
+    border-color: #dc2626 !important;
+}
+
+/* 3=△ */
+div[role="radiogroup"] > label:nth-of-type(3):has(input:checked),
+div[role="radiogroup"] > div:nth-of-type(3) label:has(input:checked) {
+    background-color: #3b82f6 !important;
+    border-color: #2563eb !important;
+}
+
+div[role="radiogroup"] *:focus {
+    box-shadow: none !important;
+    outline: none !important;
+}
 
     /* =========================
        💼 직업/월급 탭: 학생수(+/-), 순서(⬆️⬇️) 버튼(원형) 안정화 - 최종
