@@ -4400,6 +4400,99 @@ def api_list_lottery_admin_ledger(limit=200):
         )
     return {"ok": True, "rows": rows}
 
+
+def _invalidate_lottery_view_cache():
+    for k in (
+        "lot_open_round_cache",
+        "lot_open_round_cache_ts",
+        "lot_user_hist_cache",
+        "lot_user_hist_cache_ts",
+        "lot_user_hist_cache_sid",
+    ):
+        if k in st.session_state:
+            del st.session_state[k]
+
+
+def _get_open_lottery_round_cached(max_age_sec: int = 8) -> dict:
+    now_ts = datetime.now(timezone.utc).timestamp()
+    cached = st.session_state.get("lot_open_round_cache")
+    cached_ts = float(st.session_state.get("lot_open_round_cache_ts", 0.0) or 0.0)
+
+    if cached is not None and (now_ts - cached_ts) <= float(max_age_sec):
+        return dict(cached)
+
+    fresh = api_get_open_lottery_round()
+    st.session_state["lot_open_round_cache"] = dict(fresh)
+    st.session_state["lot_open_round_cache_ts"] = float(now_ts)
+    return fresh
+
+
+def _get_lottery_user_history_cached(student_id: str, max_age_sec: int = 20) -> list[dict]:
+    sid = str(student_id or "")
+    if not sid:
+        return []
+
+    now_ts = datetime.now(timezone.utc).timestamp()
+    cached_sid = str(st.session_state.get("lot_user_hist_cache_sid", "") or "")
+    cached_ts = float(st.session_state.get("lot_user_hist_cache_ts", 0.0) or 0.0)
+    cached_rows = st.session_state.get("lot_user_hist_cache")
+
+    if (
+        cached_rows is not None
+        and cached_sid == sid
+        and (now_ts - cached_ts) <= float(max_age_sec)
+    ):
+        return [dict(r) for r in (cached_rows or [])]
+
+    hist_rows = []
+    try:
+        q = (
+            db.collection("lottery_entries")
+            .where(filter=FieldFilter("student_id", "==", sid))
+            .order_by("submitted_at", direction=firestore.Query.DESCENDING)
+            .stream()
+        )
+        for d in q:
+            x = d.to_dict() or {}
+            hist_rows.append(
+                {
+                    "회차": int(x.get("round_no", 0) or 0),
+                    "번호": int(x.get("student_no", 0) or 0),
+                    "이름": str(x.get("student_name", "") or ""),
+                    "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
+                    "_submitted_at": x.get("submitted_at"),
+                }
+            )
+    except FailedPrecondition:
+        # 복합 인덱스 미생성 환경 대응: 정렬 없는 조회 후 앱에서 submitted_at 역순 정렬
+        q = db.collection("lottery_entries").where(filter=FieldFilter("student_id", "==", sid)).stream()
+        for d in q:
+            x = d.to_dict() or {}
+            hist_rows.append(
+                {
+                    "회차": int(x.get("round_no", 0) or 0),
+                    "번호": int(x.get("student_no", 0) or 0),
+                    "이름": str(x.get("student_name", "") or ""),
+                    "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
+                    "_submitted_at": x.get("submitted_at"),
+                }
+            )
+
+    if hist_rows:
+        hist_rows.sort(
+            key=lambda r: (
+                _to_utc_datetime(r.get("_submitted_at")).timestamp() if r.get("_submitted_at") else float("-inf")
+            ),
+            reverse=True,
+        )
+        for r in hist_rows:
+            r.pop("_submitted_at", None)
+
+    st.session_state["lot_user_hist_cache_sid"] = sid
+    st.session_state["lot_user_hist_cache"] = [dict(r) for r in hist_rows]
+    st.session_state["lot_user_hist_cache_ts"] = float(now_ts)
+    return hist_rows
+
 # =========================
 # 학급 확장: Roles/Permissions
 # =========================
@@ -12242,7 +12335,7 @@ if "🏷️ 경매" in tabs:
 if "🍀 복권" in tabs:
     with tab_map["🍀 복권"]:
 
-        open_lot_res = api_get_open_lottery_round()
+        open_lot_res = _get_open_lottery_round_cached(max_age_sec=8)
         open_round = (open_lot_res.get("round", {}) or {}) if open_lot_res.get("ok") else {}
 
         if is_admin:
@@ -12490,56 +12583,14 @@ if "🍀 복권" in tabs:
                             if res.get("ok"):
                                 toast("복권 구매 완료! 통장에서 금액이 차감되었습니다.", icon="✅")
                                 st.session_state[key_pick] = []
+                                _invalidate_lottery_view_cache()
                                 st.rerun()
                             else:
                                 st.error(res.get("error", "복권 구매 실패"))
 
             st.markdown("### 📜 복권 구매 내역")
             my_sid = str(my_student_id or "")
-            hist_rows = []
-            if my_sid:
-                try:
-                    q = (
-                        db.collection("lottery_entries")
-                        .where(filter=FieldFilter("student_id", "==", my_sid))
-                        .order_by("submitted_at", direction=firestore.Query.DESCENDING)
-                        .stream()
-                    )
-                    for d in q:
-                        x = d.to_dict() or {}
-                        hist_rows.append(
-                            {
-                                "회차": int(x.get("round_no", 0) or 0),
-                                "번호": int(x.get("student_no", 0) or 0),
-                                "이름": str(x.get("student_name", "") or ""),
-                                "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
-                                "_submitted_at": x.get("submitted_at"),
-                            }
-                        )
-                except FailedPrecondition:
-                    # 복합 인덱스 미생성 환경 대응: 정렬 없는 조회 후 앱에서 submitted_at 역순 정렬
-                    q = db.collection("lottery_entries").where(filter=FieldFilter("student_id", "==", my_sid)).stream()
-                    for d in q:
-                        x = d.to_dict() or {}
-                        hist_rows.append(
-                            {
-                                "회차": int(x.get("round_no", 0) or 0),
-                                "번호": int(x.get("student_no", 0) or 0),
-                                "이름": str(x.get("student_name", "") or ""),
-                                "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
-                                "_submitted_at": x.get("submitted_at"),
-                            }
-                        )
-
-                if hist_rows:
-                    hist_rows.sort(
-                        key=lambda r: (
-                            _to_utc_datetime(r.get("_submitted_at")).timestamp() if r.get("_submitted_at") else float("-inf")
-                        ),
-                        reverse=True,
-                    )
-                    for r in hist_rows:
-                        r.pop("_submitted_at", None)
+            hist_rows = _get_lottery_user_history_cached(my_sid, max_age_sec=20)
             if hist_rows:
                 st.dataframe(pd.DataFrame(hist_rows), use_container_width=True, hide_index=True)
             else:
