@@ -13086,7 +13086,7 @@ if "🍀 복권" in tabs:
                 if hist_rows:
                     st.dataframe(pd.DataFrame(hist_rows), use_container_width=True, hide_index=True)
                 else:
-                    st.info("아직 복권 구매 내역이 없습니다.")
+                    st.info("복권 구매 내역이 없습니다.")
                     
 # =========================
 # 📊 통계/신용 (학생 전용 · 읽기 전용)
