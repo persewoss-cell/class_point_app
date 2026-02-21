@@ -3,6 +3,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import altair as alt
 from io import BytesIO
+import random
 
 from datetime import datetime, timezone, timedelta, date
 
@@ -68,6 +69,12 @@ st.markdown(
         min-width: 14px !important;
         min-height: 14px !important;
     }
+
+    /* 원형 버튼을 감싸는 컨테이너 여백 조정 */
+    div[role="radiogroup"] > label [data-testid="stNumericInput-StepDown"] {
+        display: flex !important;
+        align-items: center !important;
+    }
     
     /* 라벨 내부 마진 초기화로 쏠림 방지 */
     div[role="radiogroup"] label > div:first-child {
@@ -81,7 +88,53 @@ st.markdown(
         margin: 0 !important;
         line-height: 1 !important;
     }
+
+    div[role="radiogroup"] [data-testid="stWidgetLabel"] {
+        margin-bottom: 0 !important;
+    }
+/* --- 기존 63라인 부근의 스타일을 아래 내용으로 교체 또는 추가 --- */
+
+    /* 1. 선택 시 나타나는 중앙의 빨간색 점(svg) 아예 안 보이게 제거 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input:checked) svg {
+        display: none !important;
+    }
+
+    /* 2. 통계청 전용: O, X, △ 값에 따라 배경색을 선명하게 꽉 채우기 */
     
+    /* [O] 선택 시: 선명한 초록색 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="O"]:checked) {
+        background-color: #10b981 !important;
+        border-color: #059669 !important;
+        color: white !important;
+    }
+
+    /* [X] 선택 시: 선명한 빨간색 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="X"]:checked) {
+        background-color: #ef4444 !important;
+        border-color: #dc2626 !important;
+        color: white !important;
+    }
+
+    /* [△] 선택 시: 선명한 파란색 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) label:has(input[value="△"]:checked) {
+        background-color: #3b82f6 !important;
+        border-color: #2563eb !important;
+        color: white !important;
+    }
+
+    /* 3. 클릭 시 주변에 생기는 빨간색 잔상(포커스 링) 제거 */
+    div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
+        box-shadow: none !important;
+        outline: none !important;
+    }
+
+    /* 🎟️ 복권 구매(사용자 모드) 숫자 입력칸 게임별 배경색 */
+    input[aria-label^="1게임 "] { background-color: #f6ddc7 !important; }
+    input[aria-label^="2게임 "] { background-color: #efe5a6 !important; }
+    input[aria-label^="3게임 "] { background-color: #cfe3c0 !important; }
+    input[aria-label^="4게임 "] { background-color: #d3ddf0 !important; }
+    input[aria-label^="5게임 "] { background-color: #e3d8ef !important; }
+
 /* ✅ DataFrame/DataEditor: 바깥 네모 박스(테두리/여백)만 줄이기 */
 [data-testid="stDataFrame"]{
     overflow-x: auto;
@@ -118,13 +171,10 @@ st.markdown(
         white-space: normal;
         word-break: keep-all;
     }
-    
-    @media (max-width: 768px) {
-        .app-title { 
-            font-size: clamp(2.05rem, 7.9vw, 3.3rem); 
-        }
+    @media (max-768px) {
+        .app-title { font-size: clamp(2.05rem, 7.9vw, 3.3rem); }
     }
-   
+
     /* ✅ 전체적으로 줄간격 조금 촘촘하게 */
     p, .stMarkdown { margin-bottom: 0.35rem !important; }
     .stCaptionContainer { margin-top: 0.15rem !important; }
@@ -189,6 +239,18 @@ div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
 div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
   div[role="radiogroup"] > label:nth-of-type(4):has(input:checked) p {
     color: #fff !important;
+}
+
+/* ✅ 선택 시 가운데 빨간 점(svg) 숨기기(원하면 유지) */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"])
+  label:has(input:checked) svg {
+    display: none !important;
+}
+
+/* ✅ 포커스 링 제거 */
+div[data-testid="stRadio"]:has(input[id*="stat_cellpick_"]) *:focus {
+    box-shadow: none !important;
+    outline: none !important;
 }
 
     /* ✅ 버튼(특히 화살표) 작게 + 가운데 */
@@ -678,6 +740,57 @@ def savings_active_total(savings_list: list[dict]) -> int:
         if str(s.get("status", "")).lower().strip() in ("active", "running")
     )
 
+@st.cache_data(ttl=20, show_spinner=False)
+def _list_active_students_full_cached() -> list[dict]:
+    """활성 학생 전체를 1회 조회 후 재사용(리렌더/버튼 rerun read 절감)."""
+    docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+    rows = []
+    for d in docs:
+        x = d.to_dict() or {}
+        rows.append({"student_id": d.id, **x})
+    return rows
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _get_invest_products_map_cached() -> dict[str, tuple[str, float]]:
+    """invest_products 전체 스냅샷 캐시(학생별 요약 계산 시 중복 stream 방지)."""
+    prod_map = {}
+    for d in db.collection(INV_PROD_COL).stream():
+        x = d.to_dict() or {}
+        pid = str(x.get("product_id", d.id) or d.id)
+        pname = (
+            str(x.get("name", "") or "").strip()
+            or str(x.get("label", "") or "").strip()
+            or str(x.get("title", "") or "").strip()
+            or str(x.get("subject", "") or "").strip()
+            or pid
+        )
+        cur_price = float(x.get("current_price", 0.0) or 0.0)
+        prod_map[pid] = (pname, cur_price)
+    return prod_map
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _get_role_lookup_cached() -> tuple[dict[str, str], dict[str, list[str]]]:
+    """roles + job_salary를 캐시해 학생별 직업명 조회 read를 최소화."""
+    role_by_id = {}
+    for d in db.collection("roles").stream():
+        x = d.to_dict() or {}
+        role_by_id[d.id] = str(x.get("role_name") or x.get("name") or d.id).strip() or d.id
+
+    jobs_by_student = {}
+    for jdoc in db.collection("job_salary").stream():
+        jd = jdoc.to_dict() or {}
+        jname = str(jd.get("job") or jd.get("role_name") or "").strip()
+        if not jname:
+            continue
+        for sid in [str(x) for x in (jd.get("assigned_ids", []) or [])]:
+            if sid not in jobs_by_student:
+                jobs_by_student[sid] = []
+            if jname not in jobs_by_student[sid]:
+                jobs_by_student[sid].append(jname)
+    return role_by_id, jobs_by_student
+
 # =========================
 # (관리자 개별조회용) 요약 정보 helpers
 # - 학생 번호(no) 기준 정렬 + 접힘/펼침 한 줄 요약
@@ -711,24 +824,17 @@ def _get_role_name_by_student_id(student_id: str) -> str:
 
             # ✅ role_id가 있으면 roles 컬렉션에서 이름 조회
             if rid:
-                rdoc = db.collection("roles").document(rid).get()
-                if rdoc.exists:
-                    r = rdoc.to_dict() or {}
-                    nm = str(r.get("role_name") or r.get("name") or rid).strip()
-                    return nm if nm else rid
+                role_by_id, _ = _get_role_lookup_cached()
+                nm = str(role_by_id.get(rid, rid)).strip()
+                if nm:
+                    return nm
 
                 # roles 문서가 없으면 role_id 자체를 직업명으로 보여주기
                 return rid
 
         # (2) students에 없으면 job_salary에서 assigned_ids로 찾기 (직업/월급 탭 방식)
-        jobs = []
-        for jdoc in db.collection("job_salary").stream():
-            jd = jdoc.to_dict() or {}
-            assigned = [str(x) for x in (jd.get("assigned_ids", []) or [])]
-            if sid in assigned:
-                jname = str(jd.get("job") or jd.get("role_name") or "").strip()
-                if jname:
-                    jobs.append(jname)
+        _, jobs_by_student = _get_role_lookup_cached()
+        jobs = list(jobs_by_student.get(sid, []))
 
         if jobs:
             # 중복 제거(순서 유지)
@@ -755,20 +861,7 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
         sid = str(student_id)
 
         # 1) 종목 정보 맵 (id -> (name, current_price))
-        prod_map = {}
-        for d in db.collection(INV_PROD_COL).stream():
-            x = d.to_dict() or {}
-            pid = str(x.get("product_id", d.id) or d.id)
-
-            pname = (
-                str(x.get("name", "") or "").strip()
-                or str(x.get("label", "") or "").strip()
-                or str(x.get("title", "") or "").strip()
-                or str(x.get("subject", "") or "").strip()
-                or pid
-            )
-            cur_price = float(x.get("current_price", 0.0) or 0.0)
-            prod_map[pid] = (pname, cur_price)
+        prod_map = _get_invest_products_map_cached()
 
         # 2) 보유 장부(미환매) → 종목별 현재가치 합산
         q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
@@ -828,18 +921,7 @@ def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
         sid = str(student_id)
 
         # 1) 종목 정보 맵 (id -> name)
-        prod_name = {}
-        for d in db.collection(INV_PROD_COL).stream():
-            x = d.to_dict() or {}
-            pid = str(x.get("product_id", d.id) or d.id)
-            pname = (
-                str(x.get("name", "") or "").strip()
-                or str(x.get("label", "") or "").strip()
-                or str(x.get("title", "") or "").strip()
-                or str(x.get("subject", "") or "").strip()
-                or pid
-            )
-            prod_name[pid] = pname
+        prod_name = {k: v[0] for k, v in _get_invest_products_map_cached().items()}
 
         # 2) 보유 장부(미환매) → 종목별 원금 합산
         q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
@@ -909,6 +991,7 @@ def _score_to_grade(score: int) -> int:
         return 9
     return 10
 
+@st.cache_data(ttl=60, show_spinner=False)
 def _get_credit_cfg():
     ref = db.collection("config").document("credit_scoring")
     snap = ref.get()
@@ -1194,18 +1277,58 @@ def fs_auth_student(name: str, pin: str):
         return None
     return doc
 
+
+def _set_login_student_context_from_doc(doc):
+    """로그인 시점 1회만 student 스냅샷 저장(렌더링 중 재인증 read 방지)."""
+    if not doc:
+        st.session_state["login_student_ctx"] = {}
+        return
+    data = doc.to_dict() or {}
+    st.session_state["login_student_ctx"] = {
+        "student_id": str(doc.id),
+        "name": str(data.get("name", "") or ""),
+        "balance": int(data.get("balance", 0) or 0),
+        "credit_grade": int(data.get("credit_grade", 0) or 0),
+        "role_id": str(data.get("role_id", "") or ""),
+        "extra_permissions": list(data.get("extra_permissions", []) or []),
+    }
+
+
+def _get_login_student_context() -> dict:
+    return dict(st.session_state.get("login_student_ctx", {}) or {})
+
+
+def _get_my_permissions_from_ctx(student_ctx: dict, is_admin: bool):
+    if is_admin:
+        return {"admin_all"}
+    if not student_ctx:
+        return set()
+
+    perms = set()
+    role_id = str(student_ctx.get("role_id", "") or "")
+    if role_id:
+        # 역할 문서는 캐시 함수 사용(렌더링 중 직접 get 방지)
+        role_rows = api_list_roles_cached().get("roles", [])
+        for r in role_rows:
+            if str(r.get("role_id", "")) == role_id:
+                perms |= set(list(r.get("permissions", []) or []))
+                break
+
+    extra = student_ctx.get("extra_permissions", []) or []
+    if isinstance(extra, list):
+        perms |= set([str(x) for x in extra if str(x).strip()])
+    return perms
+
 # =========================
 # Cached lists
 # =========================
 @st.cache_data(ttl=30, show_spinner=False)
 def api_list_accounts_cached():
-    docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
     items = []
-    for d in docs:
-        s = d.to_dict() or {}
+    for s in _list_active_students_full_cached():
         nm = s.get("name", "")
         if nm:
-            items.append({"student_id": d.id, "no": int(s.get("no", 0) or 0), "name": nm, "balance": int(s.get("balance", 0) or 0)})
+            items.append({"student_id": s.get("student_id", ""), "no": int(s.get("no", 0) or 0), "name": nm, "balance": int(s.get("balance", 0) or 0)})
     items.sort(key=lambda x: x["name"])
     return {"ok": True, "accounts": items}
 
@@ -3136,14 +3259,18 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
 # =========================
 # Templates (공용) - 너 코드 유지
 # =========================
-tpl_res = api_list_templates_cached()
-TEMPLATES = tpl_res.get("templates", []) if tpl_res.get("ok") else []
+def _get_trade_templates_state():
+    """전역 실행 시 Firestore read 방지: 템플릿은 함수 내부에서만 조회."""
+    tpl_res = api_list_templates_cached()
+    templates = tpl_res.get("templates", []) if tpl_res.get("ok") else []
+    return {
+        "templates": templates,
+        "by_display": {template_display_for_trade(t): t for t in templates},
+    }
 
 def template_display_for_trade(t):
     kind_kr = "입금" if t["kind"] == "deposit" else "출금"
     return f"{t['label']}[{kind_kr} {int(t['amount'])}]"
-
-TEMPLATE_BY_DISPLAY = {template_display_for_trade(t): t for t in TEMPLATES}
 
 # =========================
 # ✅ 공용: 거래 입력 UI (너 코드 그대로)
@@ -3678,6 +3805,7 @@ def api_list_auction_bids(round_id: str):
             {
                 "bid_id": d.id,
                 "round_no": int(r.get("round_no", 0) or 0),
+                "student_id": str(r.get("student_id", "") or ""),
                 "student_no": int(r.get("student_no", 0) or 0),
                 "student_name": str(r.get("student_name", "") or ""),
                 "amount": int(r.get("amount", 0) or 0),
@@ -3721,7 +3849,7 @@ def api_get_latest_closed_auction_round():
             
     return {"ok": False, "error": "마감된 경매가 없습니다."}
 
-def api_apply_auction_ledger(admin_pin: str, round_id: str):
+def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: bool = False):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
 
@@ -3742,14 +3870,74 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str):
 
     bid_res = api_list_auction_bids(round_id)
     bids = list(bid_res.get("rows", []) or [])
-    total = int(sum(int(x.get("amount", 0) or 0) for x in bids))
     participants = int(len(bids))
+    if not bids:
+        return {"ok": False, "error": "입찰 데이터가 없습니다."}
 
-    tre_memo = f"경매 {int(r.get('round_no', 0) or 0)}회 세입"
-    tre_res = api_add_treasury_tx(ADMIN_PIN, tre_memo, income=total, expense=0, actor="auction")
+    total = int(sum(int(x.get("amount", 0) or 0) for x in bids))
+    fee_total = 0
+
+    if refund_non_winners:
+        winner = bids[0]
+        winner_amount = int(winner.get("amount", 0) or 0)
+        winner_name = str(winner.get("student_name", "") or "")
+        
+        for bid in bids[1:]:
+            refund_amt = int(bid.get("amount", 0) or 0)
+            sid = str(bid.get("student_id", "") or "").strip()
+            if refund_amt <= 0 or not sid:
+                continue
+
+            fee_amt = int(refund_amt // 10)
+            payback_amt = int(refund_amt - fee_amt)
+            fee_total += int(fee_amt)
+            if payback_amt <= 0:
+                continue
+            
+            s_ref = db.collection("students").document(sid)
+            s_snap = s_ref.get()
+            if not s_snap.exists:
+                continue
+            bal = int((s_snap.to_dict() or {}).get("balance", 0) or 0)
+            new_bal = int(bal + payback_amt)
+            s_ref.update({"balance": new_bal})
+            db.collection("transactions").document().set(
+                {
+                    "student_id": sid,
+                    "type": "deposit",
+                    "amount": int(payback_amt),
+                    "balance_after": int(new_bal),
+                    "memo": f"[경매 {int(r.get('round_no', 0) or 0):02d}회] 낙찰 실패 입찰금 반환(수수료 10% 차감)",
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                }
+            )
+
+        tre_total = int(max(winner_amount, 0))
+        tre_memo = (
+            f"경매 {int(r.get('round_no', 0) or 0)}회 세입(낙찰자만 반영: "
+            f"{winner_name} {winner_amount})"
+        )
+    else:
+        tre_total = int(total)
+        winner_amount = int(bids[0].get("amount", 0) or 0)
+        tre_memo = f"경매 {int(r.get('round_no', 0) or 0)}회 세입"
+
+    tre_res = api_add_treasury_tx(ADMIN_PIN, tre_memo, income=tre_total, expense=0, actor="auction")
     if not tre_res.get("ok"):
         return {"ok": False, "error": f"국고 반영 실패: {tre_res.get('error', 'unknown')}"}
 
+    if refund_non_winners and fee_total > 0:
+        fee_res = api_add_treasury_tx(
+            ADMIN_PIN,
+            "낙잘금 수수료 총액",
+            income=int(fee_total),
+            expense=0,
+            actor="auction",
+        )
+        if not fee_res.get("ok"):
+            return {"ok": False, "error": f"국고 반영 실패: {fee_res.get('error', 'unknown')}"}
+        tre_total += int(fee_total)
+    
     db.collection("auction_admin_ledger").document().set(
         {
             "round_id": round_id,
@@ -3757,25 +3945,35 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str):
             "bid_date": _fmt_auction_dt(r.get("opened_at")),
             "bid_name": str(r.get("bid_name", "") or ""),
             "participants": participants,
-            "total_amount": int(total),
+            "total_bid_amount": int(total),
+            "total_amount": int(tre_total),
+            "refund_non_winners": bool(refund_non_winners),
+            "fee_amount": int(fee_total),
+            "winner_amount": int(winner_amount),
             "created_at": firestore.SERVER_TIMESTAMP,
         }
     )
 
     r_ref.set({"ledger_applied": True, "ledger_applied_at": firestore.SERVER_TIMESTAMP}, merge=True)
-    return {"ok": True, "total": int(total), "participants": participants}
-
+    return {"ok": True, "total": int(tre_total), "participants": participants, "fee_total": int(fee_total)}
+    
 def api_list_auction_admin_ledger(limit=100):
     q = db.collection("auction_admin_ledger").order_by("created_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
+        refund_non_winners = bool(x.get("refund_non_winners", False))
+        winner_amount = int(x.get("winner_amount", 0) or 0)
+        total_bid_amount = int(x.get("total_bid_amount", x.get("total_amount", 0)) or 0)
+        settled_bid_amount = int(winner_amount if refund_non_winners else total_bid_amount)
         rows.append(
             {
                 "입찰번호": int(x.get("round_no", 0) or 0),
                 "입찰기일": str(x.get("bid_date", "") or ""),
                 "입찰 내역": str(x.get("bid_name", "") or ""),
                 "입찰 참가수": int(x.get("participants", 0) or 0),
+                "낙찰금": settled_bid_amount,
+                "낙찰금 수수료 총액": int(x.get("fee_amount", 0) or 0),
                 "총 액수": int(x.get("total_amount", 0) or 0),
             }
         )
@@ -3816,6 +4014,7 @@ def _normalize_lottery_numbers(nums) -> list[int]:
     out = sorted(list(dict.fromkeys(out)))
     return out
 
+@st.cache_data(ttl=5, show_spinner=False)
 def _get_lottery_state() -> dict:
     snap = db.collection("config").document(LOT_STATE_DOC).get()
     if not snap.exists:
@@ -3827,6 +4026,7 @@ def _get_lottery_state() -> dict:
         "status": str(d.get("status", "idle") or "idle"),
     }
 
+@st.cache_data(ttl=5, show_spinner=False)
 def api_get_open_lottery_round() -> dict:
     stt = _get_lottery_state()
     rid = str(stt.get("current_round_id", "") or "")
@@ -3935,6 +4135,8 @@ def api_open_lottery(admin_pin: str, cfg: dict):
 
     try:
         no = int(_do(db.transaction()))
+        _get_lottery_state.clear()
+        api_get_open_lottery_round.clear()
         return {"ok": True, "round_no": no}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -3969,12 +4171,15 @@ def api_close_lottery(admin_pin: str):
 
     try:
         out = _do(db.transaction())
+        _get_lottery_state.clear()
+        api_get_open_lottery_round.clear()
         return {"ok": True, **out}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"복권 마감 실패: {e}"}
 
+@st.cache_data(ttl=5, show_spinner=False)
 def api_list_lottery_entries(round_id: str):
     rid = str(round_id or "").strip()
     if not rid:
@@ -4021,6 +4226,56 @@ def api_list_lottery_entries(round_id: str):
             )
         )
 
+    return {"ok": True, "rows": rows}
+
+
+@st.cache_data(ttl=5, show_spinner=False)
+def api_list_lottery_entries_by_student(student_id: str, round_id: str = ""):
+    sid = str(student_id or "").strip()
+    if not sid:
+        return {"ok": True, "rows": []}
+
+    rid = str(round_id or "").strip()
+    
+    q_ref = db.collection("lottery_entries").where(filter=FieldFilter("student_id", "==", sid))
+    if rid:
+        q_ref = q_ref.where(filter=FieldFilter("round_id", "==", rid))
+    
+    rows = []
+    try:
+        q = q_ref.order_by("submitted_at", direction=firestore.Query.DESCENDING).stream()
+        for d in q:
+            x = d.to_dict() or {}
+            rows.append(
+                {
+                    "회차": int(x.get("round_no", 0) or 0),
+                    "번호": int(x.get("student_no", 0) or 0),
+                    "이름": str(x.get("student_name", "") or ""),
+                    "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
+                    "_submitted_at": x.get("submitted_at"),
+                }
+            )
+    except FailedPrecondition:
+        q = q_ref.stream()
+        for d in q:
+            x = d.to_dict() or {}
+            rows.append(
+                {
+                    "회차": int(x.get("round_no", 0) or 0),
+                    "번호": int(x.get("student_no", 0) or 0),
+                    "이름": str(x.get("student_name", "") or ""),
+                    "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
+                    "_submitted_at": x.get("submitted_at"),
+                }
+            )
+
+    if rows:
+        rows.sort(
+            key=lambda r: _to_utc_datetime(r.get("_submitted_at")).timestamp() if r.get("_submitted_at") else float("-inf"),
+            reverse=True,
+        )
+        for r in rows:
+            r.pop("_submitted_at", None)
     return {"ok": True, "rows": rows}
 
 def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
@@ -4094,11 +4349,189 @@ def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
 
     try:
         nb = int(_do(db.transaction()))
+        api_list_lottery_entries.clear()
+        api_list_lottery_entries_by_student.clear()
+        api_get_open_lottery_round.clear()
         return {"ok": True, "balance": nb}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"복권 구매 실패: {e}"}
+
+def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
+    student_doc = fs_auth_student(name, pin)
+    if not student_doc:
+        return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
+
+    normalized_games = []
+    for g in (games or []):
+        nums = _normalize_lottery_numbers(g)
+        if len(nums) != 4:
+            return {"ok": False, "error": "각 게임은 1~20 숫자 중 중복 없이 4개여야 합니다."}
+        normalized_games.append(nums)
+
+    if not normalized_games:
+        return {"ok": False, "error": "구매할 게임이 없습니다."}
+
+    op = api_get_open_lottery_round()
+    if not op.get("ok"):
+        return {"ok": False, "error": "개시된 복권이 없습니다."}
+    rnd = op.get("round", {}) or {}
+    rid = str(rnd.get("round_id", "") or "")
+    round_no = int(rnd.get("round_no", 0) or 0)
+    price = int(rnd.get("ticket_price", 20) or 20)
+    if price <= 0:
+        return {"ok": False, "error": "복권 가격 설정이 올바르지 않습니다."}
+
+    total_price = int(price * len(normalized_games))
+    student_ref = db.collection("students").document(student_doc.id)
+    round_ref = db.collection("lottery_rounds").document(rid)
+    tx_ref = db.collection("transactions").document()
+
+    @firestore.transactional
+    def _do(tx):
+        r_snap = round_ref.get(transaction=tx)
+        if not r_snap.exists:
+            raise ValueError("복권 회차를 찾지 못했습니다.")
+        r = r_snap.to_dict() or {}
+        if str(r.get("status", "")) != "open":
+            raise ValueError("마감된 복권은 구매할 수 없습니다.")
+
+        s_snap = student_ref.get(transaction=tx)
+        if not s_snap.exists:
+            raise ValueError("학생 계정을 찾지 못했습니다.")
+        s = s_snap.to_dict() or {}
+        bal = int(s.get("balance", 0) or 0)
+        if bal < total_price:
+            raise ValueError("잔액이 부족하여 복권을 구매할 수 없습니다.")
+
+        new_bal = int(bal - total_price)
+        tx.update(student_ref, {"balance": new_bal})
+        tx.set(
+            tx_ref,
+            {
+                "student_id": student_doc.id,
+                "type": "withdraw",
+                "amount": int(-total_price),
+                "balance_after": int(new_bal),
+                "memo": f"복권 {int(round_no)}회 {len(normalized_games)}게임 구매",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+
+        for nums in normalized_games:
+            entry_ref = db.collection("lottery_entries").document()
+            tx.set(
+                entry_ref,
+                {
+                    "round_id": rid,
+                    "round_no": int(round_no),
+                    "student_id": student_doc.id,
+                    "student_no": int(s.get("no", 0) or 0),
+                    "student_name": str(s.get("name", "") or name),
+                    "numbers": nums,
+                    "submitted_at": firestore.SERVER_TIMESTAMP,
+                    "ticket_price": int(price),
+                },
+            )
+        return new_bal
+
+    try:
+        nb = int(_do(db.transaction()))
+        api_list_lottery_entries.clear()
+        api_list_lottery_entries_by_student.clear()
+        api_get_open_lottery_round.clear()
+        return {"ok": True, "balance": nb, "count": len(normalized_games)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"복권 구매 실패: {e}"}
+
+def _generate_admin_lottery_numbers(game_count: int) -> list[list[int]]:
+    games = []
+    for _ in range(max(int(game_count), 0)):
+        nums = sorted(random.sample(range(1, 21), 4))
+        games.append(nums)
+    return games
+
+
+def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_treasury: bool = True):
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    count = int(game_count or 0)
+    if count <= 0:
+        return {"ok": False, "error": "복권 참여 수는 1 이상이어야 합니다."}
+
+    op = api_get_open_lottery_round()
+    if not op.get("ok"):
+        return {"ok": False, "error": "개시된 복권이 없습니다."}
+
+    rnd = op.get("round", {}) or {}
+    rid = str(rnd.get("round_id", "") or "")
+    round_no = int(rnd.get("round_no", 0) or 0)
+    price = int(rnd.get("ticket_price", 20) or 20)
+    if price <= 0:
+        return {"ok": False, "error": "복권 가격 설정이 올바르지 않습니다."}
+
+    numbers_games = _generate_admin_lottery_numbers(count)
+    total_cost = int(max(price, 0) * count)
+
+    round_ref = db.collection("lottery_rounds").document(rid)
+
+    @firestore.transactional
+    def _do(tx):
+        r_snap = round_ref.get(transaction=tx)
+        if not r_snap.exists:
+            raise ValueError("복권 회차를 찾지 못했습니다.")
+        r = r_snap.to_dict() or {}
+        if str(r.get("status", "")) != "open":
+            raise ValueError("마감된 복권은 구매할 수 없습니다.")
+
+        if bool(apply_treasury) and total_cost > 0:
+            _treasury_apply_in_transaction(
+                tx,
+                memo=f"복권 {int(round_no)}회 관리자 참여금",
+                signed_amount=int(-total_cost),
+                actor="lottery_admin",
+            )
+        
+        for nums in numbers_games:
+            entry_ref = db.collection("lottery_entries").document()
+            tx.set(
+                entry_ref,
+                {
+                    "round_id": rid,
+                    "round_no": int(round_no),
+                    "student_id": "",
+                    "student_no": 0,
+                    "student_name": ADMIN_NAME,
+                    "numbers": nums,
+                    "submitted_at": firestore.SERVER_TIMESTAMP,
+                    "ticket_price": int(price),
+                    "is_admin": True,
+                },
+            )
+
+    try:
+        _do(db.transaction())
+        api_get_treasury_state_cached.clear()
+        api_list_treasury_ledger_cached.clear()
+        api_list_lottery_entries.clear()
+        api_list_lottery_entries_by_student.clear()
+        api_get_open_lottery_round.clear()
+        return {
+            "ok": True,
+            "count": count,
+            "numbers": numbers_games,
+            "total_cost": int(total_cost),
+            "treasury_applied": bool(apply_treasury),
+        }
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"관리자 복권 참여 실패: {e}"}
+        
 
 def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
     if not is_admin_pin(admin_pin):
@@ -4205,6 +4638,8 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
         },
         merge=True,
     )
+    api_list_lottery_entries.clear()
+    api_get_open_lottery_round.clear()
     return {"ok": True, "winners": winner_rows}
 
 def api_pay_lottery_prizes(admin_pin: str, round_id: str):
@@ -4251,6 +4686,8 @@ def api_pay_lottery_prizes(admin_pin: str, round_id: str):
         },
         merge=True,
     )
+    api_list_lottery_entries.clear()
+    api_list_lottery_entries_by_student.clear()
     return {"ok": True, "paid_total": int(paid_total)}
 
 def _calc_lottery_financials(round_row: dict) -> dict:
@@ -4400,99 +4837,6 @@ def api_list_lottery_admin_ledger(limit=200):
         )
     return {"ok": True, "rows": rows}
 
-
-def _invalidate_lottery_view_cache():
-    for k in (
-        "lot_open_round_cache",
-        "lot_open_round_cache_ts",
-        "lot_user_hist_cache",
-        "lot_user_hist_cache_ts",
-        "lot_user_hist_cache_sid",
-    ):
-        if k in st.session_state:
-            del st.session_state[k]
-
-
-def _get_open_lottery_round_cached(max_age_sec: int = 8) -> dict:
-    now_ts = datetime.now(timezone.utc).timestamp()
-    cached = st.session_state.get("lot_open_round_cache")
-    cached_ts = float(st.session_state.get("lot_open_round_cache_ts", 0.0) or 0.0)
-
-    if cached is not None and (now_ts - cached_ts) <= float(max_age_sec):
-        return dict(cached)
-
-    fresh = api_get_open_lottery_round()
-    st.session_state["lot_open_round_cache"] = dict(fresh)
-    st.session_state["lot_open_round_cache_ts"] = float(now_ts)
-    return fresh
-
-
-def _get_lottery_user_history_cached(student_id: str, max_age_sec: int = 20) -> list[dict]:
-    sid = str(student_id or "")
-    if not sid:
-        return []
-
-    now_ts = datetime.now(timezone.utc).timestamp()
-    cached_sid = str(st.session_state.get("lot_user_hist_cache_sid", "") or "")
-    cached_ts = float(st.session_state.get("lot_user_hist_cache_ts", 0.0) or 0.0)
-    cached_rows = st.session_state.get("lot_user_hist_cache")
-
-    if (
-        cached_rows is not None
-        and cached_sid == sid
-        and (now_ts - cached_ts) <= float(max_age_sec)
-    ):
-        return [dict(r) for r in (cached_rows or [])]
-
-    hist_rows = []
-    try:
-        q = (
-            db.collection("lottery_entries")
-            .where(filter=FieldFilter("student_id", "==", sid))
-            .order_by("submitted_at", direction=firestore.Query.DESCENDING)
-            .stream()
-        )
-        for d in q:
-            x = d.to_dict() or {}
-            hist_rows.append(
-                {
-                    "회차": int(x.get("round_no", 0) or 0),
-                    "번호": int(x.get("student_no", 0) or 0),
-                    "이름": str(x.get("student_name", "") or ""),
-                    "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
-                    "_submitted_at": x.get("submitted_at"),
-                }
-            )
-    except FailedPrecondition:
-        # 복합 인덱스 미생성 환경 대응: 정렬 없는 조회 후 앱에서 submitted_at 역순 정렬
-        q = db.collection("lottery_entries").where(filter=FieldFilter("student_id", "==", sid)).stream()
-        for d in q:
-            x = d.to_dict() or {}
-            hist_rows.append(
-                {
-                    "회차": int(x.get("round_no", 0) or 0),
-                    "번호": int(x.get("student_no", 0) or 0),
-                    "이름": str(x.get("student_name", "") or ""),
-                    "복권 참여 번호": ", ".join([f"{n:02d}" for n in _normalize_lottery_numbers(x.get("numbers", []))]),
-                    "_submitted_at": x.get("submitted_at"),
-                }
-            )
-
-    if hist_rows:
-        hist_rows.sort(
-            key=lambda r: (
-                _to_utc_datetime(r.get("_submitted_at")).timestamp() if r.get("_submitted_at") else float("-inf")
-            ),
-            reverse=True,
-        )
-        for r in hist_rows:
-            r.pop("_submitted_at", None)
-
-    st.session_state["lot_user_hist_cache_sid"] = sid
-    st.session_state["lot_user_hist_cache"] = [dict(r) for r in hist_rows]
-    st.session_state["lot_user_hist_cache_ts"] = float(now_ts)
-    return hist_rows
-
 # =========================
 # 학급 확장: Roles/Permissions
 # =========================
@@ -4606,15 +4950,15 @@ def upsert_roles_from_paytable(admin_pin: str, pay_df: pd.DataFrame):
     # permissions 기본 템플릿(직업명에 따라 자동 부여는 “초기값”만)
     def default_perms(job_name: str):
         job_name = str(job_name or "")
-        perms = []
+        perms = ["schedule_read"]
         if "은행" in job_name:
-            perms += ["bank_read", "bank_write"]
+            perms += ["bank_read", "bank_write", "schedule_bank_write"]
         if "통계" in job_name:
             perms += ["stats_write"]
         if "환경" in job_name:
             perms += ["schedule_env_write"]
         if "국세" in job_name or "세무" in job_name:
-            perms += ["treasury_read", "treasury_write"]
+            perms += ["treasury_read", "treasury_write", "schedule_treasury_write"]
         if "대통령" in job_name or "장관" in job_name:
             perms += ["treasury_read"]
         return list(sorted(set(perms)))
@@ -4831,10 +5175,8 @@ with st.sidebar:
                     st.error("이미 존재하는 계정입니다.")
                 else:
                     # 현재 활성 계정 중 최대 번호 찾기
-                    cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
                     max_no = 0
-                    for d in cur_docs:
-                        x = d.to_dict() or {}
+                    for x in _list_active_students_full_cached():
                         try:
                             n0 = int(x.get("no", 0) or 0)
                             if n0 > max_no:
@@ -4862,6 +5204,7 @@ with st.sidebar:
                     st.session_state.pop("manage_name", None)
                     st.session_state.pop("manage_pin", None)
                     api_list_accounts_cached.clear()
+                    _list_active_students_full_cached.clear()
                     st.rerun()
 
     with c2:
@@ -4968,6 +5311,7 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.login_name = ADMIN_NAME
                 st.session_state.login_pin = ADMIN_PIN
+                st.session_state["login_student_ctx"] = {}
                 # ✅ 이름 저장 처리
                 try:
                     if bool(st.session_state.get("remember_name_check", False)):
@@ -4989,6 +5333,7 @@ if not st.session_state.logged_in:
                     st.session_state.logged_in = True
                     st.session_state.login_name = login_name
                     st.session_state.login_pin = login_pin
+                    _set_login_student_context_from_doc(doc)
                 # ✅ 이름 저장 처리
                 try:
                     if bool(st.session_state.get("remember_name_check", False)):
@@ -5009,6 +5354,7 @@ else:
         st.session_state.login_name = ""
         st.session_state.login_pin = ""
         st.session_state.undo_mode = False
+        st.session_state["login_student_ctx"] = {}
 
         # ✅ (PATCH) 개별조회 지연로딩 상태 완전 초기화 (로그아웃 후 재로그인 시 자동 로드 방지)
         st.session_state.pop("admin_ind_view_loaded", None)
@@ -5026,18 +5372,17 @@ login_name = st.session_state.login_name
 login_pin = st.session_state.login_pin
 
 my_student_id = None
+student_ctx = _get_login_student_context()
 if not is_admin:
-    bal_res = api_get_balance(login_name, login_pin)
-    if bal_res.get("ok"):
-        my_student_id = bal_res.get("student_id")
+    my_student_id = str(student_ctx.get("student_id", "") or "")
 
-my_perms = get_my_permissions(my_student_id, is_admin=is_admin)
+my_perms = _get_my_permissions_from_ctx(student_ctx, is_admin=is_admin)
 
 # =========================
 # (관리자) 학급 시스템 탭 + (학생) 접근 가능한 탭만
 # =========================
 ALL_TABS = [
-    "💰보상/벌금",
+    "🏦 내 통장",
     "🔎 개별조회",
     "💼 직업/월급",
     "🏛️ 국세청(국고)",
@@ -5056,7 +5401,7 @@ def tab_visible(tab_name: str):
         return True
 
     # 학생 기본 탭(항상 표시)
-    if tab_name in ("💰보상/벌금", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🍀 복권"):
+    if tab_name in ("🏦 내 통장", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🍀 복권"):
         return True
 
     # ✅ 학생에게 '탭 권한(tab::<탭이름>)'이 부여된 경우 표시
@@ -5074,10 +5419,14 @@ def tab_visible(tab_name: str):
         return can(my_perms, "bank_read") or can(my_perms, "bank_write")
     if tab_name == "💼 직업/월급":
         return can(my_perms, "jobs_write")
+    if tab_name == "🗓️ 일정":
+        return can(my_perms, "schedule_write") or can(my_perms, "schedule_read")
 
     # 계정 정보/활성화는 학생에게 기본 숨김(권한 관리 UI가 있어서)
     if tab_name == "👥 계정 정보/활성화":
         return False
+
+    return False
 
     return False
 
@@ -5088,7 +5437,9 @@ def tab_visible(tab_name: str):
 # -------------------------
 if is_admin:
     tabs = [t for t in ALL_TABS if tab_visible(t)]
-    tab_objs = st.tabs(tabs)
+    # ✅ 관리자 탭에서만 '🏦 내 통장' 탭 이름을 변경(학생 탭에는 영향 없음)
+    tabs_display = [("💰보상/벌금" if t == "🏦 내 통장" else t) for t in tabs]
+    tab_objs = st.tabs(tabs_display)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
     # ✅ 투자 탭 노출 여부(계정 정보/활성화에서 '투자활성화' 꺼진 학생은 숨김)
@@ -5128,8 +5479,8 @@ else:
             return
         extra_admin_tabs.append((label, key_internal))
 
-    if has_admin_feature_access(my_perms, "💰보상/벌금", is_admin=False):
-        _append_extra_tab("💰보상/벌금(관리자)", "admin::💰보상/벌금")
+    if has_admin_feature_access(my_perms, "🏦 내 통장", is_admin=False):
+        _append_extra_tab("💰보상/벌금(관리자)", "admin::🏦 내 통장")
 
     if has_admin_feature_access(my_perms, "🏦 은행(적금)", is_admin=False):
         _append_extra_tab("🏦 은행(적금)(관리자)", "admin::🏦 은행(적금)")
@@ -5142,7 +5493,7 @@ else:
         if t in ("👥 계정 정보/활성화",):
             continue
         # 이미 기본 탭(거래/적금/투자)으로 구현된 것들은 제외
-        if t in ("💰보상/벌금", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🍀 복권"):
+        if t in ("🏦 내 통장", "🏦 은행(적금)", "📈 투자", "🏷️ 경매", "🍀 복권"):
             continue
         if tab_visible(t):
             _append_extra_tab(t, t)  # (표시라벨, 내부키)
@@ -5162,7 +5513,7 @@ else:
 
     # 기본 탭(내부키는 기존 로직 재사용)
     idx = 0
-    tab_map["💰보상/벌금"] = tab_objs[idx]; idx += 1
+    tab_map["🏦 내 통장"] = tab_objs[idx]; idx += 1
     tab_map["🏦 은행(적금)"] = tab_objs[idx]; idx += 1
     tab_map["📊 통계/신용"] = tab_objs[idx]; idx += 1
     if inv_ok:
@@ -5264,7 +5615,7 @@ def _calc_credit_score_for_student(student_id: str):
 
 
 # =========================
-# 1) 💰보상/벌금 (기존 사용자 화면 거의 그대로)
+# 1) 🏦 내 통장 (기존 사용자 화면 거의 그대로)
 # =========================
 def render_tx_table(df_tx: pd.DataFrame):
     if df_tx is None or df_tx.empty:
@@ -5321,13 +5672,13 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
 
 
 # =========================
-# 💰보상/벌금 탭
+# 🏦 내 통장 탭
 # =========================
-if "💰보상/벌금" in tabs:
-    with tab_map["💰보상/벌금"]:
-        trade_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::💰보상/벌금)에서만 표시
-
+if "🏦 내 통장" in tabs:
+    with tab_map["🏦 내 통장"]:
+        trade_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::🏦 내 통장)에서만 표시
         if trade_admin_ok:
+
             # ✅ (보상/벌금) 내부 작은 탭
             sub_tab_all, sub_tab_personal = st.tabs(["전체", "개인"])
 
@@ -6103,10 +6454,11 @@ if "💰보상/벌금" in tabs:
 
             # ✅ 거래 기록 (DuplicateElementKey 방지: prefix를 탭 전용으로 변경)
             st.subheader("📝 통장 기록하기")
+            _tpl_state = _get_trade_templates_state()
             memo_u, dep_u, wd_u = render_admin_trade_ui(
                 prefix=f"bank_trade_{login_name}",
-                templates_list=TEMPLATES,
-                template_by_display=TEMPLATE_BY_DISPLAY,
+                templates_list=_tpl_state["templates"],
+                template_by_display=_tpl_state["by_display"],
             )
 
             col_btn1, col_btn2 = st.columns([1, 1])
@@ -6266,10 +6618,10 @@ if "💰보상/벌금" in tabs:
 # =========================
 
 # =========================
-# (학생) 💰보상/벌금(관리자) — 별도 탭 (admin::💰보상/벌금)
+# (학생) 💰보상/벌금(관리자) — 별도 탭 (admin::🏦 내 통장)
 # =========================
-if "admin::💰보상/벌금" in tabs:
-    with tab_map["admin::💰보상/벌금"]:
+if "admin::🏦 내 통장" in tabs:
+    with tab_map["admin::🏦 내 통장"]:
         st.subheader("💰보상/벌금 부여")
         if is_admin:
             st.info("관리자 모드에서는 상단 '💰보상/벌금' 탭에서 사용합니다.")
@@ -8935,7 +9287,7 @@ if "👥 계정 정보/활성화" in tabs:
         #
         # 1) "tab::<탭이름>"  : 학생에게 '관리자 탭' 자체를 추가로 노출(기본 탭이 아닌 것들)
         # 2) "admin::<탭이름>": 이미 학생에게 기본으로 보이는 탭 안에서 '관리자 기능(관리 UI)'을 열어줌
-        #    - 💰보상/벌금(관리자)  -> admin::💰보상/벌금
+        #    - 💰보상/벌금(관리자)  -> admin::🏦 내 통장
         #    - 🏦 은행(적금)(관리자)      -> admin::🏦 은행(적금)
         #    - 📈 투자(관리자)            -> admin::📈 투자
         # -------------------------------------------------
@@ -8945,13 +9297,13 @@ if "👥 계정 정보/활성화" in tabs:
         # ✅ 부여 가능한 항목(탭/관리자기능)
         # - (관리자기능) 항목은 학생에게 기본으로 보이는 탭 안에서 관리자 UI를 열어주는 용도입니다.
         GRANT_OPTIONS = [
-            ("💰보상/벌금(관리자)", ("admin", "💰보상/벌금")),
+            ("💰보상/벌금(관리자)", ("admin", "🏦 내 통장")),
             ("🏦 은행(적금)(관리자)", ("admin", "🏦 은행(적금)")),
             ("📈 투자(관리자)", ("admin", "📈 투자")),
         ] + [
             (t, ("tab", t))
             for t in ALL_TABS
-            if t not in ("👥 계정 정보/활성화", "💰보상/벌금", "🏦 은행(적금)", "📈 투자")
+            if t not in ("👥 계정 정보/활성화", "🏦 내 통장", "🏦 은행(적금)", "📈 투자")
         ]
 
         # ✅ 탭별로 함께 부여할 기능 권한(조작 가능하게)
@@ -8961,13 +9313,12 @@ if "👥 계정 정보/활성화" in tabs:
             "💳 신용등급": ["credit_write"],
             "💼 직업/월급": ["jobs_write"],
             "🏦 은행(적금)": ["bank_read", "bank_write"],
+            "🗓️ 일정": ["schedule_read", "schedule_write"],
         }
 
         # ✅ 학생 목록(활성 학생)
-        docs_perm = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
         stu_list = []
-        for d in docs_perm:
-            x = d.to_dict() or {}
+        for x in _list_active_students_full_cached():
             try:
                 no = int(x.get("no", 0) or 0)
             except Exception:
@@ -8977,7 +9328,7 @@ if "👥 계정 정보/활성화" in tabs:
             if not isinstance(extra, list):
                 extra = []
             stu_list.append({
-                "doc_id": d.id,
+                "doc_id": str(x.get("student_id", "") or ""),
                 "no": no,
                 "name": name,
                 "extra": [str(v) for v in extra if str(v).strip()]
@@ -9067,6 +9418,7 @@ if "👥 계정 정보/활성화" in tabs:
                     continue
                 _update_student_extra(r["doc_id"], add_keys=keys)
                 n += 1
+            _list_active_students_full_cached.clear()
             st.success(f"권한 부여 완료: {n}명")
             st.rerun()
         elif btn_revoke:
@@ -9078,15 +9430,17 @@ if "👥 계정 정보/활성화" in tabs:
                     continue
                 _update_student_extra(r["doc_id"], remove_keys=keys)
                 n += 1
+            _list_active_students_full_cached.clear()
             st.success(f"권한 회수 완료: {n}명")
             st.rerun()
 
         if btn_revoke_all and confirm_all:
             docs_perm3 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
             n = 0
-            for d in docs_perm3:
-                db.collection("students").document(d.id).update({"extra_permissions": []})
+            for x in _list_active_students_full_cached():
+                db.collection("students").document(str(x.get("student_id", "") or "")).update({"extra_permissions": []})
                 n += 1
+            _list_active_students_full_cached.clear()
             st.success(f"전체 학생 권한 전체 회수 완료: {n}명")
             st.rerun()
 
@@ -9096,10 +9450,8 @@ if "👥 계정 정보/활성화" in tabs:
         st.markdown("### 📌 권한 부여 현황")
         st.caption("학생이 기존에 사용하던 유형의 탭(괄호 안 관리자 표기)은 관리자 기능 탭으로 구분됩니다.")
 
-        docs_perm2 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
         rows_status = []
-        for d in docs_perm2:
-            x = d.to_dict() or {}
+        for x in _list_active_students_full_cached():
             extra = x.get("extra_permissions", []) or []
             if not isinstance(extra, list):
                 extra = []
@@ -9109,7 +9461,7 @@ if "👥 계정 정보/활성화" in tabs:
             # 표시용(관리자기능은 라벨을 보기 좋게 바꿈)
             admin_disp = []
             for t in admin_tabs:
-                if t == "💰보상/벌금":
+                if t == "🏦 내 통장":
                     admin_disp.append("💰보상/벌금(관리자)")
                 elif t == "🏦 은행(적금)":
                     admin_disp.append("🏦 은행(적금)(관리자)")
@@ -9189,17 +9541,15 @@ if "👥 계정 정보/활성화" in tabs:
                         df_up["투자활성화"] = True
 
                     # 현재 active 학생들 맵(번호->docid, 이름->docid)
-                    cur_docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
                     by_no = {}
                     by_name = {}
-                    for d in cur_docs:
-                        x = d.to_dict() or {}
+                    for x in _list_active_students_full_cached():
                         no0 = x.get("no")
                         nm0 = str(x.get("name", "") or "").strip()
                         if isinstance(no0, (int, float)) and str(no0) != "nan":
-                            by_no[int(no0)] = d.id
+                            by_no[int(no0)] = str(x.get("student_id", "") or "")
                         if nm0:
-                            by_name[nm0] = d.id
+                            by_name[nm0] = str(x.get("student_id", "") or "")
 
                     created, updated, skipped = 0, 0, 0
 
@@ -9248,6 +9598,7 @@ if "👥 계정 정보/활성화" in tabs:
                             created += 1
 
                     api_list_accounts_cached.clear()
+                    _list_active_students_full_cached.clear()
                     toast(f"엑셀 등록 완료 (신규 {created} / 수정 {updated} / 제외 {skipped})", icon="📥")
                     st.rerun()
 
@@ -9259,11 +9610,8 @@ if "👥 계정 정보/활성화" in tabs:
         # ✅ 학생 리스트 로드 (번호=엑셀 번호, 그 순서대로 정렬)
         #   - student_id 컬럼은 화면에서 제거(내부로만 유지)
         # -------------------------------------------------
-        docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-
         rows = []
-        for d in docs:
-            x = d.to_dict() or {}
+        for x in _list_active_students_full_cached():
             # 엑셀 번호를 의미하는 "no"를 사용 (없으면 큰 값으로 뒤로)
             no = x.get("no", 999999)
             try:
@@ -9273,7 +9621,7 @@ if "👥 계정 정보/활성화" in tabs:
 
             rows.append(
                 {
-                    "_sid": d.id,  # 내부용(삭제할 때만 사용) -> 화면에는 안 보이게 처리
+                    "_sid": str(x.get("student_id", "") or ""),  # 내부용(삭제할 때만 사용) -> 화면에는 안 보이게 처리
                     "선택": False,
                     "번호": no,
                     "이름": x.get("name", ""),
@@ -12259,7 +12607,7 @@ if "🏷️ 경매" in tabs:
                         df_auc.to_excel(writer, index=False, sheet_name="경매결과")
                     xbuf.seek(0)
 
-                    d1, d2 = st.columns(2)
+                    d1, d2, d3 = st.columns([1, 1, 1])
                     with d1:
                         st.download_button(
                             "엑셀저장",
@@ -12270,9 +12618,11 @@ if "🏷️ 경매" in tabs:
                             key="auc_excel_download",
                         )
                     with d2:
+                        refund_non_winners = st.checkbox("낙찰금 반환(반환액 90%)", value=True, key="auc_refund_non_winners")
+                    with d3:
                         already = bool(cl_round.get("ledger_applied", False))
                         if st.button("장부반영", key="auc_apply_ledger_btn", use_container_width=True, disabled=already):
-                            res = api_apply_auction_ledger(ADMIN_PIN, cl_round_id)
+                            res = api_apply_auction_ledger(ADMIN_PIN, cl_round_id, refund_non_winners=refund_non_winners)
                             if res.get("ok"):
                                 toast("경매 관리장부 + 국고 세입 반영 완료", icon="✅")
                                 st.rerun()
@@ -12335,7 +12685,7 @@ if "🏷️ 경매" in tabs:
 if "🍀 복권" in tabs:
     with tab_map["🍀 복권"]:
 
-        open_lot_res = _get_open_lottery_round_cached(max_age_sec=8)
+        open_lot_res = api_get_open_lottery_round()
         open_round = (open_lot_res.get("round", {}) or {}) if open_lot_res.get("ok") else {}
 
         if is_admin:
@@ -12387,6 +12737,44 @@ if "🍀 복권" in tabs:
             else:
                 st.info("개시된 복권이 없습니다.")
 
+            st.markdown("### 👑 관리자 복권 참여")
+            if open_round:
+                ap1, ap2, ap3 = st.columns([2, 1, 1])
+                with ap1:
+                    admin_lot_count = st.number_input("복권 참여 수", min_value=1, step=1, value=1, key="lot_admin_join_count")
+                with ap2:
+                    st.write("")
+                    lot_apply_treasury = st.checkbox("국고반영", value=True, key="lot_admin_join_apply_treasury")
+                with ap3:
+                    st.write("")
+                    if st.button("복권 참여", key="lot_admin_join_btn", use_container_width=True):
+                        ares = api_submit_admin_lottery_entries(
+                            ADMIN_PIN,
+                            int(admin_lot_count),
+                            apply_treasury=bool(lot_apply_treasury),
+                        )
+                        if ares.get("ok"):
+                            st.session_state["lot_admin_join_summary"] = {
+                                "count": int(ares.get("count", 0) or 0),
+                                "total_cost": int(ares.get("total_cost", 0) or 0),
+                                "treasury_applied": bool(ares.get("treasury_applied", False)),
+                            }
+                            toast(f"관리자 복권 {int(ares.get('count', 0) or 0)}게임 참여 완료", icon="✅")
+                            st.rerun()
+                        else:
+                            st.error(ares.get("error", "관리자 복권 참여 실패"))
+
+                join_summary = st.session_state.get("lot_admin_join_summary") or {}
+                if join_summary:
+                    st.caption(
+                        "복권 참여 현황 | "
+                        f"복권 참여수 {int(join_summary.get('count', 0) or 0):02d}  |  "
+                        f"총액 {int(join_summary.get('total_cost', 0) or 0)}  |  "
+                        f"국고반영여부 {'O' if bool(join_summary.get('treasury_applied', False)) else 'X'}"
+                    )
+            else:
+                st.info("개시된 복권이 없습니다.")
+            
             current_round_id = str(open_round.get("round_id", "") or "")
             current_round = dict(open_round)
             if not current_round_id:
@@ -12405,6 +12793,27 @@ if "🍀 복권" in tabs:
                 ent_res = api_list_lottery_entries(current_round_id)
                 ent_rows = list(ent_res.get("rows", []) or [])
                 if ent_rows and str(current_round.get("status", "")) in ("closed", "drawn"):
+                    ticket_price = int(current_round.get("ticket_price", 0) or 0)
+                    participant_keys = set()
+                    for r in ent_rows:
+                        sid = str(r.get("student_id", "") or "").strip()
+                        if sid:
+                            participant_keys.add(f"sid:{sid}")
+                            continue
+                        sno = int(r.get("student_no", 0) or 0)
+                        sname = str(r.get("student_name", "") or "").strip()
+                        if sno > 0:
+                            participant_keys.add(f"sno:{sno}")
+                        elif sname:
+                            participant_keys.add(f"name:{sname}")
+
+                    summary_rows = [{
+                        "참여자수": int(len(participant_keys)),
+                        "참여 복권수": int(len(ent_rows)),
+                        "총 액수": int(len(ent_rows) * ticket_price),
+                    }]
+                    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+
                     view_rows = [
                         {
                             "참여 일시": str(r.get("submitted_at_text", "") or ""),
@@ -12531,71 +12940,119 @@ if "🍀 복권" in tabs:
             if not open_round:
                 st.info("개시된 복권이 없습니다.")
             else:
-                st.caption(
-                    f"{int(open_round.get('round_no', 0) or 0)}회차 | 복권 가격 {int(open_round.get('ticket_price', 0) or 0)}"
+                st.markdown(
+                    f"🔔 {int(open_round.get('round_no', 0) or 0)}회차 | 복권 가격 {int(open_round.get('ticket_price', 0) or 0):02d}"
                 )
+                st.caption("※ 한 게임(한 줄)에는 4개의 숫자를 입력해야 합니다.")
+                st.caption("※ 각 칸에는 1~20 사이의 숫자만 입력할 수 있으며, 한 줄 안에서는 숫자가 중복될 수 없습니다.")
+                st.caption("※ 구매할 게임 수만큼 숫자를 입력한 후, 구매 버튼을 눌러주세요.")
+                
+                game_count = 5
+                nums_per_game = 4
+                games_raw = []
 
-                key_pick = "lot_user_picks"
-                if key_pick not in st.session_state:
-                    st.session_state[key_pick] = []
+                def _clear_lottery_input_fields():
+                    for gi in range(game_count):
+                        for ni in range(nums_per_game):
+                            key = f"lot_in_{gi}_{ni}"
+                            st.session_state[key] = ""
+                            st.session_state.pop(f"{key}__backup", None)
 
-                def _toggle_pick(n: int):
-                    cur = list(st.session_state.get(key_pick, []))
-                    if n in cur:
-                        cur = [x for x in cur if x != n]
-                    else:
-                        if len(cur) >= 4:
-                            st.warning("숫자는 최대 4개까지 선택할 수 있습니다.")
-                            return
-                        cur.append(n)
-                    st.session_state[key_pick] = sorted(cur)
+                # 구매 성공 후 다음 렌더에서 입력칸 자동 초기화
+                if st.session_state.pop("lottery_clear_after_buy", False):
+                    _clear_lottery_input_fields()
+                    
+                with st.form("lottery_user_form", clear_on_submit=False):
+                    for gi in range(game_count):
+                        row_cols = st.columns([0.8, 1, 1, 1, 1])
+                        with row_cols[0]:
+                            st.markdown(f"**{gi + 1}게임:**")
+                        row_vals = []
+                        for ni in range(nums_per_game):
+                            k = f"lot_in_{gi}_{ni}"
+                            raw = row_cols[ni + 1].text_input(
+                                label=f"{gi + 1}게임 {ni + 1}칸",
+                                key=k,
+                                placeholder="(숫자 입력칸)",
+                                label_visibility="collapsed",
+                            )
+                            row_vals.append(str(raw).strip())
+                        games_raw.append(row_vals)
 
-                grid_nums = list(range(1, 21))
-                for row in range(2):
-                    cols = st.columns(10)
-                    for i, c in enumerate(cols):
-                        n = grid_nums[row * 10 + i]
-                        selected = n in st.session_state.get(key_pick, [])
-                        label = f"[{n:02d}]✅" if selected else f"[{n:02d}]"
-                        c.button(label, key=f"lot_pick_{n}", on_click=_toggle_pick, args=(n,), use_container_width=True)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        clear_clicked = st.form_submit_button("숫자 초기화", use_container_width=True)
+                    with c2:
+                        buy_clicked = st.form_submit_button("복권 구입", use_container_width=True)
 
-                picks = sorted(list(st.session_state.get(key_pick, [])))
-                ph_cols = st.columns(4)
-                for i in range(4):
-                    with ph_cols[i]:
-                        txt = f"{picks[i]:02d}" if i < len(picks) else ""
-                        st.markdown(
-                            f"<div style='height:60px;border:2px solid #888;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:700'>{txt}</div>",
-                            unsafe_allow_html=True,
-                        )
+                if clear_clicked:
+                    st.session_state["lottery_clear_after_buy"] = True
+                    st.rerun()
 
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button("숫자 초기화", key="lot_clear_btn", use_container_width=True):
-                        st.session_state[key_pick] = []
-                        st.rerun()
-                with c2:
-                    if st.button("복권 구매", key="lot_buy_btn", use_container_width=True):
-                        if len(picks) != 4:
-                            st.error("숫자 4개를 선택해 주세요.")
+                if buy_clicked:
+                    valid_games = []
+                    has_error = False
+
+                    for idx, game in enumerate(games_raw):
+                        vals = [str(x).strip() for x in (game or [])]
+                        filled = [v for v in vals if v != ""]
+                        if not filled:
+                            continue
+                        if len(filled) != nums_per_game:
+                            st.error(f"{idx + 1}게임: 숫자 4개를 모두 입력해 주세요.")
+                            has_error = True
+                            continue
+
+                        parsed = []
+                        for v in vals:
+                            if not v.isdigit():
+                                st.error(f"{idx + 1}게임: 숫자만 입력해 주세요.")
+                                has_error = True
+                                parsed = []
+                                break
+                            n = int(v)
+                            if n < 1 or n > 20:
+                                st.error(f"{idx + 1}게임: 숫자는 1~20 사이여야 합니다.")
+                                has_error = True
+                                parsed = []
+                                break
+                            parsed.append(n)
+
+                        if not parsed:
+                            continue
+                        if len(set(parsed)) != nums_per_game:
+                            st.error(f"{idx + 1}게임: 같은 숫자를 중복 입력할 수 없습니다.")
+                            has_error = True
+                            continue
+                            
+                        valid_games.append(parsed)
+
+                    if not has_error:
+                        if not valid_games:
+                            st.error("입력된 게임이 없습니다. 최소 1게임 이상 입력해 주세요.")
                         else:
-                            res = api_submit_lottery_entry(login_name, login_pin, picks)
+                            res = api_submit_lottery_entries(login_name, login_pin, valid_games)
                             if res.get("ok"):
-                                toast("복권 구매 완료! 통장에서 금액이 차감되었습니다.", icon="✅")
-                                st.session_state[key_pick] = []
-                                _invalidate_lottery_view_cache()
+                                toast(f"복권 {int(res.get('count', 0) or 0)}게임 구매 완료! 통장에서 금액이 차감되었습니다.", icon="✅")
+                                st.session_state["lottery_clear_after_buy"] = True
                                 st.rerun()
                             else:
                                 st.error(res.get("error", "복권 구매 실패"))
-
+                                    
             st.markdown("### 📜 복권 구매 내역")
             my_sid = str(my_student_id or "")
-            hist_rows = _get_lottery_user_history_cached(my_sid, max_age_sec=20)
-            if hist_rows:
-                st.dataframe(pd.DataFrame(hist_rows), use_container_width=True, hide_index=True)
+            hist_rows = []
+            open_round_id = str(open_round.get("round_id", "") or "").strip()
+            if (not open_round_id) or (not my_sid):
+                st.info("개시된 복권이 없습니다.")
             else:
-                st.info("아직 복권 구매 내역이 없습니다.")
-
+                hres = api_list_lottery_entries_by_student(my_sid, round_id=open_round_id)
+                hist_rows = list(hres.get("rows", []) or []) if hres.get("ok") else []
+                if hist_rows:
+                    st.dataframe(pd.DataFrame(hist_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.info("아직 복권 구매 내역이 없습니다.")
+                    
 # =========================
 # 📊 통계/신용 (학생 전용 · 읽기 전용)
 # - 통계청 통계표(본인) + 신용등급 변동표(본인)
@@ -12849,6 +13306,43 @@ if "📊 통계/신용" in tabs and (not is_admin):
                         unsafe_allow_html=True,
                     )
 
+
+# =========================
+# 10) 🗓️ 일정 (권한별 수정)
+# =========================
+def add_schedule(area: str, d: date, title: str, owner_roles: list[str], created_by: str):
+    db.collection("schedule_items").document().set(
+        {
+            "area": area,
+            "date": d.isoformat(),
+            "title": title,
+            "owner_role_ids": owner_roles,
+            "created_by": created_by,
+            "created_at": firestore.SERVER_TIMESTAMP,
+        }
+    )
+    return {"ok": True}
+
+def list_schedule(limit=200):
+    q = db.collection("schedule_items").order_by("date", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    rows = []
+    for d in q:
+        x = d.to_dict() or {}
+        rows.append(x)
+    return rows
+
+def can_edit_schedule(area: str, perms: set) -> bool:
+    if "admin_all" in perms:
+        return True
+    if area == "bank":
+        return "schedule_bank_write" in perms
+    if area == "treasury":
+        return "schedule_treasury_write" in perms
+    if area == "env":
+        return "schedule_env_write" in perms
+    return False
+
+
 # -------------------------
 # 🎯 목표 저금 (학생 개별로그인 전용 탭)
 # -------------------------
@@ -12976,4 +13470,3 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
-            
