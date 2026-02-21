@@ -4786,7 +4786,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     if admin_winning_total > 0:
         admin_win_res = api_add_treasury_tx(
             ADMIN_PIN,
-            f"[복권 {round_no}회 당첨금 총액]",
+            f"복권 {round_no}회 관리자 당첨금 총액",
             income=admin_winning_total,
             expense=0,
             actor="lottery_admin",
