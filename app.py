@@ -4570,6 +4570,7 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
             "student_id": str(e.get("student_id", "") or ""),
             "student_no": int(e.get("student_no", 0) or 0),
             "student_name": str(e.get("student_name", "") or ""),
+            "is_admin": bool(e.get("is_admin", False)),
             "numbers": nums,
             "match_count": int(match),
             "submitted_at": e.get("submitted_at"),
@@ -4661,11 +4662,18 @@ def api_pay_lottery_prizes(admin_pin: str, round_id: str):
 
     winners = list(r.get("winners", []) or [])
     paid_total = 0
+    admin_paid_total = 0
     for w in winners:
         sid = str(w.get("student_id", "") or "")
         prize = int(w.get("prize", 0) or 0)
         rank = int(w.get("rank", 0) or 0)
-        if (not sid) or prize <= 0:
+        is_admin_winner = bool(w.get("is_admin", False))
+        if prize <= 0:
+            continue
+        if is_admin_winner and (not sid):
+            admin_paid_total += int(prize)
+            continue
+        if not sid:
             continue
         res = api_admin_add_tx_by_student_id(
             ADMIN_PIN,
@@ -4678,18 +4686,38 @@ def api_pay_lottery_prizes(admin_pin: str, round_id: str):
             return {"ok": False, "error": f"당첨금 지급 실패: {res.get('error', 'unknown')}"}
         paid_total += int(prize)
 
+    if admin_paid_total > 0:
+        tre_res = api_add_treasury_tx(
+            ADMIN_PIN,
+            f"복권 {int(r.get('round_no', 0) or 0)}회 관리자 당첨금 지급",
+            income=0,
+            expense=int(admin_paid_total),
+            actor="lottery_admin",
+        )
+        if not tre_res.get("ok"):
+            return {"ok": False, "error": f"관리자 당첨금 국고 지급 실패: {tre_res.get('error', 'unknown')}"}
+
+    total_paid = int(paid_total + admin_paid_total)    
+    
     r_ref.set(
         {
             "payout_done": True,
             "payout_done_at": firestore.SERVER_TIMESTAMP,
-            "payout_total": int(paid_total),
+            "payout_total": int(total_paid),
         },
         merge=True,
     )
+    api_get_treasury_state_cached.clear()
+    api_list_treasury_ledger_cached.clear()
     api_list_lottery_entries.clear()
     api_list_lottery_entries_by_student.clear()
-    return {"ok": True, "paid_total": int(paid_total)}
-
+    return {
+        "ok": True,
+        "paid_total": int(total_paid),
+        "student_paid_total": int(paid_total),
+        "admin_paid_total": int(admin_paid_total),
+    }
+    
 def _calc_lottery_financials(round_row: dict) -> dict:
     r = round_row or {}
     winners = list(r.get("winners", []) or [])
