@@ -4570,6 +4570,7 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
             "student_id": str(e.get("student_id", "") or ""),
             "student_no": int(e.get("student_no", 0) or 0),
             "student_name": str(e.get("student_name", "") or ""),
+            "is_admin": bool(e.get("is_admin", False)),
             "numbers": nums,
             "match_count": int(match),
             "submitted_at": e.get("submitted_at"),
@@ -4696,6 +4697,17 @@ def _calc_lottery_financials(round_row: dict) -> dict:
     total_sales = int(r.get("total_sales", 0) or 0)
 
     payout_total = int(sum(int(w.get("prize", 0) or 0) for w in winners))
+    admin_winning_total = int(
+        sum(
+            int(w.get("prize", 0) or 0)
+            for w in winners
+            if bool(w.get("is_admin", False))
+            or (
+                not str(w.get("student_id", "") or "").strip()
+                and str(w.get("student_name", "") or "").strip() == ADMIN_NAME
+            )
+        )
+    )
 
     tax_rate = int(r.get("tax_rate", 40) or 40)
     first_pct = int(r.get("first_pct", 80) or 80)
@@ -4718,6 +4730,7 @@ def _calc_lottery_financials(round_row: dict) -> dict:
         "payout_total": int(payout_total),
         "tax_total": int(tax_total),
         "national_amount": int(national_amount),
+        "admin_winning_total": int(admin_winning_total),
     }
 
 
@@ -4746,6 +4759,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     payout_total = int(financials.get("payout_total", 0) or 0)
     tax_total = int(financials.get("tax_total", 0) or 0)
     national_amount = int(financials.get("national_amount", 0) or 0)
+    admin_winning_total = int(financials.get("admin_winning_total", 0) or 0)
     
     # 레거시 회차 보정: 참여자 수는 "복권 수"가 아닌 "실제 참여 학생 수"로 유지
     if participants <= 0:
@@ -4769,6 +4783,17 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
         if not tre_res.get("ok"):
             return {"ok": False, "error": f"국고 반영 실패: {tre_res.get('error', 'unknown')}"}
 
+    if admin_winning_total > 0:
+        admin_win_res = api_add_treasury_tx(
+            ADMIN_PIN,
+            f"[복권 {round_no}회 당첨금 총액]",
+            income=admin_winning_total,
+            expense=0,
+            actor="lottery_admin",
+        )
+        if not admin_win_res.get("ok"):
+            return {"ok": False, "error": f"관리자 당첨금 국고 반영 실패: {admin_win_res.get('error', 'unknown')}"}
+            
     db.collection("lottery_admin_ledger").document().set(
         {
             "round_id": rid,
@@ -4779,6 +4804,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
             "payout_total": int(payout_total),
             "tax_total": int(tax_total),
             "national_amount": int(national_amount),
+            "admin_winning_total": int(admin_winning_total),
             "drawn_at": r.get("drawn_at"),
             "created_at": firestore.SERVER_TIMESTAMP,
         }
@@ -4797,6 +4823,7 @@ def api_list_lottery_admin_ledger(limit=200):
         payout_total = int(x.get("payout_total", 0) or 0)
         tax_total = int(x.get("tax_total", 0) or 0)
         national_amount = int(x.get("national_amount", 0) or 0)
+        admin_winning_total = int(x.get("admin_winning_total", 0) or 0)
 
         if rid:
             r_snap = db.collection("lottery_rounds").document(rid).get()
@@ -4806,18 +4833,21 @@ def api_list_lottery_admin_ledger(limit=200):
                 payout_total = int(financials.get("payout_total", payout_total) or payout_total)
                 tax_total = int(financials.get("tax_total", tax_total) or tax_total)
                 national_amount = int(financials.get("national_amount", national_amount) or national_amount)
-
+                admin_winning_total = int(financials.get("admin_winning_total", admin_winning_total) or admin_winning_total)
+                
                 # 기존 장부 데이터가 잘못 저장된 경우 조회 시 자동 보정
                 if (
                     payout_total != int(x.get("payout_total", 0) or 0)
                     or tax_total != int(x.get("tax_total", 0) or 0)
                     or national_amount != int(x.get("national_amount", 0) or 0)
+                    or admin_winning_total != int(x.get("admin_winning_total", 0) or 0)
                 ):
                     d.reference.set(
                         {
                             "payout_total": int(payout_total),
                             "tax_total": int(tax_total),
                             "national_amount": int(national_amount),
+                            "admin_winning_total": int(admin_winning_total),
                             "updated_at": firestore.SERVER_TIMESTAMP,
                         },
                         merge=True,
