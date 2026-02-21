@@ -12863,10 +12863,12 @@ if "🍀 복권" in tabs:
                 r_dat = r_snap.to_dict() if r_snap.exists else {}
                 winners = list((r_dat or {}).get("winners", []) or [])
                 win_nums = _normalize_lottery_numbers((r_dat or {}).get("winning_numbers", []))
+                draw_submitted = str((r_dat or {}).get("status", "") or "") == "drawn"
 
-                if winners:
+                if draw_submitted:
                     st.caption(f"회차 {int((r_dat or {}).get('round_no', 0) or 0)} | 당첨번호: {', '.join([f'{n:02d}' for n in win_nums])}")
 
+                if winners:
                     def _render_nums(nums, wset):
                         out = []
                         for n in nums:
@@ -12893,6 +12895,11 @@ if "🍀 복권" in tabs:
                     html.append("</tbody></table>")
                     st.markdown("".join(html), unsafe_allow_html=True)
 
+                else:
+                    if draw_submitted:
+                        st.info("당첨자가 없습니다.")
+
+                if draw_submitted:
                     payout_done = bool((r_dat or {}).get("payout_done", False))
                     led_done = bool((r_dat or {}).get("ledger_applied", False))
                     action_done = payout_done and led_done
@@ -12924,8 +12931,6 @@ if "🍀 복권" in tabs:
                         st.caption("당첨금 지급: 완료")
                     if led_done:
                         st.caption("장부 반영: 완료")
-                else:
-                    st.info("당첨자가 없습니다.")
 
             st.markdown("### 📒 복권 관리 장부")
             led_res = api_list_lottery_admin_ledger(limit=200)
