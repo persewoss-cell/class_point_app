@@ -4721,6 +4721,21 @@ def _calc_lottery_financials(round_row: dict) -> dict:
     }
 
 
+def _calc_admin_lottery_winning_total(round_row: dict) -> int:
+    winners = list((round_row or {}).get("winners", []) or [])
+    total = 0
+    for w in winners:
+        prize = int(w.get("prize", 0) or 0)
+        if prize <= 0:
+            continue
+        sid = str(w.get("student_id", "") or "").strip()
+        is_admin = bool(w.get("is_admin", False))
+        sname = str(w.get("student_name", "") or "").strip()
+        if is_admin or (not sid and sname == ADMIN_NAME):
+            total += int(prize)
+    return int(total)
+
+
 def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
@@ -4746,6 +4761,8 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     payout_total = int(financials.get("payout_total", 0) or 0)
     tax_total = int(financials.get("tax_total", 0) or 0)
     national_amount = int(financials.get("national_amount", 0) or 0)
+    admin_winning_total = _calc_admin_lottery_winning_total(r)
+    national_amount = int(national_amount + admin_winning_total)
     
     # 레거시 회차 보정: 참여자 수는 "복권 수"가 아닌 "실제 참여 학생 수"로 유지
     if participants <= 0:
@@ -4778,6 +4795,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
             "total_sales": int(total_sales),
             "payout_total": int(payout_total),
             "tax_total": int(tax_total),
+            "admin_winning_total": int(admin_winning_total),
             "national_amount": int(national_amount),
             "drawn_at": r.get("drawn_at"),
             "created_at": firestore.SERVER_TIMESTAMP,
@@ -4796,6 +4814,7 @@ def api_list_lottery_admin_ledger(limit=200):
         
         payout_total = int(x.get("payout_total", 0) or 0)
         tax_total = int(x.get("tax_total", 0) or 0)
+        admin_winning_total = int(x.get("admin_winning_total", 0) or 0)
         national_amount = int(x.get("national_amount", 0) or 0)
 
         if rid:
@@ -4805,18 +4824,22 @@ def api_list_lottery_admin_ledger(limit=200):
                 financials = _calc_lottery_financials(r)
                 payout_total = int(financials.get("payout_total", payout_total) or payout_total)
                 tax_total = int(financials.get("tax_total", tax_total) or tax_total)
+                admin_winning_total = _calc_admin_lottery_winning_total(r)
                 national_amount = int(financials.get("national_amount", national_amount) or national_amount)
+                national_amount = int(national_amount + admin_winning_total)
 
                 # 기존 장부 데이터가 잘못 저장된 경우 조회 시 자동 보정
                 if (
                     payout_total != int(x.get("payout_total", 0) or 0)
                     or tax_total != int(x.get("tax_total", 0) or 0)
+                    or admin_winning_total != int(x.get("admin_winning_total", 0) or 0)
                     or national_amount != int(x.get("national_amount", 0) or 0)
                 ):
                     d.reference.set(
                         {
                             "payout_total": int(payout_total),
                             "tax_total": int(tax_total),
+                            "admin_winning_total": int(admin_winning_total),
                             "national_amount": int(national_amount),
                             "updated_at": firestore.SERVER_TIMESTAMP,
                         },
