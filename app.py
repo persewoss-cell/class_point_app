@@ -12897,7 +12897,9 @@ if "🍀 복권" in tabs:
 
                 if draw_submitted:
                     st.caption(f"회차 {int((r_dat or {}).get('round_no', 0) or 0)} | 당첨번호: {', '.join([f'{n:02d}' for n in win_nums])}")
-
+                else:
+                    st.info("복권 추첨 후 당첨자 확인이 가능합니다.")
+                
                 if winners:
                     def _render_nums(nums, wset):
                         out = []
