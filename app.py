@@ -12855,9 +12855,9 @@ if "🍀 복권" in tabs:
                     ]
                     st.dataframe(pd.DataFrame(view_rows), use_container_width=True, hide_index=True)
                 else:
-                    st.info("마감된 복권이 없습니다.")
+                    st.info("복권 마감 버튼을 누르면 참여결과가 나타납니다.")
             else:
-                st.info("마감된 복권이 없습니다.")
+                st.info("복권 마감 버튼을 누르면 참여결과가 나타납니다.")
 
             st.markdown("### 🎰 복권 추첨하기")
             d1, d2, d3, d4 = st.columns(4)
