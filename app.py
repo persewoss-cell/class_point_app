@@ -12767,7 +12767,7 @@ if "🍀 복권" in tabs:
                 join_summary = st.session_state.get("lot_admin_join_summary") or {}
                 if join_summary:
                     st.caption(
-                        "복권 참여 현황 : "
+                        "관리자 참여 현황 : "
                         f"복권 참여수 {int(join_summary.get('count', 0) or 0):02d}  |  "
                         f"총액 {int(join_summary.get('total_cost', 0) or 0)}  |  "
                         f"국고반영여부 {'O' if bool(join_summary.get('treasury_applied', False)) else 'X'}"
