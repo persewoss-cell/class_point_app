@@ -12617,7 +12617,7 @@ if "🏷️ 경매" in tabs:
 
                     # 장부 반영이 완료된 경매는 결과 표를 숨기고 기본 안내 문구를 유지
                     if bool(cl_round.get("ledger_applied", False)):
-                        st.info("경매 마감 후 마감 버튼을 눌러야 경매 결과가 표시됩니다.")
+                        st.info("경매 마감 버튼을 눌러야 경매 결과가 표시됩니다.")
                     else:
                         bid_res = api_list_auction_bids(cl_round_id)
                         bid_rows = list(bid_res.get("rows", []) or [])
