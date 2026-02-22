@@ -881,11 +881,8 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
 
             pname, cur_price = prod_map.get(pid, (pid, 0.0))
 
-            # 현재가치(대략): 투자금 * (현재가/매수가)
-            if buy_price > 0 and cur_price > 0:
-                cur_val = invest_amount * (cur_price / buy_price)
-            else:
-                cur_val = invest_amount
+            # 현재 평가금은 투자 회수(지급) 계산과 동일 규칙 사용
+            _, _, cur_val = _calc_invest_redeem_projection(invest_amount, buy_price, cur_price)
 
             per_prod_val[pid] = per_prod_val.get(pid, 0) + cur_val
 
@@ -909,6 +906,34 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
     except Exception:
         return ("없음", 0)
 
+
+def _calc_invest_redeem_projection(invest_amount: int, buy_price: float, sell_price: float):
+    """
+    투자 회수(지급)와 동일한 기준으로 현재 평가/예상 회수금 계산.
+    return: (등락폭, 수익/손실, 회수예상금[int])
+    """
+    def _as_price1_local(v):
+        try:
+            return float(f"{float(v):.1f}")
+        except Exception:
+            return 0.0
+    invest_amount = int(invest_amount or 0)
+    buy_price = _as_price1_local(buy_price)
+    sell_price = _as_price1_local(sell_price)
+    diff = _as_price1_local(sell_price - buy_price)
+
+    # diff <= -100 : 전액 손실
+    if diff <= -100:
+        profit = -invest_amount
+        redeem_amt = 0
+    else:
+        profit = invest_amount * float(diff) / 10.0
+        redeem_amt = invest_amount + profit
+        if redeem_amt < 0:
+            redeem_amt = 0
+
+    return diff, profit, int(round(redeem_amt))
+    
 
 @st.cache_data(ttl=30, show_spinner=False)
 def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
@@ -3871,13 +3896,12 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
     bid_res = api_list_auction_bids(round_id)
     bids = list(bid_res.get("rows", []) or [])
     participants = int(len(bids))
-    if not bids:
-        return {"ok": False, "error": "입찰 데이터가 없습니다."}
 
     total = int(sum(int(x.get("amount", 0) or 0) for x in bids))
     fee_total = 0
+    winner_amount = 0
 
-    if refund_non_winners:
+    if refund_non_winners and bids:
         winner = bids[0]
         winner_amount = int(winner.get("amount", 0) or 0)
         winner_name = str(winner.get("student_name", "") or "")
@@ -3919,12 +3943,14 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
         )
     else:
         tre_total = int(total)
-        winner_amount = int(bids[0].get("amount", 0) or 0)
+        if bids:
+            winner_amount = int(bids[0].get("amount", 0) or 0)
         tre_memo = f"경매 {int(r.get('round_no', 0) or 0)}회 세입"
 
-    tre_res = api_add_treasury_tx(ADMIN_PIN, tre_memo, income=tre_total, expense=0, actor="auction")
-    if not tre_res.get("ok"):
-        return {"ok": False, "error": f"국고 반영 실패: {tre_res.get('error', 'unknown')}"}
+    if tre_total > 0:
+        tre_res = api_add_treasury_tx(ADMIN_PIN, tre_memo, income=tre_total, expense=0, actor="auction")
+        if not tre_res.get("ok"):
+            return {"ok": False, "error": f"국고 반영 실패: {tre_res.get('error', 'unknown')}"}
 
     if refund_non_winners and fee_total > 0:
         fee_res = api_add_treasury_tx(
@@ -3974,7 +4000,7 @@ def api_list_auction_admin_ledger(limit=100):
                 "입찰 참가수": int(x.get("participants", 0) or 0),
                 "입찰금 총액": settled_bid_amount,
                 "낙찰금 수수료 총액": int(x.get("fee_amount", 0) or 0),
-                "국고 반영 총액": int(x.get("total_amount", 0) or 0),
+                "국고 반영 총액": "-" if int(x.get("total_amount", 0) or 0) == 0 else int(x.get("total_amount", 0) or 0),
             }
         )
     return {"ok": True, "rows": rows}
@@ -4202,6 +4228,8 @@ def api_list_lottery_entries(round_id: str):
                     "numbers_text": ", ".join([f"{n:02d}" for n in nums]),
                     "submitted_at": x.get("submitted_at"),
                     "submitted_at_text": _fmt_lottery_dt(x.get("submitted_at")),
+                    "is_admin": bool(x.get("is_admin", False)),
+                    "treasury_applied": bool(x.get("treasury_applied", False)),
                 }
             )
         return out
@@ -4510,6 +4538,7 @@ def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_trea
                     "submitted_at": firestore.SERVER_TIMESTAMP,
                     "ticket_price": int(price),
                     "is_admin": True,
+                    "treasury_applied": bool(apply_treasury),
                 },
             )
 
@@ -7636,22 +7665,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     # 회수 계산(÷10)
     # -------------------------
     def _calc_redeem_amount(invest_amount: int, buy_price: float, sell_price: float):
-        invest_amount = int(invest_amount or 0)
-        buy_price = _as_price1(buy_price)
-        sell_price = _as_price1(sell_price)
-        diff = _as_price1(sell_price - buy_price)
-    
-        # diff <= -100 : 전액 손실
-        if diff <= -100:
-            profit = -invest_amount
-            redeem_amt = 0
-        else:
-            profit = invest_amount * float(diff) / 10.0  # ✅ 나누기 10
-            redeem_amt = invest_amount + profit
-            if redeem_amt < 0:
-                redeem_amt = 0
-    
-        return diff, profit, int(round(redeem_amt))
+        return _calc_invest_redeem_projection(invest_amount, buy_price, sell_price)
     
     # -------------------------------------------------
     # 1) (상단) 종목 및 주가 변동
@@ -7712,11 +7726,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 buy_price = float(r.get("buy_price", 0.0) or 0.0)
                 cur_price = float(price_by_id.get(pid, 0.0) or 0.0)
 
-                # ✅ 현재 평가(거래 탭 기준): 투자금 * (현재가/매입가)
-                if buy_price > 0 and cur_price > 0:
-                    cur_val = amt * (cur_price / buy_price)
-                else:
-                    cur_val = amt
+                # ✅ 현재 평가는 투자 회수(지급) 계산과 동일 규칙 적용
+                _, _, cur_val = _calc_invest_redeem_projection(amt, buy_price, cur_price)
 
                 _add_sum(principal_by_name, nm, amt)
                 _add_sum(eval_by_name, nm, int(round(cur_val)))
@@ -12636,6 +12647,17 @@ if "🏷️ 경매" in tabs:
                             f"최근 마감 경매: {int(cl_round.get('round_no', 0) or 0):02d}회 | "
                             f"입찰이름: {str(cl_round.get('bid_name', '') or '')}"
                         )
+                        
+                        def _auc_toggle_no_refund():
+                            if st.session_state.get("auc_refund_non_winners_no", False):
+                                st.session_state["auc_refund_non_winners_yes"] = False
+
+                        def _auc_toggle_yes_refund():
+                            if st.session_state.get("auc_refund_non_winners_yes", False):
+                                st.session_state["auc_refund_non_winners_no"] = False
+                        already = bool(cl_round.get("ledger_applied", False))
+                        apply_clicked = False
+                             
                         if view_rows:
                             df_auc = pd.DataFrame(view_rows)
                             st.dataframe(df_auc, use_container_width=True, hide_index=True)
@@ -12645,8 +12667,8 @@ if "🏷️ 경매" in tabs:
                                 df_auc.to_excel(writer, index=False, sheet_name="경매결과")
                             xbuf.seek(0)
 
-                            d1, d2, d3 = st.columns([1, 1, 1])
-                            with d1:
+                            ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1.2, 0.9, 1.2, 1.2])
+                            with ctrl1:
                                 st.download_button(
                                     "엑셀저장",
                                     data=xbuf.getvalue(),
@@ -12655,22 +12677,40 @@ if "🏷️ 경매" in tabs:
                                     use_container_width=True,
                                     key="auc_excel_download",
                                 )
-                            with d2:
-                                refund_non_winners = st.checkbox("낙찰금 반환(반환액 90%)", value=True, key="auc_refund_non_winners")
-                            with d3:
-                                already = bool(cl_round.get("ledger_applied", False))
-                                if st.button("장부반영", key="auc_apply_ledger_btn", use_container_width=True, disabled=already):
-                                    res = api_apply_auction_ledger(ADMIN_PIN, cl_round_id, refund_non_winners=refund_non_winners)
-                                    if res.get("ok"):
-                                        toast("경매 관리장부 + 국고 세입 반영 완료", icon="✅")
-                                        st.rerun()
-                                    else:
-                                        st.error(res.get("error", "장부 반영 실패"))
-                                if already:
-                                    st.caption("이미 장부 반영된 경매입니다.")
+                            with ctrl2:
+                                no_refund_checked = st.checkbox(
+                                    "낙찰금 미반환",
+                                    value=bool(st.session_state.get("auc_refund_non_winners_no", False)),
+                                    key="auc_refund_non_winners_no",
+                                    on_change=_auc_toggle_no_refund,
+                                )
+                            with ctrl3:
+                                yes_refund_checked = st.checkbox(
+                                    "낙찰금 반환(반환액 90%)",
+                                    value=bool(st.session_state.get("auc_refund_non_winners_yes", False)),
+                                    key="auc_refund_non_winners_yes",
+                                    on_change=_auc_toggle_yes_refund,
+                                )
+                            with ctrl4:
+                                apply_clicked = st.button("장부반영", key="auc_apply_ledger_btn", use_container_width=True, disabled=already)
                         else:
                             st.info("제출된 입찰표가 없습니다.")
+
+                        if already:
+                            st.caption("이미 장부 반영된 경매입니다.")
                             
+                        if apply_clicked:
+                            if (not no_refund_checked) and (not yes_refund_checked):
+                                st.warning("낙찰금 반환 여부를 선택 후 장부 반영 버튼을 눌러 주세요")
+                            else:
+                                refund_non_winners = bool(yes_refund_checked)
+                                res = api_apply_auction_ledger(ADMIN_PIN, cl_round_id, refund_non_winners=refund_non_winners)
+                                if res.get("ok"):
+                                    toast("경매 관리장부 + 국고 세입 반영 완료", icon="✅")
+                                    st.rerun()
+                                else:
+                                    st.error(res.get("error", "장부 반영 실패"))
+                                    
             st.markdown("### 📚 경매 관리 장부")
             led = api_list_auction_admin_ledger(limit=100)
             led_rows = list(led.get("rows", []) or [])
@@ -12680,6 +12720,7 @@ if "🏷️ 경매" in tabs:
                 st.info("아직 반영된 경매 관리 장부가 없습니다.")
 
         else:
+            st.markdown("### 📝 입찰표")
             if not open_round:
                 st.info("개시된 경매가 없습니다.")
             else:
@@ -12689,12 +12730,15 @@ if "🏷️ 경매" in tabs:
                 my_no_v = int((me or {}).get("no", 0) or 0)
                 my_name_v = str((me or {}).get("name", login_name) or login_name)
 
-                st.markdown("### 📝 입찰표")
                 st.write(f"- 입찰기일: {_fmt_auction_dt(open_round.get('opened_at'))}")
                 st.write(f"- 입찰번호: {int(open_round.get('round_no', 0) or 0):02d}")
                 st.write(f"- 입찰이름: {str(open_round.get('bid_name', '') or '')}")
                 st.write(f"- 입찰자 정보: 번호 {my_no_v} / 이름 {my_name_v} / 소속 {str(open_round.get('affiliation', '') or '')}")
 
+            st.markdown("### ✋경매 참여하기")
+            if not open_round:
+                st.info("개시된 경매가 없습니다.")
+            else:
                 bid_doc_id = f"{str(open_round.get('round_id', '') or '')}_{sid}"
                 prev_bid = db.collection("auction_bids").document(bid_doc_id).get() if sid else None
                 if prev_bid and prev_bid.exists:
@@ -12792,24 +12836,46 @@ if "🍀 복권" in tabs:
                             apply_treasury=bool(lot_apply_treasury),
                         )
                         if ares.get("ok"):
-                            st.session_state["lot_admin_join_summary"] = {
-                                "count": int(ares.get("count", 0) or 0),
-                                "total_cost": int(ares.get("total_cost", 0) or 0),
-                                "treasury_applied": bool(ares.get("treasury_applied", False)),
-                            }
                             toast(f"관리자 복권 {int(ares.get('count', 0) or 0)}게임 참여 완료", icon="✅")
                             st.rerun()
                         else:
                             st.error(ares.get("error", "관리자 복권 참여 실패"))
 
-                join_summary = st.session_state.get("lot_admin_join_summary") or {}
-                if join_summary:
+                current_round_entries = api_list_lottery_entries(str(open_round.get("round_id", "") or "")).get("rows", [])
+                ticket_price = int(open_round.get("ticket_price", 0) or 0)
+                admin_with_treasury_count = 0
+                admin_without_treasury_count = 0
+                student_count = 0
+                for row in current_round_entries:
+                    is_admin_entry = bool(row.get("is_admin", False))
+                    if is_admin_entry:
+                        if bool(row.get("treasury_applied", False)):
+                            admin_with_treasury_count += 1
+                        else:
+                            admin_without_treasury_count += 1
+                    else:
+                        student_count += 1
+
+                if admin_with_treasury_count > 0:
                     st.caption(
                         "관리자 참여 현황 : "
-                        f"복권 참여수 {int(join_summary.get('count', 0) or 0):02d}  |  "
-                        f"총액 {int(join_summary.get('total_cost', 0) or 0)}  |  "
-                        f"국고반영여부 {'O' if bool(join_summary.get('treasury_applied', False)) else 'X'}"
+                        f"복권 참여수 {int(admin_with_treasury_count):02d}  |  "
+                        f"총액 {int(admin_with_treasury_count * ticket_price)}  |  "
+                        "국고반영여부 O"
                     )
+                if admin_without_treasury_count > 0:
+                    st.caption(
+                        "관리자 참여 현황 : "
+                        f"복권 참여수 {int(admin_without_treasury_count):02d}  |  "
+                        f"총액 {int(admin_without_treasury_count * ticket_price)}  |  "
+                        "국고반영여부 X"
+                    )
+
+                st.caption(
+                    "학생 참여 현황 : "
+                    f"복권 참여수 {int(student_count):02d}  |  "
+                    f"총액 {int(student_count * ticket_price):03d}"
+                )
             else:
                 st.info("개시된 복권이 없습니다.")
             
@@ -12827,10 +12893,18 @@ if "🍀 복권" in tabs:
                     current_round_id = ""
 
             st.markdown("### 📝 복권 참여 결과")
+            lot_result_gate_msg = "복권 마감 버튼을 눌러야 결과가 표시됩니다."
             if current_round_id:
                 ent_res = api_list_lottery_entries(current_round_id)
                 ent_rows = list(ent_res.get("rows", []) or [])
-                if ent_rows and str(current_round.get("status", "")) in ("closed", "drawn"):
+                is_lottery_closed = str(current_round.get("status", "")) in ("closed", "drawn")
+                payout_done = bool(current_round.get("payout_done", False))
+
+                # 복권 참여 결과는 "복권 마감" 이후에만 보이고,
+                # 당첨금 지급/장부 반영 완료 후에는 다시 안내 문구로 전환.
+                show_entry_result = bool(ent_rows) and is_lottery_closed and (not payout_done)
+
+                if show_entry_result:
                     ticket_price = int(current_round.get("ticket_price", 0) or 0)
                     participant_keys = set()
                     for r in ent_rows:
@@ -12863,10 +12937,10 @@ if "🍀 복권" in tabs:
                     ]
                     st.dataframe(pd.DataFrame(view_rows), use_container_width=True, hide_index=True)
                 else:
-                    st.info("복권 마감 버튼을 누르면 참여결과가 나타납니다.")
+                    st.info(lot_result_gate_msg)
             else:
-                st.info("복권 마감 버튼을 누르면 참여결과가 나타납니다.")
-
+                st.info(lot_result_gate_msg)
+                
             st.markdown("### 🎰 복권 추첨하기")
             d1, d2, d3, d4 = st.columns(4)
             with d1:
@@ -12890,6 +12964,7 @@ if "🍀 복권" in tabs:
                 else:
                     res = api_draw_lottery(ADMIN_PIN, current_round_id, draw_nums)
                     if res.get("ok"):
+                        st.session_state["lottery_winners_visible_round_id"] = str(current_round_id)
                         toast("복권 추첨 완료", icon="✅")
                         st.rerun()
                     else:
@@ -12897,18 +12972,22 @@ if "🍀 복권" in tabs:
 
             st.markdown("### 🎉 당첨자 확인")
             if current_round_id:
+                current_round_id_str = str(current_round_id)
+                submitted_round_id = str(st.session_state.get("lottery_winners_visible_round_id", "") or "")
+                show_winner_result = submitted_round_id == current_round_id_str
+                
                 r_snap = db.collection("lottery_rounds").document(current_round_id).get()
                 r_dat = r_snap.to_dict() if r_snap.exists else {}
                 winners = list((r_dat or {}).get("winners", []) or [])
                 win_nums = _normalize_lottery_numbers((r_dat or {}).get("winning_numbers", []))
                 draw_submitted = str((r_dat or {}).get("status", "") or "") == "drawn"
 
-                if draw_submitted:
+                if show_winner_result and draw_submitted:
                     st.caption(f"회차 {int((r_dat or {}).get('round_no', 0) or 0)} | 당첨번호: {', '.join([f'{n:02d}' for n in win_nums])}")
                 else:
-                    st.info("복권 추첨 후 당첨자 확인이 가능합니다.")
-                
-                if winners:
+                    st.info("당첨 번호 제출 버튼을 눌러야 당첨 결과가 표시됩니다.")
+                    
+                if show_winner_result and winners:
                     def _render_nums(nums, wset):
                         out = []
                         for n in nums:
@@ -12936,10 +13015,10 @@ if "🍀 복권" in tabs:
                     st.markdown("".join(html), unsafe_allow_html=True)
 
                 else:
-                    if draw_submitted:
+                    if show_winner_result and draw_submitted:
                         st.info("당첨자가 없습니다.")
 
-                if draw_submitted:
+                if show_winner_result and draw_submitted:
                     payout_done = bool((r_dat or {}).get("payout_done", False))
                     led_done = bool((r_dat or {}).get("ledger_applied", False))
                     action_done = payout_done and led_done
@@ -12964,6 +13043,7 @@ if "🍀 복권" in tabs:
                                 finalize_ok = False
 
                         if finalize_ok:
+                            st.session_state["lottery_winners_visible_round_id"] = ""
                             toast("당첨금 지급 및 장부 반영 완료", icon="✅")
                             st.rerun()
 
