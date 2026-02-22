@@ -3974,7 +3974,7 @@ def api_list_auction_admin_ledger(limit=100):
                 "입찰 참가수": int(x.get("participants", 0) or 0),
                 "입찰금 총액": settled_bid_amount,
                 "낙찰금 수수료 총액": int(x.get("fee_amount", 0) or 0),
-                "총 액수": int(x.get("total_amount", 0) or 0),
+                "국고 반영 총액": int(x.get("total_amount", 0) or 0),
             }
         )
     return {"ok": True, "rows": rows}
