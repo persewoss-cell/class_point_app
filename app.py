@@ -12606,7 +12606,7 @@ if "🏷️ 경매" in tabs:
 
             # ✅ 경매 결과는 '진행 중 경매가 없을 때(=마감 후)'에만 노출
             if open_round:
-                st.info("경매 마감 후 마감 버튼을 눌러야 경매 결과가 표시됩니다.")
+                st.info("경매 마감 버튼을 눌러야 경매 결과가 표시됩니다.")
             else:
                 closed_res = api_get_latest_closed_auction_round()
                 if not closed_res.get("ok"):
