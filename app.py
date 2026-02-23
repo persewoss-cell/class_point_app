@@ -892,15 +892,16 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
         # 총합
         total_val = int(round(sum(v for v in per_prod_val.values())))
 
-        # 표시: 종목별(내림차순) 상위 3개만
-        items = sorted(per_prod_val.items(), key=lambda kv: kv[1], reverse=True)
+        # 표시: 종목명 오름차순, 개수 제한 없이 모두 표시
+        items = sorted(
+            per_prod_val.items(),
+            key=lambda kv: str(prod_map.get(kv[0], (kv[0], 0.0))[0] or kv[0]),
+        )
         shown = []
-        for pid, v in items[:3]:
+        for pid, v in items:
             pname = prod_map.get(pid, (pid, 0.0))[0]
             shown.append(f"{pname} {int(round(v))}드림")
         text = ", ".join(shown)
-        if len(items) > 3:
-            text += f" 외 {len(items)-3}개"
 
         return (text, total_val)
     except Exception:
@@ -972,17 +973,12 @@ def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
 
         total_principal = int(sum(int(v) for v in per_prod_amt.values()))
 
-        # 표시: 종목별(내림차순) 최대 6개, 그 이상이면 상위 3개 + 외 n개
-        items = sorted(per_prod_amt.items(), key=lambda kv: kv[1], reverse=True)
+        # 표시: 종목명 오름차순, 개수 제한 없이 모두 표시
+        items = sorted(per_prod_amt.items(), key=lambda kv: str(prod_name.get(kv[0], kv[0]) or kv[0]))
 
         shown = []
-        if len(items) <= 6:
-            for pid, v in items:
-                shown.append(f"{prod_name.get(pid, pid)} {int(v)}드림")
-        else:
-            for pid, v in items[:3]:
-                shown.append(f"{prod_name.get(pid, pid)} {int(v)}드림")
-            shown.append(f"외 {len(items)-3}개")
+        for pid, v in items:
+            shown.append(f"{prod_name.get(pid, pid)} {int(v)}드림")
 
         return (", ".join(shown), total_principal)
 
