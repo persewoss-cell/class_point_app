@@ -11494,7 +11494,6 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
                         picked = st.radio(
                             label="",
                             options=("O", "X", "△"),
-                            index=("O", "X", "△").index(st.session_state[cell_key]),
                             horizontal=True,
                             key=cell_key,
                             label_visibility="collapsed",
