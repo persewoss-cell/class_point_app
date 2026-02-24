@@ -27,6 +27,10 @@ KST = timezone(timedelta(hours=9))
 ADMIN_PIN = "9999"
 ADMIN_NAME = "관리자"
 
+# 신용등급 미반영 학생도 기본 기능(은행/경매/복권)을 바로 사용하도록 기본값 고정
+DEFAULT_CREDIT_SCORE = 50
+DEFAULT_CREDIT_GRADE = 5
+
 # =========================
 # 모바일 UI CSS + 템플릿 정렬(촘촘) CSS
 # (너가 준 CSS 그대로)
@@ -1150,35 +1154,39 @@ def _safe_credit(student_id: str):
     ✅ (score, grade) 안전 조회
     - 가능하면 _calc_credit_score_for_student()로 즉시 계산(사용자 헤더에서도 동작)
     - 그래도 안되면 students 문서에 저장된 credit_score/credit_grade 사용
-    - 실패 시 (0, 0)
+    - 실패 시 기본값(50점/5등급)
     """
     try:
         if not student_id:
-            return (0, 0)
-
+            return (DEFAULT_CREDIT_SCORE, DEFAULT_CREDIT_GRADE)
+            
         f = globals().get("_calc_credit_score_for_student")
         if callable(f):
             out = f(str(student_id))
             # out이 (score, grade) 튜플인 경우
             if isinstance(out, (tuple, list)) and len(out) >= 2:
-                return (int(out[0] or 0), int(out[1] or 0))
+                sc = int(out[0] if out[0] is not None else DEFAULT_CREDIT_SCORE)
+                gr = int(out[1] if out[1] is not None else 0)
+                if gr <= 0:
+                    gr = int(_score_to_grade(sc))
+                return (sc, gr)
             # out이 score(int)만 오는 경우
             try:
-                sc = int(out or 0)
-                return (sc, int(globals().get("_score_to_grade")(sc) if callable(globals().get("_score_to_grade")) else 0))
+                sc = int(out if out is not None else DEFAULT_CREDIT_SCORE)
+                return (sc, int(globals().get("_score_to_grade")(sc) if callable(globals().get("_score_to_grade")) else DEFAULT_CREDIT_GRADE))
             except Exception:
                 pass
 
         # students 문서에 저장된 값 사용
         snap = db.collection("students").document(str(student_id)).get()
         if not snap.exists:
-            return (0, 0)
+            return (DEFAULT_CREDIT_SCORE, DEFAULT_CREDIT_GRADE)
         data = snap.to_dict() or {}
-        sc = int(data.get("credit_score", 0) or 0)
+        sc = int(data.get("credit_score", DEFAULT_CREDIT_SCORE) or DEFAULT_CREDIT_SCORE)
         gr = int(data.get("credit_grade", 0) or 0)
 
         # grade가 비어있는데 score는 있으면 grade 계산
-        if (gr == 0) and (sc != 0):
+        if gr <= 0:
             gfn = globals().get("_score_to_grade")
             if callable(gfn):
                 gr = int(gfn(sc))
@@ -1186,8 +1194,8 @@ def _safe_credit(student_id: str):
         return (sc, gr)
 
     except Exception:
-        return (0, 0)
-
+        return (DEFAULT_CREDIT_SCORE, DEFAULT_CREDIT_GRADE)
+        
 def _fmt_admin_one_line(
     no: int,
     name: str,
@@ -1309,7 +1317,7 @@ def _set_login_student_context_from_doc(doc):
         "student_id": str(doc.id),
         "name": str(data.get("name", "") or ""),
         "balance": int(data.get("balance", 0) or 0),
-        "credit_grade": int(data.get("credit_grade", 0) or 0),
+        "credit_grade": int(data.get("credit_grade", DEFAULT_CREDIT_GRADE) or DEFAULT_CREDIT_GRADE),
         "role_id": str(data.get("role_id", "") or ""),
         "extra_permissions": list(data.get("extra_permissions", []) or []),
     }
@@ -2073,8 +2081,8 @@ def api_get_balance(login_name, login_pin):
     data = student_doc.to_dict() or {}
 
     # ✅ 신용등급(없으면 0)
-    credit_grade = int(data.get("credit_grade", 0) or 0)
-
+    credit_grade = int(data.get("credit_grade", DEFAULT_CREDIT_GRADE) or DEFAULT_CREDIT_GRADE)
+    
     return {
         "ok": True,
         "balance": int(data.get("balance", 0) or 0),
@@ -2086,19 +2094,19 @@ def api_get_credit_grade_by_student_id(student_id: str) -> int:
     """
     ✅ 학생 신용등급 조회
     - 신용등급 탭에서 저장해둔 값을 students 문서의 credit_grade 필드로 사용한다고 가정
-    - 없으면 0등급으로 표시
+    - 없으면 기본 5등급으로 표시
     """
     try:
         if not student_id:
-            return 0
+            return DEFAULT_CREDIT_GRADE
         snap = db.collection("students").document(student_id).get()
         if not snap.exists:
-            return 0
+            return DEFAULT_CREDIT_GRADE
         data = snap.to_dict() or {}
-        return int(data.get("credit_grade", 0) or 0)
+        return int(data.get("credit_grade", DEFAULT_CREDIT_GRADE) or DEFAULT_CREDIT_GRADE)
     except Exception:
-        return 0
-
+        return DEFAULT_CREDIT_GRADE
+        
 # =========================
 # ✅ Deposit Approval (입금 승인) - NEW
 # - 컬렉션: deposit_requests
@@ -5704,8 +5712,8 @@ def refresh_account_data_light(name: str, pin: str, force: bool = False):
 
     balance = int(bal_res["balance"])
     student_id = bal_res.get("student_id")
-    credit_grade = int(bal_res.get("credit_grade", 0) or 0)
-
+    credit_grade = int(bal_res.get("credit_grade", DEFAULT_CREDIT_GRADE) or DEFAULT_CREDIT_GRADE)
+    
     tx_res = api_get_txs_by_student_id(student_id, limit=300)
     if not tx_res.get("ok"):
         st.session_state.data[name] = {"error": tx_res.get("error", "내역 로드 실패"), "ts": now}
