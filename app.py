@@ -1808,6 +1808,8 @@ def api_create_account(name, pin):
             "name": name,
             "pin": pin,
             "balance": 0,
+            "credit_score": DEFAULT_CREDIT_SCORE,
+            "credit_grade": DEFAULT_CREDIT_GRADE,            
             "is_active": True,
             "role_id": "",
             "created_at": firestore.SERVER_TIMESTAMP,
@@ -2047,15 +2049,26 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
 def api_get_txs_by_student_id(student_id: str, limit=200):
     if not student_id:
         return {"ok": False, "error": "student_id가 없습니다."}
-    q = (
-        db.collection("transactions")
-        .where(filter=FieldFilter("student_id", "==", student_id))
-        .order_by("created_at", direction=firestore.Query.DESCENDING)
-        .limit(int(limit))
-        .stream()
-    )
+    try:
+        q = (
+            db.collection("transactions")
+            .where(filter=FieldFilter("student_id", "==", student_id))
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(int(limit))
+            .stream()
+        )
+        tx_docs = list(q)
+    except FailedPrecondition:
+        # 신규 배포 환경에서 복합 인덱스가 준비되지 않은 경우를 대비
+        fallback_q = (
+            db.collection("transactions")
+            .where(filter=FieldFilter("student_id", "==", student_id))
+            .stream()
+        )
+        tx_docs = list(fallback_q)
+        
     rows = []
-    for d in q:
+    for d in tx_docs:
         tx = d.to_dict() or {}
         created_dt_utc = _to_utc_datetime(tx.get("created_at"))
         amt = int(tx.get("amount", 0) or 0)
@@ -2072,6 +2085,9 @@ def api_get_txs_by_student_id(student_id: str, limit=200):
                 "balance_after": int(tx.get("balance_after", 0) or 0),
             }
         )
+
+    rows.sort(key=lambda x: x.get("created_at_utc") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    rows = rows[: int(limit)]
     return {"ok": True, "rows": rows}
 
 def api_get_balance(login_name, login_pin):
@@ -5255,6 +5271,8 @@ with st.sidebar:
                             "name": manage_name,
                             "pin": manage_pin,
                             "balance": 0,
+                            "credit_score": DEFAULT_CREDIT_SCORE,
+                            "credit_grade": DEFAULT_CREDIT_GRADE,                            
                             "is_active": True,
                             "role_id": "",
                             "io_enabled": True,
@@ -9635,6 +9653,8 @@ if "👥 계정 정보/활성화" in tabs:
                                 {
                                     **payload,
                                     "balance": 0,
+                                    "credit_score": DEFAULT_CREDIT_SCORE,
+                                    "credit_grade": DEFAULT_CREDIT_GRADE,                            
                                     "role_id": "",
                                     "created_at": firestore.SERVER_TIMESTAMP,
                                 }
@@ -11587,9 +11607,9 @@ div[data-testid="stElementContainer"]:has(input[id*="stat_cellpick_"]) {
 if "💳 신용등급" in tabs:
     with tab_map["💳 신용등급"]:
 
-        if not (is_admin or has_tab_access(my_perms, "💳 신용등급", is_admin)):
+        credit_tab_access = bool(is_admin or has_tab_access(my_perms, "💳 신용등급", is_admin))
+        if not credit_tab_access:
             st.info("접근 권한이 없습니다.")
-            st.stop()
 
         # -------------------------
         # 0) 학생 목록(번호/이름) : 계정정보 탭과 동일(활성 학생)
@@ -11607,9 +11627,9 @@ if "💳 신용등급" in tabs:
                 stu_rows.append({"student_id": d.id, "no": no, "name": nm})
         stu_rows.sort(key=lambda r: (r["no"], r["name"]))
 
-        if not stu_rows:
+        has_students = bool(stu_rows)
+        if credit_tab_access and (not has_students):
             st.info("활성화된 학생(계정)이 없습니다.")
-            st.stop()
 
         # -------------------------
         # 2) 점수 계산 설정(기본값)
@@ -11665,270 +11685,270 @@ if "💳 신용등급" in tabs:
         sub_res = api_list_stat_submissions_cached(limit_cols=60)
         sub_rows_all = sub_res.get("rows", []) if sub_res.get("ok") else []
 
-        if not sub_rows_all:
+        if credit_tab_access and has_students and (not sub_rows_all):
             st.info("통계청 제출물 내역이 없습니다. 먼저 통계청 탭에서 제출물을 추가하세요.")
-            st.stop()
-
-        # API가 내려주는 "원래 순서"를 표시용 최신순으로 사용 (가장 안정적)
-        # - sub_rows_desc: 최신 → 오래된 (표시용)
-        # - sub_rows_asc : 오래된 → 최신 (누적 계산용)
-        sub_rows_desc = list(sub_rows_all)            # ✅ 그대로(최신→과거라고 가정)
-        sub_rows_asc  = list(reversed(sub_rows_desc)) # ✅ 누적 계산은 과거→최신
-
-        base = int(credit_cfg.get("base", 50) if credit_cfg.get("base", None) is not None else 50)
-        o_pt = int(credit_cfg.get("o", 1) if credit_cfg.get("o", None) is not None else 1)
-        x_pt = int(credit_cfg.get("x", -3) if credit_cfg.get("x", None) is not None else -3)
-        tri_pt = int(credit_cfg.get("tri", 0) if credit_cfg.get("tri", None) is not None else 0)
-
-        def _norm_status(v) -> str:
-            """상태값을 무조건 'O' / 'X' / '△' 중 하나로 강제"""
-            v = str(v or "").strip().upper()
-            if v in ("O", "○"):
-                return "O"
-            if v in ("△", "▲", "Δ"):
-                return "△"
-            return "X"
-
-        def _delta(v) -> int:
-            v = _norm_status(v)
-            if v == "O":
-                return o_pt
-            if v == "△":
-                return tri_pt
-            return x_pt
-
-        # 학생별 누적 점수 스냅샷: scores_by_sub[sub_id][student_id] = score_after
-        scores_by_sub = {}  # submission_id -> {student_id: score}
-        cur_score = {str(s["student_id"]): int(base) for s in stu_rows}
-
-        for sub in sub_rows_asc:
-            sub_id = str(sub.get("submission_id") or "")
-            if not sub_id:
-                continue
-            statuses = dict(sub.get("statuses", {}) or {})
-            snap_map = {}
-
-            for stx in stu_rows:
-                stid = str(stx["student_id"])
-                v_raw = statuses.get(stid, "X")  # 없으면 X
-                v = _norm_status(v_raw)
-                nxt = int(cur_score.get(stid, base) + _delta(v))
-                if nxt > 100:
-                    nxt = 100
-                if nxt < 0:
-                    nxt = 0
-                cur_score[stid] = nxt
-                snap_map[stid] = nxt
-
-            scores_by_sub[sub_id] = snap_map
-
-        # -------------------------
-        # (PATCH) 가로 페이징 (통계청과 동일 로직)
-        # 기준: credit_page_idx (0 = 최신 페이지)
-        # -------------------------
-        import math
-
-        VISIBLE_COLS = 7
-        total_cols = len(sub_rows_desc)
-        total_pages = max(1, int(math.ceil(total_cols / VISIBLE_COLS)))
-
-        if "credit_page_idx" not in st.session_state:
-            st.session_state["credit_page_idx"] = 0  # ✅ 최신 페이지
-
-        # page_idx 안전 보정
-        st.session_state["credit_page_idx"] = max(
-            0,
-            min(int(st.session_state["credit_page_idx"]), total_pages - 1),
-        )
-        page_idx = int(st.session_state["credit_page_idx"])
-        cur_page = page_idx + 1  # 1-based
-
-        def _credit_goto_page(p: int):
-            p = max(1, min(int(p), total_pages))
-            st.session_state["credit_page_idx"] = p - 1
-            st.rerun()
-
-        def _page_items(cur: int, last: int):
-            if last <= 9:
-                return list(range(1, last + 1))
-            items = [1]
-            left = max(2, cur - 1)
-            right = min(last - 1, cur + 1)
-            if left > 2:
-                items.append("…")
-            items.extend(range(left, right + 1))
-            if right < last - 1:
-                items.append("…")
-            items.append(last)
-            out = []
-            for x in items:
-                if not out or out[-1] != x:
-                    out.append(x)
-            return out
-
-        # -------------------------
-        # 네비게이션 UI
-        # -------------------------
-        st.markdown("### 🌟 신용등급 관리 장부")
-        
-        nav = st.columns([1, 1, 1, 1], gap="small")
-
-        with nav[0]:
-            if st.button(
-                "◀",
-                key="credit_nav_left",
-                use_container_width=True,
-                disabled=(cur_page <= 1),
-            ):
-                _credit_goto_page(cur_page - 1)
-
-        with nav[1]:
-            page_val = st.number_input(
-                "",
-                min_value=1,
-                max_value=total_pages,
-                value=cur_page,
-                step=1,
-                key="credit_page_num",
-                label_visibility="collapsed",
+        if credit_tab_access and has_students and sub_rows_all:
+            # API가 내려주는 "원래 순서"를 표시용 최신순으로 사용 (가장 안정적)
+            # - sub_rows_desc: 최신 → 오래된 (표시용)
+            # - sub_rows_asc : 오래된 → 최신 (누적 계산용)
+            sub_rows_desc = list(sub_rows_all)            # ✅ 그대로(최신→과거라고 가정)
+            sub_rows_asc  = list(reversed(sub_rows_desc)) # ✅ 누적 계산은 과거→최신
+    
+            base = int(credit_cfg.get("base", 50) if credit_cfg.get("base", None) is not None else 50)
+            o_pt = int(credit_cfg.get("o", 1) if credit_cfg.get("o", None) is not None else 1)
+            x_pt = int(credit_cfg.get("x", -3) if credit_cfg.get("x", None) is not None else -3)
+            tri_pt = int(credit_cfg.get("tri", 0) if credit_cfg.get("tri", None) is not None else 0)
+    
+            def _norm_status(v) -> str:
+                """상태값을 무조건 'O' / 'X' / '△' 중 하나로 강제"""
+                v = str(v or "").strip().upper()
+                if v in ("O", "○"):
+                    return "O"
+                if v in ("△", "▲", "Δ"):
+                    return "△"
+                return "X"
+    
+            def _delta(v) -> int:
+                v = _norm_status(v)
+                if v == "O":
+                    return o_pt
+                if v == "△":
+                    return tri_pt
+                return x_pt
+    
+            # 학생별 누적 점수 스냅샷: scores_by_sub[sub_id][student_id] = score_after
+            scores_by_sub = {}  # submission_id -> {student_id: score}
+            cur_score = {str(s["student_id"]): int(base) for s in stu_rows}
+    
+            for sub in sub_rows_asc:
+                sub_id = str(sub.get("submission_id") or "")
+                if not sub_id:
+                    continue
+                statuses = dict(sub.get("statuses", {}) or {})
+                snap_map = {}
+    
+                for stx in stu_rows:
+                    stid = str(stx["student_id"])
+                    v_raw = statuses.get(stid, "X")  # 없으면 X
+                    v = _norm_status(v_raw)
+                    nxt = int(cur_score.get(stid, base) + _delta(v))
+                    if nxt > 100:
+                        nxt = 100
+                    if nxt < 0:
+                        nxt = 0
+                    cur_score[stid] = nxt
+                    snap_map[stid] = nxt
+    
+                scores_by_sub[sub_id] = snap_map
+    
+            # -------------------------
+            # (PATCH) 가로 페이징 (통계청과 동일 로직)
+            # 기준: credit_page_idx (0 = 최신 페이지)
+            # -------------------------
+            import math
+    
+            VISIBLE_COLS = 7
+            total_cols = len(sub_rows_desc)
+            total_pages = max(1, int(math.ceil(total_cols / VISIBLE_COLS)))
+    
+            if "credit_page_idx" not in st.session_state:
+                st.session_state["credit_page_idx"] = 0  # ✅ 최신 페이지
+    
+            # page_idx 안전 보정
+            st.session_state["credit_page_idx"] = max(
+                0,
+                min(int(st.session_state["credit_page_idx"]), total_pages - 1),
             )
-            if int(page_val) != int(cur_page):
-                _credit_goto_page(int(page_val))
-
-        with nav[2]:
-            st.markdown(
-                f"<div style='text-align:center; font-weight:700; padding-top:6px;'>/ 전체페이지 {total_pages}</div>",
-                unsafe_allow_html=True,
-            )
-
-        with nav[3]:
-            if st.button(
-                "▶",
-                key="credit_nav_right",
-                use_container_width=True,
-                disabled=(cur_page >= total_pages),
-            ):
-                _credit_goto_page(cur_page + 1)
-
-        # -------------------------
-        # ✅ page_idx 기준으로 날짜 컬럼 슬라이스
-        # -------------------------
-        start = page_idx * VISIBLE_COLS
-        end = start + VISIBLE_COLS
-        sub_rows_view = sub_rows_desc[start:end]
-
-        # ---- 헤더(날짜 + 제출물 내역 2줄) ----
-        hdr_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
-        with hdr_cols[0]:
-            st.markdown("**번호**")
-        with hdr_cols[1]:
-            st.markdown("**이름**")
-
-        for j, s in enumerate(sub_rows_view):
-            with hdr_cols[j + 2]:
-                date_disp = str(s.get("date_display", "") or "").strip()
-                if not date_disp:
-                    date_disp = _fmt_kor_date_short(s.get("created_at_utc", ""))
-
-                lab = str(s.get("label", "") or "").strip()
-
+            page_idx = int(st.session_state["credit_page_idx"])
+            cur_page = page_idx + 1  # 1-based
+    
+            def _credit_goto_page(p: int):
+                p = max(1, min(int(p), total_pages))
+                st.session_state["credit_page_idx"] = p - 1
+                st.rerun()
+    
+            def _page_items(cur: int, last: int):
+                if last <= 9:
+                    return list(range(1, last + 1))
+                items = [1]
+                left = max(2, cur - 1)
+                right = min(last - 1, cur + 1)
+                if left > 2:
+                    items.append("…")
+                items.extend(range(left, right + 1))
+                if right < last - 1:
+                    items.append("…")
+                items.append(last)
+                out = []
+                for x in items:
+                    if not out or out[-1] != x:
+                        out.append(x)
+                return out
+    
+            # -------------------------
+            # 네비게이션 UI
+            # -------------------------
+            st.markdown("### 🌟 신용등급 관리 장부")
+            
+            nav = st.columns([1, 1, 1, 1], gap="small")
+    
+            with nav[0]:
+                if st.button(
+                    "◀",
+                    key="credit_nav_left",
+                    use_container_width=True,
+                    disabled=(cur_page <= 1),
+                ):
+                    _credit_goto_page(cur_page - 1)
+    
+            with nav[1]:
+                page_val = st.number_input(
+                    "",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=cur_page,
+                    step=1,
+                    key="credit_page_num",
+                    label_visibility="collapsed",
+                )
+                if int(page_val) != int(cur_page):
+                    _credit_goto_page(int(page_val))
+    
+            with nav[2]:
                 st.markdown(
-                    f"<div style='text-align:center; font-weight:900; line-height:1.15;'>"
-                    f"{date_disp}<br>{lab}"
-                    f"</div>",
+                    f"<div style='text-align:center; font-weight:700; padding-top:6px;'>/ 전체페이지 {total_pages}</div>",
                     unsafe_allow_html=True,
                 )
-
-        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-
-        # ---- 본문(학생별) ----
-        for stx in stu_rows:
-            stid = str(stx["student_id"])
-            no = int(stx["no"])
-            nm = stx["name"]
-
-            row_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
-            with row_cols[0]:
-                st.markdown(str(no))
-            with row_cols[1]:
-                st.markdown(str(nm))
-
-            for j, sub in enumerate(sub_rows_view):
-                sub_id = str(sub.get("submission_id") or "")
-                if sub_id and sub_id in scores_by_sub:
-                    sc = int(scores_by_sub[sub_id].get(stid, base))
-                else:
-                    sc = int(base)
-
-                gr = _score_to_grade(sc)
-
-                with row_cols[j + 2]:
+    
+            with nav[3]:
+                if st.button(
+                    "▶",
+                    key="credit_nav_right",
+                    use_container_width=True,
+                    disabled=(cur_page >= total_pages),
+                ):
+                    _credit_goto_page(cur_page + 1)
+    
+            # -------------------------
+            # ✅ page_idx 기준으로 날짜 컬럼 슬라이스
+            # -------------------------
+            start = page_idx * VISIBLE_COLS
+            end = start + VISIBLE_COLS
+            sub_rows_view = sub_rows_desc[start:end]
+    
+            # ---- 헤더(날짜 + 제출물 내역 2줄) ----
+            hdr_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
+            with hdr_cols[0]:
+                st.markdown("**번호**")
+            with hdr_cols[1]:
+                st.markdown("**이름**")
+    
+            for j, s in enumerate(sub_rows_view):
+                with hdr_cols[j + 2]:
+                    date_disp = str(s.get("date_display", "") or "").strip()
+                    if not date_disp:
+                        date_disp = _fmt_kor_date_short(s.get("created_at_utc", ""))
+    
+                    lab = str(s.get("label", "") or "").strip()
+    
                     st.markdown(
-                        f"<div style='text-align:center; font-weight:900;'>{sc}점/{gr}등급</div>",
+                        f"<div style='text-align:center; font-weight:900; line-height:1.15;'>"
+                        f"{date_disp}<br>{lab}"
+                        f"</div>",
                         unsafe_allow_html=True,
                     )
 
-
-        # -------------------------
-        # 1) 점수/등급 규칙표(1~10등급)
-        # -------------------------
-        st.markdown("### 📌 신용등급 구분표")
-        st.markdown(
-            """
-<style>
-.credit-band { border:1px solid #ddd; border-radius:12px; overflow:hidden; }
-.credit-band table { width:100%; border-collapse:collapse; font-weight:700; }
-.credit-band th, .credit-band td { border-right:1px solid #ddd; padding:10px 6px; text-align:center; }
-.credit-band th:last-child, .credit-band td:last-child { border-right:none; }
-.credit-band th { background:#f3f4f6; }
-</style>
-<div class="credit-band">
-  <table>
-    <tr>
-      <th>1등급</th><th>2등급</th><th>3등급</th><th>4등급</th><th>5등급</th>
-      <th>6등급</th><th>7등급</th><th>8등급</th><th>9등급</th><th>10등급</th>
-    </tr>
-    <tr>
-      <td>90이상</td><td>80-89</td><td>70-79</td><td>60-69</td><td>50-59</td>
-      <td>40-49</td><td>30-39</td><td>20-29</td><td>10-19</td><td>0-9</td>
-    </tr>
-  </table>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
-        def _score_to_grade(score: int) -> int:
-            s = int(score)
-            if s >= 90:
-                return 1
-            if s >= 80:
-                return 2
-            if s >= 70:
-                return 3
-            if s >= 60:
-                return 4
-            if s >= 50:
-                return 5
-            if s >= 40:
-                return 6
-            if s >= 30:
-                return 7
-            if s >= 20:
-                return 8
-            if s >= 10:
-                return 9
-            return 10
-
-        def _fmt_kor_date_short(iso_utc: str) -> str:
-            # "0월 0일(요일한글자)" 형태
-            try:
-                # 예: 2026-02-07T00:00:00Z
-                dt = datetime.fromisoformat(str(iso_utc).replace("Z", "+00:00")).astimezone(KST)
-                wd = ["월", "화", "수", "목", "금", "토", "일"][dt.weekday()]
-                return f"{dt.month}월 {dt.day}일({wd})"
-            except Exception:
-                return ""
+            
+            st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    
+            # ---- 본문(학생별) ----
+            for stx in stu_rows:
+                stid = str(stx["student_id"])
+                no = int(stx["no"])
+                nm = stx["name"]
+    
+                row_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
+                with row_cols[0]:
+                    st.markdown(str(no))
+                with row_cols[1]:
+                    st.markdown(str(nm))
+    
+                for j, sub in enumerate(sub_rows_view):
+                    sub_id = str(sub.get("submission_id") or "")
+                    if sub_id and sub_id in scores_by_sub:
+                        sc = int(scores_by_sub[sub_id].get(stid, base))
+                    else:
+                        sc = int(base)
+    
+                    gr = _score_to_grade(sc)
+    
+                    with row_cols[j + 2]:
+                        st.markdown(
+                            f"<div style='text-align:center; font-weight:900;'>{sc}점/{gr}등급</div>",
+                            unsafe_allow_html=True,
+                        )
+    
+    
+            # -------------------------
+            # 1) 점수/등급 규칙표(1~10등급)
+            # -------------------------
+            st.markdown("### 📌 신용등급 구분표")
+            st.markdown(
+                """
+    <style>
+    .credit-band { border:1px solid #ddd; border-radius:12px; overflow:hidden; }
+    .credit-band table { width:100%; border-collapse:collapse; font-weight:700; }
+    .credit-band th, .credit-band td { border-right:1px solid #ddd; padding:10px 6px; text-align:center; }
+    .credit-band th:last-child, .credit-band td:last-child { border-right:none; }
+    .credit-band th { background:#f3f4f6; }
+    </style>
+    <div class="credit-band">
+      <table>
+        <tr>
+          <th>1등급</th><th>2등급</th><th>3등급</th><th>4등급</th><th>5등급</th>
+          <th>6등급</th><th>7등급</th><th>8등급</th><th>9등급</th><th>10등급</th>
+        </tr>
+        <tr>
+          <td>90이상</td><td>80-89</td><td>70-79</td><td>60-69</td><td>50-59</td>
+          <td>40-49</td><td>30-39</td><td>20-29</td><td>10-19</td><td>0-9</td>
+        </tr>
+      </table>
+    </div>
+    """,
+                unsafe_allow_html=True,
+            )
+    
+            def _score_to_grade(score: int) -> int:
+                s = int(score)
+                if s >= 90:
+                    return 1
+                if s >= 80:
+                    return 2
+                if s >= 70:
+                    return 3
+                if s >= 60:
+                    return 4
+                if s >= 50:
+                    return 5
+                if s >= 40:
+                    return 6
+                if s >= 30:
+                    return 7
+                if s >= 20:
+                    return 8
+                if s >= 10:
+                    return 9
+                return 10
+    
+            def _fmt_kor_date_short(iso_utc: str) -> str:
+                # "0월 0일(요일한글자)" 형태
+                try:
+                    # 예: 2026-02-07T00:00:00Z
+                    dt = datetime.fromisoformat(str(iso_utc).replace("Z", "+00:00")).astimezone(KST)
+                    wd = ["월", "화", "수", "목", "금", "토", "일"][dt.weekday()]
+                    return f"{dt.month}월 {dt.day}일({wd})"
+                except Exception:
+                    return ""
 
 
 # =========================
@@ -13603,4 +13623,3 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
-
