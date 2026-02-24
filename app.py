@@ -9673,7 +9673,7 @@ if "👥 계정 정보/활성화" in tabs:
                 }
             )
 
-        df_all = pd.DataFrame(rows)
+        df_all = pd.DataFrame(rows, columns=["_sid", "선택", "번호", "이름", "비밀번호"])
         if not df_all.empty:
             df_all = df_all.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
 
@@ -9769,7 +9769,13 @@ if "👥 계정 정보/활성화" in tabs:
             for col in ["선택", "번호", "이름", "비밀번호"]:
                 if col in edited_view.columns and col in tmp.columns:
                     tmp[col] = edited_view[col].values
-            tmp = tmp.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
+            sort_cols = [c for c in ["번호", "이름"] if c in tmp.columns]
+            if sort_cols:
+                tmp = tmp.sort_values(
+                    sort_cols,
+                    ascending=[True] * len(sort_cols),
+                    kind="mergesort",
+                ).reset_index(drop=True)
             st.session_state.account_df = tmp
 
 # =========================
