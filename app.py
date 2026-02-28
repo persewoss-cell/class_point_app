@@ -5750,7 +5750,7 @@ def render_tx_table(df_tx: pd.DataFrame):
             "recorder": "기록자",
         }
     )
-        if "기록자" not in view.columns:
+    if "기록자" not in view.columns:
         view["기록자"] = ""
     st.dataframe(
         view[["내역", "입금", "출금", "총액", "날짜-시간", "기록자"]],
