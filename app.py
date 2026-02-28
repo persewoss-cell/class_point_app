@@ -4050,7 +4050,7 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
     if refund_non_winners and fee_total > 0:
         fee_res = api_add_treasury_tx(
             ADMIN_PIN,
-            "낙잘금 수수료 총액",
+            "낙찰금 수수료 총액",
             income=int(fee_total),
             expense=0,
             actor="auction",
