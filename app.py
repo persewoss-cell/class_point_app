@@ -5622,7 +5622,7 @@ def tab_visible(tab_name: str):
 if is_admin:
     tabs = [t for t in ALL_TABS if tab_visible(t)]
     # ✅ 관리자 탭에서만 '🏦 내 통장' 탭 이름을 변경(학생 탭에는 영향 없음)
-    tabs_display = [("💰보상/벌금" if t == "🏦 내 통장" else t) for t in tabs]
+    tabs_display = [("💰입금/출금" if t == "🏦 내 통장" else t) for t in tabs]
     tab_objs = st.tabs(tabs_display)
     tab_map = {name: tab_objs[i] for i, name in enumerate(tabs)}
 else:
@@ -5664,7 +5664,7 @@ else:
         extra_admin_tabs.append((label, key_internal))
 
     if has_admin_feature_access(my_perms, "🏦 내 통장", is_admin=False):
-        _append_extra_tab("💰보상/벌금(관리자)", "admin::🏦 내 통장")
+        _append_extra_tab("💰입금/출금(관리자)", "admin::🏦 내 통장")
 
     if has_admin_feature_access(my_perms, "🏦 은행(적금)", is_admin=False):
         _append_extra_tab("🏦 은행(적금)(관리자)", "admin::🏦 은행(적금)")
@@ -6814,13 +6814,13 @@ if "🏦 내 통장" in tabs:
 # =========================
 
 # =========================
-# (학생) 💰보상/벌금(관리자) — 별도 탭 (admin::🏦 내 통장)
+# (학생) 💰입금/출금(관리자) — 별도 탭 (admin::🏦 내 통장)
 # =========================
 if "admin::🏦 내 통장" in tabs:
     with tab_map["admin::🏦 내 통장"]:
-        st.subheader("💰보상/벌금 부여")
+        st.subheader("💰입금/출금 적용")
         if is_admin:
-            st.info("관리자 모드에서는 상단 '💰보상/벌금' 탭에서 사용합니다.")
+            st.info("관리자 모드에서는 상단 '💰입금/출금' 탭에서 사용합니다.")
         else:
 
             # ✅ (보상/벌금) 내부 작은 탭
@@ -9456,7 +9456,7 @@ if "👥 계정 정보/활성화" in tabs:
         #
         # 1) "tab::<탭이름>"  : 학생에게 '관리자 탭' 자체를 추가로 노출(기본 탭이 아닌 것들)
         # 2) "admin::<탭이름>": 이미 학생에게 기본으로 보이는 탭 안에서 '관리자 기능(관리 UI)'을 열어줌
-        #    - 💰보상/벌금(관리자)  -> admin::🏦 내 통장
+        #    - 💰입금/출금(관리자)  -> admin::🏦 내 통장
         #    - 🏦 은행(적금)(관리자)      -> admin::🏦 은행(적금)
         #    - 📈 투자(관리자)            -> admin::📈 투자
         # -------------------------------------------------
@@ -9466,7 +9466,7 @@ if "👥 계정 정보/활성화" in tabs:
         # ✅ 부여 가능한 항목(탭/관리자기능)
         # - (관리자기능) 항목은 학생에게 기본으로 보이는 탭 안에서 관리자 UI를 열어주는 용도입니다.
         GRANT_OPTIONS = [
-            ("💰보상/벌금(관리자)", ("admin", "🏦 내 통장")),
+            ("💰입금/출금(관리자)", ("admin", "🏦 내 통장")),
             ("🏦 은행(적금)(관리자)", ("admin", "🏦 은행(적금)")),
             ("📈 투자(관리자)", ("admin", "📈 투자")),
         ] + [
@@ -9631,7 +9631,7 @@ if "👥 계정 정보/활성화" in tabs:
             admin_disp = []
             for t in admin_tabs:
                 if t == "🏦 내 통장":
-                    admin_disp.append("💰보상/벌금(관리자)")
+                    admin_disp.append("💰입금/출금(관리자)")
                 elif t == "🏦 은행(적금)":
                     admin_disp.append("🏦 은행(적금)(관리자)")
                 elif t == "📈 투자":
