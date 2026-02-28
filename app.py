@@ -1423,7 +1423,7 @@ def api_list_templates_cached():
     templates.sort(key=lambda x: (int(x.get("order", 999999)), str(x.get("label", ""))))
     return {"ok": True, "templates": templates}
 # =========================
-# ✅ (관리자) 보상/벌금용 helpers
+# ✅ (관리자) 입금/출금용 helpers
 # - templates 컬렉션: {label, category?, base_label?, kind, amount, order}
 # =========================
 def _parse_template_label(label: str):
@@ -1491,11 +1491,11 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
 
 
 def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
-    """✅ 전체 일괄 벌금(잔액 부족이어도 적용 → 음수 허용)"""
+    """✅ 전체 일괄 출금(잔액 부족이어도 적용 → 음수 허용)"""
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     amount = int(amount or 0)
-    memo = (memo or "").strip() or "일괄 벌금"
+    memo = (memo or "").strip() or "일괄 출금"
     recorder = _get_recorder_label(True, str(globals().get("login_name", "") or "").strip())
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
@@ -3099,7 +3099,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
     actor: str = "admin_auto",
     recorder_override: str = "",
 ):
-    """관리자 개별 지급/벌금 + (선택)국고 반영"""
+    """관리자 개별 지급/출금 + (선택)국고 반영"""
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
 
@@ -3174,7 +3174,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
 
 
 def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "admin_bulk_auto", recorder_override: str = ""):
-    """일괄 지급/벌금 시 국고를 한 번만 합산 반영"""
+    """일괄 지급/출금 시 국고를 한 번만 합산 반영"""
     memo = str(memo or "").strip()
     signed_amount = int(signed_amount or 0)
     if (not memo) or signed_amount == 0:
@@ -5866,7 +5866,7 @@ if "🏦 내 통장" in tabs:
         trade_admin_ok = bool(is_admin)  # ✅ 학생은 여기서 관리자 UI를 숨기고, 별도 관리자 탭(admin::🏦 내 통장)에서만 표시
         if trade_admin_ok:
 
-            # ✅ (보상/벌금) 내부 작은 탭
+            # ✅ (입금/출금) 내부 작은 탭
             sub_tab_all, sub_tab_personal = st.tabs(["전체", "개인"])
 
             # =================================================
@@ -5874,7 +5874,7 @@ if "🏦 내 통장" in tabs:
             # =================================================
             with sub_tab_all:
                 # -------------------------------------------------
-                # 1) 전체 일괄 지급/벌금
+                # 1) 전체 일괄 지급/출금
                 # -------------------------------------------------
                 st.markdown("### 🎁 전체 일괄 입금/출금")
 
@@ -5918,8 +5918,8 @@ if "🏦 내 통장" in tabs:
                             else:
                                 res = api_admin_bulk_withdraw(ADMIN_PIN, wd_bulk, memo_bulk)
                                 if res.get("ok"):
-                                    toast(f"벌금 완료! (적용 {res.get('count')}명)", icon="⚠️")
-                                    # ✅ 국고 반영(체크 시): 전체 벌금 → 국고 세입(합산)
+                                    toast(f"출금 완료! (적용 {res.get('count')}명)", icon="⚠️")
+                                    # ✅ 국고 반영(체크 시): 전체 출금 → 국고 세입(합산)
                                     if tre_apply_bulk:
                                         cnt = int(res.get("count", 0) or 0)
                                         if cnt > 0:
@@ -5931,7 +5931,7 @@ if "🏦 내 통장" in tabs:
                                             )
                                     st.rerun()
                                 else:
-                                    st.error(res.get("error", "일괄 벌금 실패"))
+                                    st.error(res.get("error", "일괄 출금 실패"))
 
                 with b2:
                     if st.button("되돌리기(관리자)", key="admin_bulk_reward_undo_toggle", use_container_width=True):
@@ -6513,7 +6513,7 @@ if "🏦 내 통장" in tabs:
                             st.error(f"저장 실패: {e}")
             
             # =================================================
-            # [개인] : 체크된 학생만 “일괄 지급/벌금” 적용
+            # [개인] : 체크된 학생만 “일괄 입금/출금” 적용
             # =================================================
             with sub_tab_personal:
                 st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
@@ -6823,7 +6823,7 @@ if "admin::🏦 내 통장" in tabs:
             st.info("관리자 모드에서는 상단 '💰입금/출금' 탭에서 사용합니다.")
         else:
 
-            # ✅ (보상/벌금) 내부 작은 탭
+            # ✅ (입금/출금) 내부 작은 탭
             sub_tab_all, sub_tab_personal = st.tabs(["전체", "개인"])
 
             # =================================================
@@ -6831,7 +6831,7 @@ if "admin::🏦 내 통장" in tabs:
             # =================================================
             with sub_tab_all:
                 # -------------------------------------------------
-                # 1) 전체 일괄 지급/벌금
+                # 1) 전체 일괄 입금/출금
                 # -------------------------------------------------
                 st.markdown("### 🎁 전체 일괄 입금/출금")
 
@@ -6858,8 +6858,8 @@ if "admin::🏦 내 통장" in tabs:
                             if dep_bulk > 0:
                                 res = api_admin_bulk_deposit(ADMIN_PIN, dep_bulk, memo_bulk)
                                 if res.get("ok"):
-                                    toast(f"일괄 지급 완료! ({res.get('count')}명)", icon="🎉")
-                                    # ✅ 국고 반영(체크 시): 전체 지급 → 국고 세출(합산)
+                                    toast(f"일괄 입금 완료! ({res.get('count')}명)", icon="🎉")
+                                    # ✅ 국고 반영(체크 시): 전체 입금 → 국고 세출(합산)
                                     if tre_apply_bulk:
                                         cnt = int(res.get("count", 0) or 0)
                                         if cnt > 0:
@@ -6871,12 +6871,12 @@ if "admin::🏦 내 통장" in tabs:
                                             )
                                     st.rerun()
                                 else:
-                                    st.error(res.get("error", "일괄 지급 실패"))
+                                    st.error(res.get("error", "일괄 입금 실패"))
                             else:
                                 res = api_admin_bulk_withdraw(ADMIN_PIN, wd_bulk, memo_bulk)
                                 if res.get("ok"):
-                                    toast(f"벌금 완료! (적용 {res.get('count')}명)", icon="⚠️")
-                                    # ✅ 국고 반영(체크 시): 전체 벌금 → 국고 세입(합산)
+                                    toast(f"출금 완료! (적용 {res.get('count')}명)", icon="⚠️")
+                                    # ✅ 국고 반영(체크 시): 전체 출금 → 국고 세입(합산)
                                     if tre_apply_bulk:
                                         cnt = int(res.get("count", 0) or 0)
                                         if cnt > 0:
@@ -6888,7 +6888,7 @@ if "admin::🏦 내 통장" in tabs:
                                             )
                                     st.rerun()
                                 else:
-                                    st.error(res.get("error", "일괄 벌금 실패"))
+                                    st.error(res.get("error", "일괄 출금 실패"))
 
                 with b2:
                     if st.button("되돌리기(관리자)", key="admin_bulk_reward_undo_toggle", use_container_width=True):
@@ -7470,7 +7470,7 @@ if "admin::🏦 내 통장" in tabs:
                             st.error(f"저장 실패: {e}")
             
             # =================================================
-            # [개인] : 체크된 학생만 “일괄 지급/벌금” 적용
+            # [개인] : 체크된 학생만 “일괄 입금/출금” 적용
             # =================================================
             with sub_tab_personal:
                 st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
