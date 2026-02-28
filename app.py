@@ -9076,7 +9076,7 @@ if "admin::🏦 은행(적금)" in tabs:
             if proc_cnt > 0:
                 toast(f"만기 자동 처리: {proc_cnt}건", icon="🏦")
 
-        def _cancel_savings(doc_id: str):
+        def _cancel_savings(doc_id: str, as_admin_action: bool = True):
             """
             중도해지:
             - 원금만 학생 통장에 입금(+)
@@ -9092,12 +9092,18 @@ if "admin::🏦 은행(적금)" in tabs:
             student_id = str(x.get("student_id") or "")
             principal = int(x.get("principal", 0) or 0)
 
+            recorder_override = _get_recorder_label(
+                bool(as_admin_action),
+                str(globals().get("login_name", "") or "").strip(),
+            )
+            
             res = api_admin_add_tx_by_student_id(
                 admin_pin=ADMIN_PIN,
                 student_id=student_id,
                 memo=f"적금 중도해지 지급 ({x.get('weeks')}주)",
                 deposit=principal,
                 withdraw=0,
+                recorder_override=recorder_override,
             )
             if res.get("ok"):
                 db.collection(SAV_COL).document(doc_id).update(
@@ -12318,7 +12324,7 @@ if "🏦 은행(적금)" in tabs:
             if proc_cnt > 0:
                 toast(f"만기 자동 처리: {proc_cnt}건", icon="🏦")
 
-        def _cancel_savings(doc_id: str):
+        def _cancel_savings(doc_id: str, as_admin_action: bool = True):
             """
             중도해지:
             - 원금만 학생 통장에 입금(+)
@@ -12334,12 +12340,18 @@ if "🏦 은행(적금)" in tabs:
             student_id = str(x.get("student_id") or "")
             principal = int(x.get("principal", 0) or 0)
 
+            recorder_override = _get_recorder_label(
+                bool(as_admin_action),
+                str(globals().get("login_name", "") or "").strip(),
+            )            
+            
             res = api_admin_add_tx_by_student_id(
                 admin_pin=ADMIN_PIN,
                 student_id=student_id,
                 memo=f"적금 중도해지 지급 ({x.get('weeks')}주)",
                 deposit=principal,
                 withdraw=0,
+                recorder_override=recorder_override,
             )
             if res.get("ok"):
                 db.collection(SAV_COL).document(doc_id).update(
@@ -12677,7 +12689,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     if pick2 != "(선택 없음)":
                         if st.button("중도해지 실행", use_container_width=True, key="stu_bank_cancel_do"):
                             rid = str(lab_to_id.get(pick2))
-                            res = _cancel_savings(rid)
+                            res = _cancel_savings(rid, as_admin_action=False)
                             if res.get("ok"):
                                 toast("중도해지 완료", icon="✅")
                                 st.rerun()
