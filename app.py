@@ -5876,7 +5876,7 @@ if "🏦 내 통장" in tabs:
                 # -------------------------------------------------
                 # 1) 전체 일괄 지급/벌금
                 # -------------------------------------------------
-                st.markdown("### 🎁 전체 일괄 지급/벌금")
+                st.markdown("### 🎁 전체 일괄 입금/출금")
 
                 tpl_res3 = api_list_templates_cached()
                 templates3 = tpl_res3.get("templates", []) if tpl_res3.get("ok") else []
@@ -6833,7 +6833,7 @@ if "admin::🏦 내 통장" in tabs:
                 # -------------------------------------------------
                 # 1) 전체 일괄 지급/벌금
                 # -------------------------------------------------
-                st.markdown("### 🎁 전체 일괄 지급/벌금")
+                st.markdown("### 🎁 전체 일괄 입금/출금")
 
                 tpl_res3 = api_list_templates_cached()
                 templates3 = tpl_res3.get("templates", []) if tpl_res3.get("ok") else []
