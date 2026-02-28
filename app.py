@@ -6567,7 +6567,7 @@ if "🏦 내 통장" in tabs:
                     if selected_names:
                         st.caption("선택됨: " + " · ".join(selected_names))
 
-                    st.markdown("### 🎁 개인 지급/벌금")
+                    st.markdown("### 🎁 개인 입금/출금")
 
                     tpl_res_p = api_list_templates_cached()
                     templates_p = tpl_res_p.get("templates", []) if tpl_res_p.get("ok") else []
@@ -7524,7 +7524,7 @@ if "admin::🏦 내 통장" in tabs:
                     if selected_names:
                         st.caption("선택됨: " + " · ".join(selected_names))
 
-                    st.markdown("### 🎁 개인 지급/벌금")
+                    st.markdown("### 🎁 개인 입금/출금")
 
                     tpl_res_p = api_list_templates_cached()
                     templates_p = tpl_res_p.get("templates", []) if tpl_res_p.get("ok") else []
