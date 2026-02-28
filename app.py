@@ -6802,7 +6802,7 @@ if "🏦 내 통장" in tabs:
                             else:
                                 st.error(res2.get("error", "되돌리기 실패"))
 
-            st.subheader("📒 통장 내역(최신순)")
+            st.subheader("📒 통장 거래 내역(최신순)")
             render_tx_table(df_tx)
 
 # =========================
