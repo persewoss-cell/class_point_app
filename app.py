@@ -5529,6 +5529,14 @@ is_admin = bool(st.session_state.admin_ok)
 login_name = st.session_state.login_name
 login_pin = st.session_state.login_pin
 
+# ✅ 학생 로그인 컨텍스트를 매 실행마다 최신화
+# - 관리자 페이지에서 권한/역할을 변경해도 학생이 즉시 탭 권한을 반영하도록 함
+if not is_admin and login_name and login_pin:
+    latest_doc = fs_auth_student(login_name, login_pin)
+    if latest_doc:
+        _set_login_student_context_from_doc(latest_doc)
+
+
 my_student_id = None
 student_ctx = _get_login_student_context()
 if not is_admin:
