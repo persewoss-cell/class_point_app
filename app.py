@@ -1105,7 +1105,7 @@ def _render_user_bank_header(student_id: str):
         except Exception:
             bal_now = 0
 
-        # 적금 총 원금(전체)
+        # 적금 총 원금(진행중만: 해지/만기 제외)
         sv_total = 0
         try:
             sdocs = (
@@ -1115,7 +1115,9 @@ def _render_user_bank_header(student_id: str):
             )
             for d in sdocs:
                 s = d.to_dict() or {}
-                sv_total += int(s.get("principal", 0) or 0)
+                status = str(s.get("status", "")).lower().strip()
+                if status in ("active", "running"):
+                    sv_total += int(s.get("principal", 0) or 0)
         except Exception:
             sv_total = 0
 
