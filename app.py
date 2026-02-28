@@ -13667,7 +13667,7 @@ if "🎯 목표" in tabs and (not is_admin):
             else:
                 dday_text = f"(D+{abs(_dday):02d}일)"
             title_ph.markdown(
-                f"## 🎯 나의 목표 자산 <span style='font-size:0.75em;color:#777;'>{dday_text}</span>",
+                f"### 🎯 나의 목표 자산 <span style='font-size:0.75em;color:#777;'>{dday_text}</span>",
                 unsafe_allow_html=True,
             )
 
