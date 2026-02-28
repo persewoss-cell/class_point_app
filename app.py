@@ -1425,6 +1425,7 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     amount = int(amount or 0)
     memo = (memo or "").strip() or "일괄 지급"
+    recorder = _get_recorder_label(True, str(globals().get("login_name", "") or "").strip())
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
 
@@ -1449,6 +1450,7 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
                     "amount": amount,
                     "balance_after": new_bal,
                     "memo": memo,
+                    "recorder": recorder,
                     "created_at": firestore.SERVER_TIMESTAMP,
                 },
             )
@@ -1466,6 +1468,7 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     amount = int(amount or 0)
     memo = (memo or "").strip() or "일괄 벌금"
+    recorder = _get_recorder_label(True, str(globals().get("login_name", "") or "").strip())
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
 
@@ -1490,6 +1493,7 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
                     "amount": -amount,
                     "balance_after": new_bal,
                     "memo": memo,
+                    "recorder": recorder,
                     "created_at": firestore.SERVER_TIMESTAMP,
                 },
             )
