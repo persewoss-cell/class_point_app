@@ -674,6 +674,12 @@ def _get_recorder_label(is_admin_action: bool, user_name: str = "", force_admin_
         return "관리자"
     return user_name
 
+def _get_admin_action_recorder(recorder_override: str = "") -> str:
+    override = str(recorder_override or "").strip()
+    if override:
+        return override
+    return _get_recorder_label(True, str(globals().get("login_name", "") or "").strip())
+    
 def format_kr_datetime(val) -> str:
     if val is None or val == "":
         return ""
@@ -1961,9 +1967,7 @@ def api_admin_add_tx_by_student_id(
 
     student_ref = db.collection("students").document(str(student_id))
     tx_ref = db.collection("transactions").document()
-    actor_name = str(globals().get("login_name", "") or "").strip()
-    actor_is_admin = bool(globals().get("is_admin", False))
-    recorder = str(recorder_override or "").strip() or ("관리자" if actor_is_admin else (f"관리자({actor_name})" if actor_name else "관리자"))
+    recorder = _get_admin_action_recorder(recorder_override)
     
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
@@ -2066,7 +2070,7 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
                     "amount": int(deposit),
                     "balance_after": new_bal,
                     "memo": memo,
-                    "recorder": f"관리자({actor_name})" if actor_name else "관리자",
+                    "recorder": _get_admin_action_recorder(),
                     "created_at": firestore.SERVER_TIMESTAMP,
                 },
             )
@@ -2825,7 +2829,7 @@ def api_process_maturities(login_name: str, login_pin: str):
                     "amount": amount,
                     "balance_after": new_bal,
                     "memo": f"적금 만기({weeks}주)",
-                    "recorder": "관리자",
+                    "recorder": _get_recorder_label(False, str((student_doc.to_dict() or {}).get("name", "") or login_name or "")),
                     "created_at": firestore.SERVER_TIMESTAMP,
                 },
             )
@@ -2881,9 +2885,7 @@ def api_add_treasury_tx(
 
     state_ref = db.collection("treasury").document("state")
     led_ref = db.collection("treasury_ledger").document()
-    actor_name = str(globals().get("login_name", "") or "").strip()
-    actor_is_admin = bool(globals().get("is_admin", False))
-    recorder = str(recorder_override or "").strip() or ("관리자" if actor_is_admin else (f"관리자({actor_name})" if actor_name else "관리자"))
+    recorder = _get_admin_action_recorder(recorder_override)
     
     amount = income if income > 0 else -expense
     tx_type = "income" if income > 0 else "expense"
@@ -2947,9 +2949,7 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
 
     state_ref = db.collection("treasury").document("state")
     led_ref = db.collection("treasury_ledger").document()
-    actor_name = str(globals().get("login_name", "") or "").strip()
-    actor_is_admin = bool(globals().get("is_admin", False))
-    recorder = str(recorder_override or "").strip() or ("관리자" if actor_is_admin else (f"관리자({actor_name})" if actor_name else "관리자"))
+    recorder = _get_admin_action_recorder(recorder_override)
     
     if signed_amount > 0:
         tx_type = "income"
@@ -3096,9 +3096,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
 
     student_ref = db.collection("students").document(student_id)
     tx_ref = db.collection("transactions").document()
-    actor_name = str(globals().get("login_name", "") or "").strip()
-    actor_is_admin = bool(globals().get("is_admin", False))
-    recorder = str(recorder_override or "").strip() or ("관리자" if actor_is_admin else (f"관리자({actor_name})" if actor_name else "관리자"))
+    recorder = _get_admin_action_recorder(recorder_override)
     
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
@@ -3197,7 +3195,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
                 "balance_after": int(new_bal),
                 "memo": memo,
                 "actor": str(actor or ""),
-                "recorder": str(recorder_override or "").strip() or "관리자",
+                "recorder": _get_admin_action_recorder(recorder_override),
                 "created_at": firestore.SERVER_TIMESTAMP,
             },
         )
