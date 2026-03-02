@@ -11121,15 +11121,25 @@ if "🏛️ 국세청(국고)" in tabs:
 
         tpls = api_list_treasury_templates_cached().get("templates", [])
         pick_labels = ["(새로 추가)"] + [f"{t.get('order', 999999)} | {treasury_template_display(t)}" for t in tpls]
+        tpl_by_pick = {f"{t.get('order', 999999)} | {treasury_template_display(t)}": t for t in tpls}        
         picked = st.selectbox("편집 대상", pick_labels, key="tre_tpl_pick")
 
-        edit_tpl = None
-        if picked != "(새로 추가)":
-            for t in tpls:
-                lab = f"{t.get('order', 999999)} | {treasury_template_display(t)}"
-                if lab == picked:
-                    edit_tpl = t
-                    break
+        edit_tpl = tpl_by_pick.get(picked) if picked != "(새로 추가)" else None
+
+        # ✅ 편집 대상이 바뀌면 입력칸(라벨/종류/금액/순서)도 즉시 동기화
+        prev_pick_key = "tre_tpl_pick_prev"
+        if st.session_state.get(prev_pick_key) != picked:
+            if edit_tpl:
+                st.session_state["tre_tpl_label"] = str(edit_tpl.get("label", ""))
+                st.session_state["tre_tpl_kind_kr"] = ("세출" if str(edit_tpl.get("kind", "income")) == "expense" else "세입")
+                st.session_state["tre_tpl_amount"] = int(edit_tpl.get("amount", 0) or 0)
+                st.session_state["tre_tpl_order"] = int(edit_tpl.get("order", 1) or 1)
+            else:
+                st.session_state["tre_tpl_label"] = ""
+                st.session_state["tre_tpl_kind_kr"] = "세입"
+                st.session_state["tre_tpl_amount"] = 0
+                st.session_state["tre_tpl_order"] = 1
+            st.session_state[prev_pick_key] = picked
 
         f1, f2, f3, f4 = st.columns([2.2, 1.2, 1.2, 1.0])
         with f1:
@@ -11180,8 +11190,10 @@ if "🏛️ 국세청(국고)" in tabs:
         with b2:
             if st.button("🧹 입력 초기화", use_container_width=True, key="tre_tpl_clear"):
                 st.session_state.pop("tre_tpl_label", None)
+                st.session_state.pop("tre_tpl_kind_kr", None)
                 st.session_state.pop("tre_tpl_amount", None)
                 st.session_state.pop("tre_tpl_order", None)
+                st.session_state.pop("tre_tpl_pick_prev", None)
                 st.session_state["tre_tpl_pick"] = "(새로 추가)"
                 st.rerun()
 
