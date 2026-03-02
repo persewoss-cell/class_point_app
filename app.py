@@ -9288,200 +9288,165 @@ if "🔎 개별조회" in tabs:
             st.error("접근 권한이 없습니다.")
             st.stop()
 
-        # =================================================
-        # (PATCH) 🔎 개별조회 지연 로딩 게이트
-        #  - 로그인 시 자동 로딩 ❌
-        #  - 버튼 클릭 시에만 무거운 데이터 로드 ⭕
-        # =================================================
-        if "admin_ind_view_loaded" not in st.session_state:
-            st.session_state["admin_ind_view_loaded"] = False
+        # =========================
+        # ✅ students에서 번호(no) 포함해서 다시 로드(번호순 정렬)
+        # =========================
+        docs = (
+            db.collection("students")
+            .where(filter=FieldFilter("is_active", "==", True))
+            .stream()
+        )
 
-        # ✅ (PATCH) 로그아웃 상태면 이전에 눌렀던 "불러오기" 상태를 무조건 초기화
-        if not st.session_state.get("logged_in", False):
-            st.session_state.pop("admin_ind_view_loaded", None)
+        acc_rows = []
+        for d in docs:
+            x = d.to_dict() or {}
+            nm = str(x.get("name", "") or "").strip()
+            if not nm:
+                continue
+            try:
+                no = int(x.get("no", 999999) or 999999)
+            except Exception:
+                no = 999999
+        
+            acc_rows.append(
+                {
+                    "student_id": d.id,
+                    "no": no,
+                    "name": nm,
+                    "balance": int(x.get("balance", 0) or 0),
+                }
+            )
 
-        if not st.session_state["admin_ind_view_loaded"]:
-            st.info("개별조회 데이터는 필요할 때만 불러옵니다.")
-            if st.button(
-                "🔄 개별조회 데이터 불러오기",
-                key="admin_ind_view_load",
-                use_container_width=True
-            ):
-                st.session_state["admin_ind_view_loaded"] = True
-                st.session_state["admin_ind_view_mode"] = "none"
-                st.rerun()
+        acc_rows.sort(
+            key=lambda r: (
+                int(r.get("no", 999999) or 999999),
+                str(r.get("name", "")),
+            )
+        )
+
+        if not acc_rows:
+            st.info("표시할 계정이 없습니다.")
         else:
-            # =========================
-            # 🔽 개별조회 접기 버튼
-            # =========================
-            if st.button(
-                "🔽 개별조회 접기",
-                key="admin_ind_view_close",
-                use_container_width=True
-            ):
-                st.session_state["admin_ind_view_loaded"] = False
-                st.session_state["admin_ind_view_mode"] = "none"                
-                st.rerun()
+            st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
 
-            # =========================
-            # ✅ students에서 번호(no) 포함해서 다시 로드(번호순 정렬)
-            # =========================
-            docs = (
-                db.collection("students")
-                .where(filter=FieldFilter("is_active", "==", True))
-                .stream()
-            )
+            selected_ids = []
+            selected_names = []
 
-            acc_rows = []
-            for d in docs:
-                x = d.to_dict() or {}
-                nm = str(x.get("name", "") or "").strip()
-                if not nm:
-                    continue
-                try:
-                    no = int(x.get("no", 999999) or 999999)
-                except Exception:
-                    no = 999999
+            for base in range(0, len(acc_rows), 5):
+                cols = st.columns(5)
+                chunk = acc_rows[base : base + 5]
 
-                acc_rows.append(
-                    {
-                        "student_id": d.id,
-                        "no": no,
-                        "name": nm,
-                        "balance": int(x.get("balance", 0) or 0),
-                    }
-                )
+                for j in range(5):
+                    with cols[j]:
+                        if j < len(chunk):
+                            a = chunk[j]
+                            sid = str(a.get("student_id", "") or "")
+                            nm = str(a.get("name", "") or "")
+                            no = int(a.get("no", 0) or 0)
+                            label = f"{no}번 {nm}" if no > 0 else nm
 
-            acc_rows.sort(
-                key=lambda r: (
-                    int(r.get("no", 999999) or 999999),
-                    str(r.get("name", "")),
-                )
-            )
-
-            if not acc_rows:
-                st.info("표시할 계정이 없습니다.")
-            else:
-                st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
-
-                selected_ids = []
-                selected_names = []
-
-                for base in range(0, len(acc_rows), 5):
-                    cols = st.columns(5)
-                    chunk = acc_rows[base : base + 5]
-
-                    for j in range(5):
-                        with cols[j]:
-                            if j < len(chunk):
-                                a = chunk[j]
-                                sid = str(a.get("student_id", "") or "")
-                                nm = str(a.get("name", "") or "")
-                                no = int(a.get("no", 0) or 0)
-                                label = f"{no}번 {nm}" if no > 0 else nm
-
-                                ck = st.checkbox(label, key=f"admin_ind_view_pick_{sid}")
-                                if ck:
-                                    selected_ids.append(sid)
-                                    selected_names.append(label)
-                            else:
-                                st.write("")
-
-                if selected_names:
-                    st.caption("선택됨: " + " · ".join(selected_names))
-
-                col_pick, col_all = st.columns(2)
-                with col_pick:
-                    if st.button("체크학생 조회", key="admin_ind_view_checked_btn", use_container_width=True):
-                        st.session_state["admin_ind_view_mode"] = "checked"
-                with col_all:
-                    if st.button("전체 조회", key="admin_ind_view_all_btn", use_container_width=True):
-                        st.session_state["admin_ind_view_mode"] = "all"
-
-                view_mode = st.session_state.get("admin_ind_view_mode", "none")
-
-                if view_mode == "checked":
-                    if not selected_ids:
-                        st.warning("체크된 학생이 없습니다. 먼저 학생을 선택해 주세요.")
-                        view_rows = []
-                    else:
-                        selected_set = set(selected_ids)
-                        view_rows = [r for r in acc_rows if str(r.get("student_id", "")) in selected_set]
-                elif view_mode == "all":
-                    view_rows = acc_rows
-                else:
-                    view_rows = []
-
-                if not view_rows:
-                    st.info("아래 조회 버튼을 눌러 학생 정보를 불러오세요.")
-
-                for r in view_rows:
-                    sid = str(r["student_id"])
-                    nm = str(r["name"])
-                    no = int(r.get("no", 0) or 0)
-                    bal_now = int(r.get("balance", 0) or 0)
-
-                    # -------------------------
-                    # 적금
-                    # -------------------------
-                    sres = api_savings_list_by_student_id(sid)
-                    savings = sres.get("savings", []) if sres.get("ok") else []
-
-                    # ✅ 적금 탭과 동일한 기준: 만기/해지 제외 원금 합계
-                    sv_total = sum(
-                        int(s.get("principal", 0) or 0)
-                        for s in savings
-                        if str(s.get("status", "")).lower().strip()
-                        not in ("matured", "canceled", "cancelled")
-                    )
-
-                    # -------------------------
-                    # 투자 요약
-                    # -------------------------
-                    inv_text, inv_total = _get_invest_summary_by_student_id(sid)
-
-                    # -------------------------
-                    # 직업 / 신용
-                    # -------------------------
-                    role_name = _get_role_name_by_student_id(sid)
-                    credit_score, credit_grade = _safe_credit(sid)
-
-                    # -------------------------
-                    # 총자산
-                    # -------------------------
-                    asset_total = int(bal_now) + int(sv_total) + int(inv_total)
-
-                    collapsed = _fmt_admin_one_line(
-                        no=no,
-                        name=nm,
-                        asset_total=asset_total,
-                        bal_now=bal_now,
-                        sv_total=sv_total,
-                        inv_text=inv_text,
-                        inv_total=inv_total,
-                        role_name=role_name,
-                        credit_score=credit_score,
-                        credit_grade=credit_grade,
-                    )
-
-                    with st.expander(collapsed, expanded=False):
-                        # -------------------------
-                        # 통장내역(최신 120)
-                        # -------------------------
-                        st.markdown("### 📒 통장내역")
-                        txr = api_get_txs_by_student_id(sid, limit=120)
-                        if not txr.get("ok"):
-                            st.error(txr.get("error", "내역을 불러오지 못했어요."))
+                            ck = st.checkbox(label, key=f"admin_ind_view_pick_{sid}")
+                            if ck:
+                                selected_ids.append(sid)
+                                selected_names.append(label)
                         else:
-                            df_tx = pd.DataFrame(txr.get("rows", []))
-                            if df_tx.empty:
-                                st.info("거래 내역이 없어요.")
-                            else:
-                                df_tx = df_tx.sort_values(
-                                    "created_at_utc",
-                                    ascending=False
-                                )
-                                render_tx_table(df_tx)
+                            st.write("")
+
+            if selected_names:
+                st.caption("선택됨: " + " · ".join(selected_names))
+
+            col_pick, col_all = st.columns(2)
+            with col_pick:
+                if st.button("체크학생 조회", key="admin_ind_view_checked_btn", use_container_width=True):
+                    st.session_state["admin_ind_view_mode"] = "checked"
+            with col_all:
+                if st.button("전체 조회", key="admin_ind_view_all_btn", use_container_width=True):
+                    st.session_state["admin_ind_view_mode"] = "all"
+
+            view_mode = st.session_state.get("admin_ind_view_mode", "none")
+
+            if view_mode == "checked":
+                if not selected_ids:
+                    st.warning("체크된 학생이 없습니다. 먼저 학생을 선택해 주세요.")
+                    view_rows = []
+                else:
+                    selected_set = set(selected_ids)
+                    view_rows = [r for r in acc_rows if str(r.get("student_id", "")) in selected_set]
+            elif view_mode == "all":
+                view_rows = acc_rows
+            else:
+                view_rows = []
+
+            if not view_rows:
+                st.info("아래 조회 버튼을 눌러 학생 정보를 불러오세요.")
+
+            for r in view_rows:
+                sid = str(r["student_id"])
+                nm = str(r["name"])
+                no = int(r.get("no", 0) or 0)
+                bal_now = int(r.get("balance", 0) or 0)
+
+                # -------------------------
+                # 적금
+                # -------------------------
+                sres = api_savings_list_by_student_id(sid)
+                savings = sres.get("savings", []) if sres.get("ok") else []
+
+                # ✅ 적금 탭과 동일한 기준: 만기/해지 제외 원금 합계
+                sv_total = sum(
+                    int(s.get("principal", 0) or 0)
+                    for s in savings
+                    if str(s.get("status", "")).lower().strip()
+                    not in ("matured", "canceled", "cancelled")
+                )
+
+                # -------------------------
+                # 투자 요약
+                # -------------------------
+                inv_text, inv_total = _get_invest_summary_by_student_id(sid)
+
+                # -------------------------
+                # 직업 / 신용
+                # -------------------------
+                role_name = _get_role_name_by_student_id(sid)
+                credit_score, credit_grade = _safe_credit(sid)
+
+                # -------------------------
+                # 총자산
+                # -------------------------
+                asset_total = int(bal_now) + int(sv_total) + int(inv_total)
+
+                collapsed = _fmt_admin_one_line(
+                    no=no,
+                    name=nm,
+                    asset_total=asset_total,
+                    bal_now=bal_now,
+                    sv_total=sv_total,
+                    inv_text=inv_text,
+                    inv_total=inv_total,
+                    role_name=role_name,
+                    credit_score=credit_score,
+                    credit_grade=credit_grade,
+                )
+
+                with st.expander(collapsed, expanded=False):
+                    # -------------------------
+                    # 통장내역(최신 120)
+                    # -------------------------
+                    st.markdown("### 📒 통장내역")
+                    txr = api_get_txs_by_student_id(sid, limit=120)
+                    if not txr.get("ok"):
+                        st.error(txr.get("error", "내역을 불러오지 못했어요."))
+                    else:
+                        df_tx = pd.DataFrame(txr.get("rows", []))
+                        if df_tx.empty:
+                            st.info("거래 내역이 없어요.")
+                        else:
+                            df_tx = df_tx.sort_values(
+                                "created_at_utc",
+                                ascending=False
+                            )
+                            render_tx_table(df_tx)
 
 if "📈 투자" in tabs:
     with tab_map["📈 투자"]:
