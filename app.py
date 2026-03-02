@@ -9288,11 +9288,6 @@ if "🔎 개별조회" in tabs:
             st.error("접근 권한이 없습니다.")
             st.stop()
 
-        name_search2 = st.text_input(
-            "🔎 계정검색(이름 일부)",
-            key="admin_ind_view_search"
-        ).strip()
-
         # =================================================
         # (PATCH) 🔎 개별조회 지연 로딩 게이트
         #  - 로그인 시 자동 로딩 ❌
@@ -9313,6 +9308,7 @@ if "🔎 개별조회" in tabs:
                 use_container_width=True
             ):
                 st.session_state["admin_ind_view_loaded"] = True
+                st.session_state["admin_ind_view_mode"] = "none"
                 st.rerun()
         else:
             # =========================
@@ -9324,6 +9320,7 @@ if "🔎 개별조회" in tabs:
                 use_container_width=True
             ):
                 st.session_state["admin_ind_view_loaded"] = False
+                st.session_state["admin_ind_view_mode"] = "none"                
                 st.rerun()
 
             # =========================
@@ -9340,8 +9337,6 @@ if "🔎 개별조회" in tabs:
                 x = d.to_dict() or {}
                 nm = str(x.get("name", "") or "").strip()
                 if not nm:
-                    continue
-                if name_search2 and (name_search2 not in nm):
                     continue
                 try:
                     no = int(x.get("no", 999999) or 999999)
@@ -9367,7 +9362,60 @@ if "🔎 개별조회" in tabs:
             if not acc_rows:
                 st.info("표시할 계정이 없습니다.")
             else:
-                for r in acc_rows:
+                st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
+
+                selected_ids = []
+                selected_names = []
+
+                for base in range(0, len(acc_rows), 5):
+                    cols = st.columns(5)
+                    chunk = acc_rows[base : base + 5]
+
+                    for j in range(5):
+                        with cols[j]:
+                            if j < len(chunk):
+                                a = chunk[j]
+                                sid = str(a.get("student_id", "") or "")
+                                nm = str(a.get("name", "") or "")
+                                no = int(a.get("no", 0) or 0)
+                                label = f"{no}번 {nm}" if no > 0 else nm
+
+                                ck = st.checkbox(label, key=f"admin_ind_view_pick_{sid}")
+                                if ck:
+                                    selected_ids.append(sid)
+                                    selected_names.append(label)
+                            else:
+                                st.write("")
+
+                if selected_names:
+                    st.caption("선택됨: " + " · ".join(selected_names))
+
+                col_pick, col_all = st.columns(2)
+                with col_pick:
+                    if st.button("체크학생 조회", key="admin_ind_view_checked_btn", use_container_width=True):
+                        st.session_state["admin_ind_view_mode"] = "checked"
+                with col_all:
+                    if st.button("전체 조회", key="admin_ind_view_all_btn", use_container_width=True):
+                        st.session_state["admin_ind_view_mode"] = "all"
+
+                view_mode = st.session_state.get("admin_ind_view_mode", "none")
+
+                if view_mode == "checked":
+                    if not selected_ids:
+                        st.warning("체크된 학생이 없습니다. 먼저 학생을 선택해 주세요.")
+                        view_rows = []
+                    else:
+                        selected_set = set(selected_ids)
+                        view_rows = [r for r in acc_rows if str(r.get("student_id", "")) in selected_set]
+                elif view_mode == "all":
+                    view_rows = acc_rows
+                else:
+                    view_rows = []
+
+                if not view_rows:
+                    st.info("아래 조회 버튼을 눌러 학생 정보를 불러오세요.")
+
+                for r in view_rows:
                     sid = str(r["student_id"])
                     nm = str(r["name"])
                     no = int(r.get("no", 0) or 0)
