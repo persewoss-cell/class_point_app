@@ -6516,7 +6516,7 @@ if "🏦 내 통장" in tabs:
             # [개인] : 체크된 학생만 “일괄 입금/출금” 적용
             # =================================================
             with sub_tab_personal:
-                st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
+                st.markdown("### 👥 대상 학생 선택")
                 accounts_now = api_list_accounts_cached().get("accounts", [])
                 import re
 
@@ -9327,7 +9327,7 @@ if "🔎 개별조회" in tabs:
         if not acc_rows:
             st.info("표시할 계정이 없습니다.")
         else:
-            st.markdown("### 👥 대상 학생 선택 (체크한 학생만 적용)")
+            st.markdown("### 👥 대상 학생 선택")
 
             selected_ids = []
             selected_names = []
@@ -9363,7 +9363,7 @@ if "🔎 개별조회" in tabs:
                 if st.button("전체 조회", key="admin_ind_view_all_btn", use_container_width=True):
                     st.session_state["admin_ind_view_mode"] = "all"
             with col_fold:
-                if st.button("(조회 접기)", key="admin_ind_view_fold_btn", use_container_width=True):
+                if st.button("조회 접기", key="admin_ind_view_fold_btn", use_container_width=True):
                     st.session_state["admin_ind_view_mode"] = "none"
 
             view_mode = st.session_state.get("admin_ind_view_mode", "none")
