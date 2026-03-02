@@ -6539,6 +6539,13 @@ if "🏦 내 통장" in tabs:
 
                 accounts_now = sorted(accounts_now, key=_num_key)
 
+                if st.session_state.get("admin_personal_reward_reset_request", False):
+                    for _acc in (accounts_now or []):
+                        _sid = str(_acc.get("student_id", "") or "")
+                        if _sid:
+                            st.session_state[f"admin_personal_pick_{_sid}"] = False
+                    st.session_state["admin_personal_reward_reset_request"] = False
+
                 if not accounts_now:
                     st.info("활성 계정이 없습니다.")
                 else:
@@ -6630,8 +6637,6 @@ if "🏦 내 통장" in tabs:
                             if ok_cnt > 0:
                                 toast(f"개인 적용 완료! ({ok_cnt}명)", icon="✅")
                                 api_list_accounts_cached.clear()
-                                for sid in selected_ids:
-                                    st.session_state[f"admin_personal_pick_{sid}"] = False
                                 st.session_state["admin_personal_reward_reset_request"] = True                                
                                 st.rerun()
                             else:
@@ -7501,6 +7506,13 @@ if "admin::🏦 내 통장" in tabs:
 
                 accounts_now = sorted(accounts_now, key=_num_key)
 
+                if st.session_state.get("admin_personal_reward_reset_request", False):
+                    for _acc in (accounts_now or []):
+                        _sid = str(_acc.get("student_id", "") or "")
+                        if _sid:
+                            st.session_state[f"admin_personal_pick_{_sid}"] = False
+                    st.session_state["admin_personal_reward_reset_request"] = False
+
                 if not accounts_now:
                     st.info("활성 계정이 없습니다.")
                 else:
@@ -7592,8 +7604,6 @@ if "admin::🏦 내 통장" in tabs:
                             if ok_cnt > 0:
                                 toast(f"개인 적용 완료! ({ok_cnt}명)", icon="✅")
                                 api_list_accounts_cached.clear()
-                                for sid in selected_ids:
-                                    st.session_state[f"admin_personal_pick_{sid}"] = False
                                 st.session_state["admin_personal_reward_reset_request"] = True
                                 st.rerun()
                             else:
