@@ -10361,8 +10361,14 @@ if "💼 직업/월급" in tabs:
         st.caption("직업을 선택한 뒤, 학생을 선택하고 ‘고용/해제’ 버튼을 누르세요.")
 
         # 직업 선택
-        job_pick_labels = [f"{r['order']} | {r['job']} (월급 {int(r['salary'])})" for r in rows]
-        job_pick_map = {lab: r["_id"] for lab, r in zip(job_pick_labels, rows)}
+        job_pick_labels = []
+        for r in rows:
+            assigned_ids = list(r.get("assigned_ids", []) or [])
+            assigned_count = max(0, int(r.get("student_count", 1) or 1))
+            hired_count = sum(1 for sid in assigned_ids if str(sid).strip())
+            job_pick_labels.append(
+                f"{r['order']} | {r['job']} (월급 {int(r['salary'])}) | 배정수 {assigned_count} | 현재 고용수 {hired_count}"
+            )        job_pick_map = {lab: r["_id"] for lab, r in zip(job_pick_labels, rows)}
 
         assign_c1, assign_c2 = st.columns([1.2, 2.0])
         with assign_c1:
