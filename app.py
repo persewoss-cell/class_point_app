@@ -3346,6 +3346,20 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
     st.session_state.setdefault(tpl_key, "(직접 입력)")
     st.session_state.setdefault(tpl_prev_key, "(직접 입력)")
 
+    reset_flag_key = f"{prefix}_reset_request"
+    if st.session_state.get(reset_flag_key, False):
+        st.session_state[memo_key] = ""
+        st.session_state[inc_key] = 0
+        st.session_state[exp_key] = 0
+        st.session_state[tpl_key] = "(직접 입력)"
+        st.session_state[tpl_prev_key] = "(직접 입력)"
+        st.session_state[f"{prefix}_mode"] = "세입(+)"
+        st.session_state[f"{prefix}_pick"] = "0"
+        st.session_state[f"{prefix}_pick_prev"] = "0"
+        st.session_state[f"{prefix}_mode_prev"] = "세입(+)"
+        st.session_state[f"{prefix}_skip_once"] = False
+        st.session_state[reset_flag_key] = False    
+
     # 템플릿 선택
     tpl_labels = ["(직접 입력)"] + [treasury_template_display(t) for t in templates_list]
     sel = st.selectbox("국고 템플릿", tpl_labels, key=tpl_key)
@@ -7892,6 +7906,12 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             st.markdown(f"- **{nm}** (현재주가 **{cur:.1f}**)")
     
             if inv_admin_ok:
+                inv_reset_key = f"inv_reset_req_{p['product_id']}"
+                if st.session_state.get(inv_reset_key, False):
+                    st.session_state[f"inv_reason_{p['product_id']}"] = ""
+                    st.session_state[f"inv_price_{p['product_id']}"] = float(cur)
+                    st.session_state[inv_reset_key] = False
+                    
                 with st.expander(f"{nm} 주가 변동 반영", expanded=False):
                     c1, c2, c3 = st.columns([3.2, 2.2, 1.2], gap="small")
                     with c1:
@@ -7928,6 +7948,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     merge=True,
                                 )
                                 toast("주가가 반영되었습니다.", icon="✅")
+                                st.session_state[inv_reset_key] = True
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"저장 실패: {e}")
@@ -9550,6 +9571,12 @@ if "👥 계정 정보/활성화" in tabs:
         opt_labels = [lab for (lab, _v) in GRANT_OPTIONS]
         opt_map = {lab: v for (lab, v) in GRANT_OPTIONS}
 
+        if st.session_state.get("perm_reset_req_v2", False):
+            st.session_state["perm_sel_opt_label_v2"] = opt_labels[0] if opt_labels else ""
+            st.session_state["perm_sel_students_v2"] = []
+            st.session_state["perm_confirm_revoke_all_v2"] = False
+            st.session_state["perm_reset_req_v2"] = False        
+
         cpa, cpb = st.columns([2, 3])
         with cpa:
             sel_opt_label = st.selectbox("부여할 항목 선택", opt_labels, key="perm_sel_opt_label_v2")
@@ -9625,6 +9652,7 @@ if "👥 계정 정보/활성화" in tabs:
                 n += 1
             _list_active_students_full_cached.clear()
             st.success(f"권한 부여 완료: {n}명")
+            st.session_state["perm_reset_req_v2"] = True            
             st.rerun()
         elif btn_revoke:
             keys = _keys_for_selection(sel_kind, sel_tab_internal)
@@ -9637,6 +9665,7 @@ if "👥 계정 정보/활성화" in tabs:
                 n += 1
             _list_active_students_full_cached.clear()
             st.success(f"권한 회수 완료: {n}명")
+            st.session_state["perm_reset_req_v2"] = True           
             st.rerun()
 
         if btn_revoke_all and confirm_all:
@@ -9647,6 +9676,7 @@ if "👥 계정 정보/활성화" in tabs:
                 n += 1
             _list_active_students_full_cached.clear()
             st.success(f"전체 학생 권한 전체 회수 완료: {n}명")
+            st.session_state["perm_reset_req_v2"] = True            
             st.rerun()
 
         # -------------------------------------------------
@@ -10371,6 +10401,13 @@ if "💼 직업/월급" in tabs:
             )
         job_pick_map = {lab: r["_id"] for lab, r in zip(job_pick_labels, rows)}
 
+        if st.session_state.get("job_assign_reset_req2", False):
+            if job_pick_labels:
+                st.session_state["job_assign_pick2"] = job_pick_labels[0]
+            st.session_state["job_assign_students2"] = []
+            st.session_state["job_assign_clear_all_chk"] = False
+            st.session_state["job_assign_reset_req2"] = False        
+
         assign_c1, assign_c2 = st.columns([1.2, 2.0])
         with assign_c1:
             sel_job_label = st.selectbox("부여할 직업 선택", job_pick_labels, key="job_assign_pick2") if job_pick_labels else None
@@ -10426,6 +10463,7 @@ if "💼 직업/월급" in tabs:
                             if changed:
                                 ref.update({"assigned_ids": assigned})
                                 toast("고용 완료!", icon="✅")
+                                st.session_state["job_assign_reset_req2"] = True
                                 if full > 0:
                                     st.warning(f"정원이 가득 차서 {full}명은 배정되지 않았어요. (학생수/정원 증가 후 다시 시도)")
                                 st.rerun()
@@ -10464,6 +10502,7 @@ if "💼 직업/월급" in tabs:
                             if new_assigned != assigned:
                                 ref.update({"assigned_ids": new_assigned})
                                 toast("해제 완료!", icon="✅")
+                                st.session_state["job_assign_reset_req2"] = True
                                 st.rerun()
                             else:
                                 st.info("해제할 배정이 없습니다.")
@@ -10488,6 +10527,7 @@ if "💼 직업/월급" in tabs:
                         batch.update(db.collection("job_salary").document(rid2), {"assigned_ids": empty_ids})
                     batch.commit()
                     toast("전체 직업 해제 완료!", icon="✅")
+                    st.session_state["job_assign_reset_req2"] = True
                     st.rerun()
                 except Exception as e:
                     st.error(f"전체 직업 해제 실패: {e}")
@@ -10787,6 +10827,14 @@ if "💼 직업/월급" in tabs:
         
         st.markdown("### ➕ 직업 추가 / 수정")
 
+        if st.session_state.get("job_edit_reset_req", False):
+            st.session_state["job_edit_pick"] = "(새로 추가)"
+            st.session_state["job_edit_prev_pick"] = "(새로 추가)"
+            st.session_state["job_in_job"] = ""
+            st.session_state["job_in_salary"] = 0
+            st.session_state["job_in_count"] = 1
+            st.session_state["job_edit_reset_req"] = False        
+
         pick_labels = ["(새로 추가)"] + [f"{r['order']} | {r['job']} (월급 {int(r['salary'])})" for r in rows]
         picked = st.selectbox("편집 대상", pick_labels, key="job_edit_pick")
 
@@ -10857,6 +10905,7 @@ if "💼 직업/월급" in tabs:
                         }
                     )
                     toast("수정 완료!", icon="✅")
+                    st.session_state["job_edit_reset_req"] = True                    
                     st.rerun()
                 else:
                     # 신규 추가(order는 입력 순서대로 마지막+1)
@@ -10873,6 +10922,7 @@ if "💼 직업/월급" in tabs:
                         }
                     )
                     toast("추가 완료!", icon="✅")
+                    st.session_state["job_edit_reset_req"] = True                    
                     st.rerun()
 
         # ✅ 입력 초기화 버튼 삭제 (자리만 빈 칸으로 유지)
@@ -11108,6 +11158,7 @@ if "🏛️ 국세청(국고)" in tabs:
                     )
                     if res.get("ok"):
                         toast("국고 저장 완료!", icon="✅")
+                        st.session_state["treasury_trade_reset_request"] = True
                         st.rerun()
                     else:
                         st.error(res.get("error", "국고 저장 실패"))
@@ -11121,7 +11172,17 @@ if "🏛️ 국세청(국고)" in tabs:
 
         tpls = api_list_treasury_templates_cached().get("templates", [])
         pick_labels = ["(새로 추가)"] + [f"{t.get('order', 999999)} | {treasury_template_display(t)}" for t in tpls]
-        tpl_by_pick = {f"{t.get('order', 999999)} | {treasury_template_display(t)}": t for t in tpls}        
+        tpl_by_pick = {f"{t.get('order', 999999)} | {treasury_template_display(t)}": t for t in tpls}
+
+        if st.session_state.get("tre_tpl_reset_req", False):
+            st.session_state["tre_tpl_pick"] = "(새로 추가)"
+            st.session_state["tre_tpl_pick_prev"] = "(새로 추가)"
+            st.session_state["tre_tpl_label"] = ""
+            st.session_state["tre_tpl_kind_kr"] = "세입"
+            st.session_state["tre_tpl_amount"] = 0
+            st.session_state["tre_tpl_order"] = 1
+            st.session_state["tre_tpl_reset_req"] = False
+        
         picked = st.selectbox("편집 대상", pick_labels, key="tre_tpl_pick")
 
         edit_tpl = tpl_by_pick.get(picked) if picked != "(새로 추가)" else None
@@ -11183,6 +11244,7 @@ if "🏛️ 국세청(국고)" in tabs:
                     )
                     if res.get("ok"):
                         toast("국고 템플릿 저장 완료!", icon="✅")
+                        st.session_state["tre_tpl_reset_req"] = True
                         st.rerun()
                     else:
                         st.error(res.get("error", "저장 실패"))
