@@ -6054,10 +6054,11 @@ else:
         # 사용자 기본 탭과 중복 라벨이 생기지 않도록 방지
         if label in base_labels:
             return
-        if any(str(label) == str(lab) for (lab, _k) in extra_admin_tabs):
+        display_label = f"⍟{label}"
+        if any(str(key_internal) == str(saved_key) for (_lab, saved_key) in extra_admin_tabs):
             return
-        extra_admin_tabs.append((label, key_internal))
-
+        extra_admin_tabs.append((display_label, key_internal))
+        
     if has_admin_feature_access(my_perms, "🏦 내 통장", is_admin=False):
         _append_extra_tab("💰입금/출금(관리자)", "admin::🏦 내 통장")
 
