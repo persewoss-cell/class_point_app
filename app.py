@@ -10799,12 +10799,26 @@ if "💼 직업/월급" in tabs:
                     edit_row = rr
                     break
 
+        def _sync_job_edit_inputs(target_row):
+            st.session_state["job_in_job"] = target_row["job"] if target_row else ""
+            st.session_state["job_in_salary"] = int(target_row["salary"]) if target_row else 0
+            st.session_state["job_in_count"] = int(target_row["student_count"]) if target_row else 1
+
+        # selectbox 변경 시 text/number_input key 상태를 직접 동기화
+        # (Streamlit key state가 value 인자보다 우선되어 빈칸/기본값이 남는 문제 방지)
+        prev_pick = st.session_state.get("job_edit_prev_pick")
+        if prev_pick != picked:
+            _sync_job_edit_inputs(edit_row)
+            st.session_state["job_edit_prev_pick"] = picked
+        elif "job_in_job" not in st.session_state:
+            _sync_job_edit_inputs(edit_row)        
+
         # 입력폼(직업/월급)
         f1, f2, f3 = st.columns([2.2, 1.2, 1.2])
         with f1:
-            job_in = st.text_input("직업", value=(edit_row["job"] if edit_row else ""), key="job_in_job").strip()
+            job_in = st.text_input("직업", key="job_in_job").strip()
         with f2:
-            sal_in = st.number_input("월급", min_value=0, step=1, value=int(edit_row["salary"]) if edit_row else 0, key="job_in_salary")
+            sal_in = st.number_input("월급", min_value=0, step=1, key="job_in_salary")
         with f3:
             # 실수령 미리보기
             st.metric("실수령액(자동)", _calc_net(int(sal_in), cfg))
@@ -10814,7 +10828,6 @@ if "💼 직업/월급" in tabs:
             "학생 수(최소 1)",
             min_value=1,
             step=1,
-            value=int(edit_row["student_count"]) if edit_row else 1,
             key="job_in_count",
         )
         b1, b2, b3 = st.columns([1, 1, 1])
