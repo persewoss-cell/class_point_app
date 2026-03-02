@@ -5912,6 +5912,7 @@ if "🏦 내 통장" in tabs:
                                                 actor="전체",
                                                 recorder_override=_get_recorder_label(True, str(globals().get("login_name", "") or "").strip()),
                                             )
+                                    st.session_state["admin_bulk_reward_reset_request"] = True
                                     st.rerun()
                                 else:
                                     st.error(res.get("error", "일괄 지급 실패"))
@@ -5929,6 +5930,7 @@ if "🏦 내 통장" in tabs:
                                                 actor="전체",
                                                 recorder_override=_get_recorder_label(True, str(globals().get("login_name", "") or "").strip()),
                                             )
+                                    st.session_state["admin_bulk_reward_reset_request"] = True
                                     st.rerun()
                                 else:
                                     st.error(res.get("error", "일괄 출금 실패"))
@@ -6628,6 +6630,9 @@ if "🏦 내 통장" in tabs:
                             if ok_cnt > 0:
                                 toast(f"개인 적용 완료! ({ok_cnt}명)", icon="✅")
                                 api_list_accounts_cached.clear()
+                                for sid in selected_ids:
+                                    st.session_state[f"admin_personal_pick_{sid}"] = False
+                                st.session_state["admin_personal_reward_reset_request"] = True                                
                                 st.rerun()
                             else:
                                 st.error("적용 실패: " + (fail[0] if fail else "알 수 없는 오류"))
@@ -6869,6 +6874,7 @@ if "admin::🏦 내 통장" in tabs:
                                                 actor="전체",
                                                 recorder_override=_get_recorder_label(True, str(globals().get("login_name", "") or "").strip()),
                                             )
+                                    st.session_state["admin_bulk_reward_reset_request"] = True
                                     st.rerun()
                                 else:
                                     st.error(res.get("error", "일괄 입금 실패"))
@@ -6886,6 +6892,7 @@ if "admin::🏦 내 통장" in tabs:
                                                 actor="전체",
                                                 recorder_override=_get_recorder_label(True, str(globals().get("login_name", "") or "").strip()),
                                             )
+                                    st.session_state["admin_bulk_reward_reset_request"] = True
                                     st.rerun()
                                 else:
                                     st.error(res.get("error", "일괄 출금 실패"))
@@ -7585,6 +7592,9 @@ if "admin::🏦 내 통장" in tabs:
                             if ok_cnt > 0:
                                 toast(f"개인 적용 완료! ({ok_cnt}명)", icon="✅")
                                 api_list_accounts_cached.clear()
+                                for sid in selected_ids:
+                                    st.session_state[f"admin_personal_pick_{sid}"] = False
+                                st.session_state["admin_personal_reward_reset_request"] = True
                                 st.rerun()
                             else:
                                 st.error("적용 실패: " + (fail[0] if fail else "알 수 없는 오류"))
