@@ -9355,13 +9355,16 @@ if "🔎 개별조회" in tabs:
             if selected_names:
                 st.caption("선택됨: " + " · ".join(selected_names))
 
-            col_pick, col_all = st.columns(2)
+            col_pick, col_all, col_fold = st.columns(3)
             with col_pick:
                 if st.button("체크학생 조회", key="admin_ind_view_checked_btn", use_container_width=True):
                     st.session_state["admin_ind_view_mode"] = "checked"
             with col_all:
                 if st.button("전체 조회", key="admin_ind_view_all_btn", use_container_width=True):
                     st.session_state["admin_ind_view_mode"] = "all"
+            with col_fold:
+                if st.button("(조회 접기)", key="admin_ind_view_fold_btn", use_container_width=True):
+                    st.session_state["admin_ind_view_mode"] = "none"
 
             view_mode = st.session_state.get("admin_ind_view_mode", "none")
 
