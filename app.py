@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import altair as alt
@@ -14,6 +15,7 @@ from google.api_core.exceptions import FailedPrecondition
 
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
+import json
 
 # =========================
 # 설정
@@ -845,6 +847,13 @@ def _get_role_name_by_student_id(student_id: str) -> str:
         if not sid:
             return "없음"
 
+        role_names: list[str] = []
+
+        def _add_role_name(name: str):
+            nm = str(name or "").strip()
+            if nm and nm not in role_names:
+                role_names.append(nm)        
+
         # (1) students 문서에서 먼저 찾기 (job_name/job/role_id/job_role_id/job_id 등)
         snap = db.collection("students").document(sid).get()
         if snap.exists:
@@ -860,29 +869,30 @@ def _get_role_name_by_student_id(student_id: str) -> str:
             # ✅ 학생 문서에 job_name/job이 직접 들어있는 경우
             job_direct = str(sdata.get("job_name") or sdata.get("job") or "").strip()
             if job_direct:
-                return job_direct
+                # 입력값이 "은행원, 통계청" 형태일 수도 있어 구분자 분해 후 누적
+                for part in [x.strip() for x in job_direct.split(",")]:
+                    _add_role_name(part)                
 
             # ✅ role_id가 있으면 roles 컬렉션에서 이름 조회
             if rid:
                 role_by_id, _ = _get_role_lookup_cached()
                 nm = str(role_by_id.get(rid, rid)).strip()
                 if nm:
-                    return nm
-
-                # roles 문서가 없으면 role_id 자체를 직업명으로 보여주기
-                return rid
+                    _add_role_name(nm)
+                else:
+                    # roles 문서가 없으면 role_id 자체를 직업명으로 보여주기
+                    _add_role_name(rid)
 
         # (2) students에 없으면 job_salary에서 assigned_ids로 찾기 (직업/월급 탭 방식)
         _, jobs_by_student = _get_role_lookup_cached()
         jobs = list(jobs_by_student.get(sid, []))
 
         if jobs:
-            # 중복 제거(순서 유지)
-            uniq = []
             for j in jobs:
-                if j not in uniq:
-                    uniq.append(j)
-            return ", ".join(uniq)
+                _add_role_name(j)
+
+        if role_names:
+            return ", ".join(role_names)
 
         return "없음"
 
@@ -5648,6 +5658,291 @@ for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+
+def _set_auth_query_params(name: str, pin: str, is_admin_user: bool):
+    """브라우저 새로고침(F5) 시 로그인 상태를 복원하기 위한 URL 파라미터 저장."""
+    try:
+        st.query_params["auth_name"] = str(name or "")
+        st.query_params["auth_pin"] = str(pin or "")
+        st.query_params["auth_role"] = "admin" if bool(is_admin_user) else "student"
+    except Exception:
+        pass
+
+
+def _clear_auth_query_params():
+    try:
+        st.query_params.pop("auth_name", None)
+        st.query_params.pop("auth_pin", None)
+        st.query_params.pop("auth_role", None)
+    except Exception:
+        pass
+
+
+def _read_login_persistence_defaults():
+    """쿠키/URL 파라미터 기준으로 remember 기본값을 계산한다."""
+    saved_name = ""
+    saved_pin = ""
+    remember_name = False
+    remember_pin = False
+
+    c_saved_name, c_saved_pin, c_remember_name, c_remember_pin = _read_persisted_login_from_cookies()
+    if c_saved_name:
+        saved_name = c_saved_name
+    if c_saved_pin:
+        saved_pin = c_saved_pin
+    if c_remember_name:
+        remember_name = True
+    if c_remember_pin:
+        remember_pin = True
+
+    try:
+        qp_saved_name = str(st.query_params.get("saved_name", "") or "")
+        qp_saved_pin = str(st.query_params.get("saved_pin", "") or "")
+        if qp_saved_name:
+            saved_name = qp_saved_name
+            remember_name = bool(str(st.query_params.get("remember", "") or "") == "1")
+        if qp_saved_pin:
+            saved_pin = qp_saved_pin
+            remember_pin = bool(str(st.query_params.get("remember_pin", "") or "") == "1")
+    except Exception:
+        pass
+
+    return saved_name, saved_pin, remember_name, remember_pin
+
+
+def _read_persisted_login_from_cookies():
+    """브라우저 쿠키에 저장된 로그인 입력값을 읽어온다."""
+    try:
+        cookies = dict(getattr(st.context, "cookies", {}) or {})
+    except Exception:
+        cookies = {}
+
+    saved_name = str(cookies.get("ce_saved_name", "") or "")
+    saved_pin = str(cookies.get("ce_saved_pin", "") or "")
+    remember_name = str(cookies.get("ce_remember_name", "0") or "0") == "1"
+    remember_pin = str(cookies.get("ce_remember_pin", "0") or "0") == "1"
+    return saved_name, saved_pin, remember_name, remember_pin
+
+
+def _sync_login_persistence_cookies(name: str, pin: str, remember_name: bool, remember_pin: bool):
+    """아이디/비밀번호 기억하기 값을 쿠키에 동기화한다."""
+    payload = {
+        "name": str(name or ""),
+        "pin": str(pin or ""),
+        "remember_name": bool(remember_name),
+        "remember_pin": bool(remember_pin),
+    }
+    payload_js = json.dumps(payload, ensure_ascii=False)
+    components.html(
+        f"""
+        <script>
+        const p = {payload_js};
+        const maxAge = 60 * 60 * 24 * 365;
+        const docs = (() => {{
+            const out = [document];
+            try {{
+                if (window.parent && window.parent.document && window.parent.document !== document) {{
+                    out.push(window.parent.document);
+                }}
+            }} catch (e) {{}}
+            return out;
+        }})();
+        const localRead = (key) => {{
+            try {{ return localStorage.getItem(key) || ""; }} catch (e) {{ return ""; }}
+        }};
+        const localWrite = (key, value) => {{
+            try {{ localStorage.setItem(key, String(value)); }} catch (e) {{}}
+        }};
+        const localRemove = (key) => {{
+            try {{ localStorage.removeItem(key); }} catch (e) {{}}
+        }};
+        const remove = (key) => {{
+            docs.forEach((d) => {{
+                d.cookie = `${{key}}=; Max-Age=0; Path=/; SameSite=Lax`;
+            }});
+        }};
+        const write = (key, value) => {{
+            docs.forEach((d) => {{
+                d.cookie = `${{key}}=${{encodeURIComponent(value)}}; Max-Age=${{maxAge}}; Path=/; SameSite=Lax`;
+            }});
+        }};
+
+        const resolveValue = (rawValue, cookieKey, localKey) => {{
+            const v = String(rawValue || "").trim();
+            if (v) return v;
+            const localValue = localRead(localKey).trim();
+            if (localValue) return localValue;
+            const cookieHit = docs
+                .map((d) => String(d.cookie || ""))
+                .find((c) => c.includes(`${{cookieKey}}=`));
+            if (!cookieHit) return "";
+            const match = cookieHit.match(new RegExp(`${{cookieKey}}=([^;]+)`));
+            if (!match || !match[1]) return "";
+            try {{ return decodeURIComponent(match[1]); }} catch (e) {{ return match[1]; }}
+        }};
+
+        const nameValue = resolveValue(p.name, "ce_saved_name", "ce_saved_name");
+        const pinValue = resolveValue(p.pin, "ce_saved_pin", "ce_saved_pin");
+
+        if (p.remember_name && nameValue) {{
+            write("ce_saved_name", nameValue);
+            write("ce_remember_name", "1");
+            localWrite("ce_saved_name", nameValue);
+            localWrite("ce_remember_name", "1");
+        }} else {{
+            remove("ce_saved_name");
+            remove("ce_remember_name");
+            localRemove("ce_saved_name");
+            localRemove("ce_remember_name");
+        }}
+
+        if (p.remember_pin && pinValue) {{
+            write("ce_saved_pin", pinValue);
+            write("ce_remember_pin", "1");
+            localWrite("ce_saved_pin", pinValue);
+            localWrite("ce_remember_pin", "1");
+        }} else {{
+            remove("ce_saved_pin");
+            remove("ce_remember_pin");
+            localRemove("ce_saved_pin");
+            localRemove("ce_remember_pin");
+        }}
+        </script>
+        """,
+        height=0,
+    )
+
+
+def _inject_login_prefill_from_local_storage():
+    """브라우저 localStorage 값을 로그인 입력칸에 자동 주입한다."""
+    components.html(
+        """
+        <script>
+        const read = (key) => {
+            try { return String(localStorage.getItem(key) || "").trim(); } catch (e) { return ""; }
+        };
+
+        const savedName = read("ce_saved_name");
+        const savedPin = read("ce_saved_pin");
+        const rememberName = read("ce_remember_name") === "1";
+        const rememberPin = read("ce_remember_pin") === "1";
+
+        const setNativeValue = (el, value) => {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+            if (!setter || !el) return;
+            setter.call(el, value);
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+
+        const clickCheckboxIfNeeded = (el, shouldBeChecked) => {
+            if (!el) return;
+            if (Boolean(el.checked) !== Boolean(shouldBeChecked)) {
+                el.click();
+            }
+        };
+
+        const findCheckboxByLabel = (root, labelText) => {
+            const rows = Array.from(root.querySelectorAll("div[data-testid='stCheckbox']"));
+            const hit = rows.find((row) => {
+                const label = row.querySelector("label")?.innerText || "";
+                return label.includes(labelText);
+            });
+            return hit?.querySelector("input[type='checkbox']") || null;
+        };
+
+        const tryFill = () => {
+            const root = window.parent?.document || document;
+            const nameInput = root.querySelector('input[aria-label="이름"]')
+                || root.querySelector('input[type="text"]');
+            const pinInput = root.querySelector('input[aria-label="비밀번호"]')
+                || root.querySelector('input[type="password"]');
+                
+            if (savedName && nameInput && !String(nameInput.value || "").trim()) {
+                setNativeValue(nameInput, savedName);
+            }
+            if (savedPin && pinInput && !String(pinInput.value || "").trim()) {
+                setNativeValue(pinInput, savedPin);
+            }
+
+            const rememberNameCheckbox = findCheckboxByLabel(root, "아이디 기억하기");
+            const rememberPinCheckbox = findCheckboxByLabel(root, "비밀번호 기억하기");
+            clickCheckboxIfNeeded(rememberNameCheckbox, rememberName);
+            clickCheckboxIfNeeded(rememberPinCheckbox, rememberPin);
+        };
+
+        tryFill();
+        setTimeout(tryFill, 120);
+        setTimeout(tryFill, 420);
+        </script>
+        """,
+        height=0,
+    )
+
+
+def _persist_login_inputs(name: str, pin: str):
+    """로그인 성공 시 remember 옵션에 맞춰 입력값을 저장/삭제한다."""
+    try:
+        if bool(st.session_state.get("remember_name_check", False)):
+            st.query_params["saved_name"] = str(name or "")
+            st.query_params["remember"] = "1"
+        else:
+            st.query_params.pop("saved_name", None)
+            st.query_params.pop("remember", None)
+
+        if bool(st.session_state.get("remember_pin_check", False)):
+            st.query_params["saved_pin"] = str(pin or "")
+            st.query_params["remember_pin"] = "1"
+        else:
+            st.query_params.pop("saved_pin", None)
+            st.query_params.pop("remember_pin", None)
+    except Exception:
+        pass
+
+    _sync_login_persistence_cookies(
+        name,
+        pin,
+        bool(st.session_state.get("remember_name_check", False)),
+        bool(st.session_state.get("remember_pin_check", False)),
+    )
+
+
+def _restore_login_from_query_params_if_possible():
+    """세션이 초기화된 경우(URL에 저장된 인증값으로) 로그인 복원."""
+    if bool(st.session_state.get("logged_in", False)):
+        return
+
+    try:
+        auth_name = str(st.query_params.get("auth_name", "") or "").strip()
+        auth_pin = str(st.query_params.get("auth_pin", "") or "").strip()
+        auth_role = str(st.query_params.get("auth_role", "") or "").strip().lower()
+    except Exception:
+        return
+
+    if not auth_name or not auth_pin:
+        return
+
+    if auth_role == "admin":
+        if is_admin_login(auth_name, auth_pin):
+            st.session_state.admin_ok = True
+            st.session_state.logged_in = True
+            st.session_state.login_name = ADMIN_NAME
+            st.session_state.login_pin = ADMIN_PIN
+            st.session_state["login_student_ctx"] = {}
+        return
+
+    if auth_role == "student" and pin_ok(auth_pin):
+        doc = fs_auth_student(auth_name, auth_pin)
+        if doc:
+            st.session_state.admin_ok = False
+            st.session_state.logged_in = True
+            st.session_state.login_name = auth_name
+            st.session_state.login_pin = auth_pin
+            _set_login_student_context_from_doc(doc)
+
+
+_restore_login_from_query_params_if_possible()
+
 # =========================
 # Sidebar: 계정 만들기/삭제 + (관리자) 학생 엑셀 샘플 다운로드/일괄 업로드 + PIN 변경
 # =========================
@@ -5847,27 +6142,46 @@ else:
     st.subheader("🔐 로그인")
 
 if not st.session_state.logged_in:
-    # ✅ 이름 저장(체크 시 URL에 저장되어 다음에도 자동 입력)
-    _saved_name = ""
-    _remember_default = False
-    try:
-        _saved_name = str(st.query_params.get("saved_name", "") or "")
-        _remember_default = bool(str(st.query_params.get("remember", "") or "") == "1" and _saved_name)
-    except Exception:
-        _saved_name = ""
-        _remember_default = False
+    # ✅ 아이디/비밀번호 기억하기(쿠키+URL에 저장되어 브라우저 재시작 후에도 자동 입력)
+    _saved_name, _saved_pin, _remember_default, _remember_pin_default = _read_login_persistence_defaults()
 
     if _saved_name and not str(st.session_state.get("login_name_input", "") or "").strip():
         st.session_state["login_name_input"] = _saved_name
+    if _saved_pin and not str(st.session_state.get("login_pin_input", "") or "").strip():
+        st.session_state["login_pin_input"] = _saved_pin
+
+    if "remember_name_check" not in st.session_state:
+        st.session_state["remember_name_check"] = _remember_default
+    if "remember_pin_check" not in st.session_state:
+        st.session_state["remember_pin_check"] = _remember_pin_default
 
     with st.form("login_form", clear_on_submit=False):
-        login_c1, login_c2, login_c3 = st.columns([2, 2, 1])
+        login_c1, login_c2 = st.columns([1, 1])
         with login_c1:
             login_name = st.text_input("이름", key="login_name_input").strip()
         with login_c2:
             login_pin = st.text_input("비밀번호", type="password", key="login_pin_input").strip()
-        with login_c3:
-            login_btn = st.form_submit_button("로그인", use_container_width=True)
+
+        remember_c1, remember_c2 = st.columns([1, 1])
+        with remember_c1:
+            st.checkbox("아이디 기억하기", key="remember_name_check")
+        with remember_c2:
+            st.checkbox("비밀번호 기억하기", key="remember_pin_check")
+        
+        # NOTE:
+        # 일부 Streamlit 버전에서 form_submit_button이 컬럼 내부에만 있을 때
+        # "Missing Submit Button" 경고가 순간적으로 표시되는 사례가 있어,
+        # submit 버튼은 form 루트에 직접 배치한다.
+        login_btn = st.form_submit_button("로그인", use_container_width=True)
+
+    # ✅ 브라우저 재시작 후에도 localStorage 저장값을 로그인 입력칸에 자동 주입
+    _inject_login_prefill_from_local_storage()
+    
+    # ⚠️ 주의: 로그인 화면 "첫 렌더"에 쿠키/스토리지를 강제 동기화하면
+    # 브라우저가 저장값을 아직 노출하지 못한 순간(특히 재시작 직후)에
+    # remember 체크가 False로 평가되어 기존 저장값을 지워버릴 수 있다.
+    #
+    # 저장 동기화는 아래 로그인 성공 시점(+로그인 상태 유지 렌더)에서만 수행한다.
 
     if login_btn:
         if not login_name:
@@ -5878,16 +6192,8 @@ if not st.session_state.logged_in:
             st.session_state.login_name = ADMIN_NAME
             st.session_state.login_pin = ADMIN_PIN
             st.session_state["login_student_ctx"] = {}
-            # ✅ 이름 저장 처리
-            try:
-                if bool(st.session_state.get("remember_name_check", False)):
-                    st.query_params["saved_name"] = login_name
-                    st.query_params["remember"] = "1"
-                else:
-                    st.query_params.pop("saved_name", None)
-                    st.query_params.pop("remember", None)
-            except Exception:
-                pass
+            _set_auth_query_params(ADMIN_NAME, ADMIN_PIN, is_admin_user=True)
+            _persist_login_inputs(login_name, login_pin)
             toast("관리자 모드 ON", icon="🔓")
             st.rerun()
         elif not pin_ok(login_pin):
@@ -5902,20 +6208,21 @@ if not st.session_state.logged_in:
                 st.session_state.login_name = login_name
                 st.session_state.login_pin = login_pin
                 _set_login_student_context_from_doc(doc)
-            # ✅ 이름 저장 처리
-            try:
-                if bool(st.session_state.get("remember_name_check", False)):
-                    st.query_params["saved_name"] = login_name
-                    st.query_params["remember"] = "1"
-                else:
-                    st.query_params.pop("saved_name", None)
-                    st.query_params.pop("remember", None)
-            except Exception:
-                pass
-            toast("로그인 완료!", icon="✅")
-            st.rerun()
+                _set_auth_query_params(login_name, login_pin, is_admin_user=False)
+                _persist_login_inputs(login_name, login_pin)
+                toast("로그인 완료!", icon="✅")
+                st.rerun()
 
 else:
+    # ✅ 로그인 직후 rerun 이후에도 쿠키가 확실히 저장되도록 1회 더 동기화
+    _, _, _remember_default_logged_in, _remember_pin_default_logged_in = _read_login_persistence_defaults()
+    _sync_login_persistence_cookies(
+        str(st.session_state.get("login_name", "") or ""),
+        str(st.session_state.get("login_pin", "") or ""),
+        bool(st.session_state.get("remember_name_check", _remember_default_logged_in)),
+        bool(st.session_state.get("remember_pin_check", _remember_pin_default_logged_in)),
+    )
+    
     if st.button("로그아웃", key="logout_btn", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.admin_ok = False
@@ -5923,6 +6230,7 @@ else:
         st.session_state.login_pin = ""
         st.session_state.undo_mode = False
         st.session_state["login_student_ctx"] = {}
+        _clear_auth_query_params()
 
         # ✅ (PATCH) 개별조회 지연로딩 상태 완전 초기화 (로그아웃 후 재로그인 시 자동 로드 방지)
         st.session_state.pop("admin_ind_view_loaded", None)
@@ -8894,6 +9202,19 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     view_rows = []
     for x in ledger_rows:
         redeemed = bool(x.get("redeemed", False))
+
+        # 과거/현재 필드명 혼재 대응:
+        # 지급 처리 시 저장되는 키가 버전에 따라 다를 수 있어 장부 표시에서 모두 흡수한다.
+        sell_date_label = str(
+            x.get("sell_date_label", x.get("redeemed_label", "")) or ""
+        )
+        sell_price = _as_price1(x.get("sell_price", x.get("redeemed_price", 0.0)))
+        diff_val = _as_price1(x.get("diff", 0.0))
+        profit_val = float(x.get("profit", x.get("redeemed_profit", 0.0)) or 0.0)
+        redeem_amount_val = int(
+            x.get("redeem_amount", x.get("redeemed_amount", 0)) or 0
+        )
+        
         view_rows.append(
             {
                 "번호": int(x.get("no", 0) or 0),
@@ -8903,11 +9224,11 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 "매입 주가": f"{_as_price1(x.get('buy_price', 0.0)):.1f}",
                 "투자 금액": int(x.get("invest_amount", 0) or 0),
                 "지급완료": "✅" if redeemed else "",
-                "매수일자": str(x.get("sell_date_label", "") or ""),
-                "매수 주가": f"{_as_price1(x.get('sell_price', 0.0)):.1f}" if redeemed else "",
-                "주가차이": f"{_as_price1(x.get('diff', 0.0)):.1f}" if redeemed else "",
-                "수익/손실금": int(round(float(x.get("profit", 0.0) or 0.0))) if redeemed else "",
-                "찾을 금액": int(x.get("redeem_amount", 0) or 0) if redeemed else "",
+                "매수일자": sell_date_label,
+                "매수 주가": f"{sell_price:.1f}" if redeemed else "",
+                "주가차이": f"{diff_val:.1f}" if redeemed else "",
+                "수익/손실금": int(round(profit_val)) if redeemed else "",
+                "찾을 금액": redeem_amount_val if redeemed else "",
                 "_doc_id": x.get("_doc_id"),
                 "_student_id": x.get("student_id"),
                 "_product_id": x.get("product_id"),
@@ -9028,6 +9349,13 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         {
                                             "redeemed": True,
                                             "redeemed_at": firestore.SERVER_TIMESTAMP,
+                                            "sell_date_label": sell_label,
+                                            "sell_price": _as_price1(cur_price),
+                                            "diff": _as_price1(diff),
+                                            "profit": float(profit),
+                                            "redeem_amount": int(redeem_amt),
+
+                                            # 구버전 키와도 함께 저장(하위 호환)                                            
                                             "redeemed_label": sell_label,
                                             "redeemed_amount": int(redeem_amt),
                                         }
@@ -11601,14 +11929,14 @@ if "💼 직업/월급" in tabs:
                         df["배정 수"] = pd.to_numeric(df["배정 수"], errors="coerce").fillna(0).astype(int)
                         
                         bad_job = df[df["직업"].str.len() == 0]
-                        bad_sal = df[df["월급"] <= 0]
+                        bad_sal = df[df["월급"] < 0]
                         bad_cnt = df[df["배정 수"] <= 0]
                         
                         if (not bad_job.empty) or (not bad_sal.empty) or (not bad_cnt.empty):
                             if not bad_job.empty:
                                 st.error("❌ 직업명이 비어있는 행이 있습니다.")
                             if not bad_sal.empty:
-                                st.error("❌ 월급은 1 이상이어야 합니다.")
+                                st.error("❌ 월급은 0 이상이어야 합니다.")
                             if not bad_cnt.empty:
                                 st.error("❌ 배정 수는 1 이상이어야 합니다.")
                             st.session_state["job_bulk_df"] = None
