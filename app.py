@@ -1,22 +1,266 @@
 import streamlit as st
 import streamlit.components.v1 as components
-from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import altair as alt
 from io import BytesIO
 import random
+import sqlite3
+import uuid
 
 from datetime import datetime, timezone, timedelta, date
-
-import firebase_admin
-from firebase_admin import credentials, firestore
-from google.cloud.firestore_v1.base_query import FieldFilter
-from google.api_core.exceptions import FailedPrecondition
 
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
 import json
 
+
+class FailedPrecondition(Exception):
+    pass
+
+
+class FieldFilter:
+    def __init__(self, field_path: str, op_string: str, value):
+        self.field_path = field_path
+        self.op_string = op_string
+        self.value = value
+
+
+class _ServerTimestamp:
+    pass
+
+
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+
+def _normalize_for_storage(value):
+    if value is firestore.SERVER_TIMESTAMP:
+        return _now_utc().isoformat()
+    if isinstance(value, dict):
+        return {k: _normalize_for_storage(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_for_storage(v) for v in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _get_by_path(data: dict, field_path: str):
+    cur = data
+    for part in str(field_path).split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def _set_by_path(data: dict, field_path: str, value):
+    cur = data
+    parts = str(field_path).split(".")
+    for part in parts[:-1]:
+        nxt = cur.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[part] = nxt
+        cur = nxt
+    cur[parts[-1]] = value
+
+
+def _match_filter(data: dict, ff: FieldFilter) -> bool:
+    left = _get_by_path(data, ff.field_path)
+    op = ff.op_string
+    right = ff.value
+    if op == "==":
+        return left == right
+    if op == "!=":
+        return left != right
+    if op == ">":
+        return left is not None and left > right
+    if op == ">=":
+        return left is not None and left >= right
+    if op == "<":
+        return left is not None and left < right
+    if op == "<=":
+        return left is not None and left <= right
+    if op == "in":
+        return left in (right or [])
+    if op == "array_contains":
+        return isinstance(left, list) and right in left
+    raise FailedPrecondition(f"Unsupported operator: {op}")
+
+
+class _QueryOrder:
+    ASCENDING = "ASCENDING"
+    DESCENDING = "DESCENDING"
+
+
+class _FirestoreCompat:
+    SERVER_TIMESTAMP = _ServerTimestamp()
+    Query = _QueryOrder
+
+    @staticmethod
+    def transactional(fn):
+        return fn
+
+
+firestore = _FirestoreCompat()
+
+
+class DocumentSnapshot:
+    def __init__(self, reference, data):
+        self.reference = reference
+        self.id = reference.id
+        self._data = data
+
+    @property
+    def exists(self):
+        return self._data is not None
+
+    def to_dict(self):
+        return dict(self._data) if isinstance(self._data, dict) else None
+
+    def get(self, key, default=None):
+        if not self.exists:
+            return default
+        value = _get_by_path(self._data, key)
+        return default if value is None else value
+
+
+class DocumentReference:
+    def __init__(self, client, collection_name: str, doc_id: str):
+        self._client = client
+        self._collection = collection_name
+        self.id = str(doc_id)
+
+    def get(self):
+        data = self._client._get_doc(self._collection, self.id)
+        return DocumentSnapshot(self, data)
+
+    def set(self, data: dict, merge: bool = False):
+        self._client._set_doc(self._collection, self.id, data, merge=merge)
+
+    def update(self, data: dict):
+        self._client._update_doc(self._collection, self.id, data)
+
+    def delete(self):
+        self._client._delete_doc(self._collection, self.id)
+
+
+class Query:
+    def __init__(self, client, collection_name: str, filters=None, order=None, limit_n=None):
+        self._client = client
+        self._collection = collection_name
+        self._filters = filters or []
+        self._order = order or []
+        self._limit = limit_n
+
+    def where(self, *, filter: FieldFilter):
+        return Query(self._client, self._collection, self._filters + [filter], self._order, self._limit)
+
+    def order_by(self, field: str, direction: str = _QueryOrder.ASCENDING):
+        return Query(self._client, self._collection, self._filters, self._order + [(field, direction)], self._limit)
+
+    def limit(self, count: int):
+        return Query(self._client, self._collection, self._filters, self._order, int(count))
+
+    def stream(self):
+        rows = self._client._get_collection_docs(self._collection)
+        for ff in self._filters:
+            rows = [r for r in rows if _match_filter(r["data"], ff)]
+        for field, direction in reversed(self._order):
+            reverse = direction == _QueryOrder.DESCENDING
+            rows = sorted(rows, key=lambda r: (_get_by_path(r["data"], field) is None, _get_by_path(r["data"], field)), reverse=reverse)
+        if self._limit is not None:
+            rows = rows[: self._limit]
+        return [DocumentSnapshot(DocumentReference(self._client, self._collection, r["doc_id"]), r["data"]) for r in rows]
+
+    def get(self):
+        return self.stream()
+
+
+class CollectionReference(Query):
+    def __init__(self, client, collection_name: str):
+        super().__init__(client, collection_name)
+
+    def document(self, doc_id: str | None = None):
+        return DocumentReference(self._client, self._collection, doc_id or uuid.uuid4().hex)
+
+    def add(self, data: dict):
+        ref = self.document()
+        ref.set(data)
+        return None, ref
+
+
+class SQLiteTransaction:
+    def __init__(self, client):
+        self._client = client
+
+    def get(self, doc_ref: DocumentReference):
+        return doc_ref.get()
+
+    def set(self, doc_ref: DocumentReference, data: dict, merge: bool = False):
+        doc_ref.set(data, merge=merge)
+
+    def update(self, doc_ref: DocumentReference, data: dict):
+        doc_ref.update(data)
+
+    def delete(self, doc_ref: DocumentReference):
+        doc_ref.delete()
+
+
+class SQLiteFirestoreClient:
+    def __init__(self, conn):
+        self.conn = conn
+        self.cursor = conn.cursor()
+
+    def collection(self, name: str):
+        return CollectionReference(self, str(name))
+
+    def transaction(self):
+        return SQLiteTransaction(self)
+
+    def _get_doc(self, collection: str, doc_id: str):
+        row = self.cursor.execute(
+            "SELECT data FROM documents WHERE collection=? AND doc_id=?",
+            (collection, doc_id),
+        ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def _set_doc(self, collection: str, doc_id: str, data: dict, merge: bool = False):
+        payload = _normalize_for_storage(dict(data or {}))
+        if merge:
+            current = self._get_doc(collection, doc_id) or {}
+            current.update(payload)
+            payload = current
+        now = _now_utc().isoformat()
+        self.cursor.execute(
+            """
+            INSERT INTO documents(collection, doc_id, data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(collection, doc_id)
+            DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at
+            """,
+            (collection, doc_id, json.dumps(payload, ensure_ascii=False), now, now),
+        )
+        self.conn.commit()
+
+    def _update_doc(self, collection: str, doc_id: str, data: dict):
+        current = self._get_doc(collection, doc_id) or {}
+        for k, v in (data or {}).items():
+            _set_by_path(current, k, _normalize_for_storage(v))
+        self._set_doc(collection, doc_id, current, merge=False)
+
+    def _delete_doc(self, collection: str, doc_id: str):
+        self.cursor.execute("DELETE FROM documents WHERE collection=? AND doc_id=?", (collection, doc_id))
+        self.conn.commit()
+
+    def _get_collection_docs(self, collection: str):
+        rows = self.cursor.execute(
+            "SELECT doc_id, data FROM documents WHERE collection=?",
+            (collection,),
+        ).fetchall()
+        return [{"doc_id": r[0], "data": json.loads(r[1])} for r in rows]
+        
 # =========================
 # 설정
 # =========================
@@ -643,26 +887,36 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
 st.markdown(f'<div class="app-title"> {APP_TITLE}</div>', unsafe_allow_html=True)
 
 # =========================
-# Firestore init
+# SQLite init
 # =========================
-@st.cache_resource
-def init_firestore():
-    firebase_dict = dict(st.secrets["firebase"])
-    firebase_dict["private_key"] = firebase_dict["private_key"].replace("\\n", "\n").strip()
-    cred = credentials.Certificate(firebase_dict)
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
+conn = sqlite3.connect("data.db", check_same_thread=False)
+cursor = conn.cursor()
 
-try:
-    db = init_firestore()
-except StreamlitSecretNotFoundError:
-    st.error("Firebase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 firebase 설정을 추가해 주세요.")
-    st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Firestore 연결 초기화 실패입니다.")
-    st.stop()
-except Exception as e:
-    st.error(f"Firestore 초기화 실패: {e}")
-    st.stop()
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        point INTEGER
+    )
+    """
+)
+
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS documents (
+        collection TEXT NOT NULL,
+        doc_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        created_at TEXT,
+        updated_at TEXT,
+        PRIMARY KEY (collection, doc_id)
+    )
+    """
+)
+conn.commit()
+
+db = SQLiteFirestoreClient(conn)
 
 # =========================
 # Utils (너 코드 유지 + 권한 유틸 추가)
