@@ -1,3 +1,8 @@
+import sqlite3
+
+conn = sqlite3.connect("data.db", check_same_thread=False)
+cursor = conn.cursor()
+
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit.errors import StreamlitSecretNotFoundError
