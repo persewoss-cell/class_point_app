@@ -1,18 +1,3 @@
-import sqlite3
-
-conn = sqlite3.connect("data.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-name TEXT,
-point INTEGER
-)
-""")
-
-conn.commit()
-
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit.errors import StreamlitSecretNotFoundError
@@ -15164,23 +15149,3 @@ if "🎯 목표" in tabs and (not is_admin):
 
         if principal_all_running == 0 and interest_before_goal == 0:
             st.caption("진행 중 적금이 없어 예상 금액은 통장 잔액과 같아요.")
-
-import streamlit as st
-
-st.title("SQLite 테스트")
-
-name = st.text_input("이름")
-point = st.number_input("포인트")
-
-if st.button("저장"):
-    cursor.execute(
-        "INSERT INTO users (name, point) VALUES (?, ?)",
-        (name, point)
-    )
-    conn.commit()
-    st.success("저장 완료")
-
-cursor.execute("SELECT * FROM users")
-rows = cursor.fetchall()
-
-st.write(rows)
