@@ -132,7 +132,9 @@ class DocumentReference:
         self._collection = collection_name
         self.id = str(doc_id)
 
-    def get(self):
+    def get(self, transaction=None):
+        # Firestore compatibility: real client accepts `transaction=`.
+        # SQLite backend ignores the argument and performs a direct read.
         data = self._client._get_doc(self._collection, self.id)
         return DocumentSnapshot(self, data)
 
