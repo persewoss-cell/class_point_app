@@ -640,20 +640,29 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
 st.markdown(f'<div class="app-title"> {APP_TITLE}</div>', unsafe_allow_html=True)
 
 # =========================
-# Firestore init
+# Supabase DB init (Firestore-compatible wrapper)
 # =========================
 @st.cache_resource
 def init_firestore():
     return get_db()
 
+
+def dbtable(name: str):
+    """Firestore `collection` 대체 헬퍼.
+
+    기존 코드의 `dbtable("...")` 호출을 유지하면서,
+    내부적으로 Supabase 테이블 핸들을 반환한다.
+    """
+    return db.table(name)
+    
 try:
     db = init_firestore()
 except StreamlitSecretNotFoundError:
     st.error("Supabase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 SUPABASE_URL, SUPABASE_KEY를 추가해 주세요.")
-    st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Firestore 연결 초기화 실패입니다.")
+    st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Supabase 연결 초기화 실패입니다.")
     st.stop()
 except Exception as e:
-    st.error(f"Firestore 초기화 실패: {e}")
+    st.error(f"Supabase 초기화 실패: {e}")
     st.stop()
 
 # =========================
@@ -789,7 +798,7 @@ def _list_active_students_full_cached() -> list[dict]:
 def _get_invest_products_map_cached() -> dict[str, tuple[str, float]]:
     """invest_products 전체 스냅샷 캐시(학생별 요약 계산 시 중복 stream 방지)."""
     prod_map = {}
-    for d in dbtable(INV_PROD_COL).stream():
+    for d in (INV_PROD_COL).stream():
         x = d.to_dict() or {}
         pid = str(x.get("product_id", d.id) or d.id)
         pname = (
@@ -808,12 +817,12 @@ def _get_invest_products_map_cached() -> dict[str, tuple[str, float]]:
 def _get_role_lookup_cached() -> tuple[dict[str, str], dict[str, list[str]]]:
     """roles + job_salary를 캐시해 학생별 직업명 조회 read를 최소화."""
     role_by_id = {}
-    for d in dbtable("roles").stream():
+    for d in ("roles").stream():
         x = d.to_dict() or {}
         role_by_id[d.id] = str(x.get("role_name") or x.get("name") or d.id).strip() or d.id
 
     jobs_by_student = {}
-    for jdoc in dbtable("job_salary").stream():
+    for jdoc in ("job_salary").stream():
         jd = jdoc.to_dict() or {}
         jname = str(jd.get("job") or jd.get("role_name") or "").strip()
         if not jname:
@@ -847,7 +856,7 @@ def _get_role_name_by_student_id(student_id: str) -> str:
                 role_names.append(nm)        
 
         # (1) students 문서에서 먼저 찾기 (job_name/job/role_id/job_role_id/job_id 등)
-        snap = dbtable("students").document(sid).get()
+        snap = ("students").document(sid).get()
         if snap.exists:
             sdata = snap.to_dict() or {}
 
@@ -906,7 +915,7 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
         prod_map = _get_invest_products_map_cached()
 
         # 2) 보유 장부(미환매) → 종목별 현재가치 합산
-        q = dbtable(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
+        q = (INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
         per_prod_val = {}  # pid -> value
 
         for d in q:
@@ -992,7 +1001,7 @@ def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
         prod_name = {k: v[0] for k, v in _get_invest_products_map_cached().items()}
 
         # 2) 보유 장부(미환매) → 종목별 원금 합산
-        q = dbtable(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
+        q = (INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
         per_prod_amt = {}  # pid -> principal(sum invest_amount)
 
         for d in q:
