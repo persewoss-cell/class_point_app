@@ -65,15 +65,35 @@ class DocumentReference:
         self.table_name = table
         self.doc_id = str(doc_id)
 
+    def _resolve_id_field(self) -> str:
+        """
+        Resolve the document identifier column for tables that don't use `id`.
+        """
+        candidates = ("id", "doc_id", "key", "name")
+        for field in candidates:
+            try:
+                _supabase().table(self.table_name).select(field).limit(1).execute()
+                return field
+            except APIError as e:
+                msg = str(e)
+                if "does not exist" in msg and f"{self.table_name}.{field}" in msg:
+                    continue
+                raise
+        return "id"
+
     def get(self, transaction=None) -> DocumentSnapshot:
-        q = _supabase().table(self.table_name).select("*").eq("id", self.doc_id).limit(1).execute()
+        id_field = self._resolve_id_field()
+        q = _supabase().table(self.table_name).select("*").eq(id_field, self.doc_id).limit(1).execute()
         rows = q.data or []
         return DocumentSnapshot(self.table_name, self.doc_id, rows[0] if rows else None)
 
     def set(self, data: dict[str, Any], merge: bool = False):
+        id_field = self._resolve_id_field()
         payload = dict(data)
-        if payload.get("id") is None:
-            payload["id"] = self.doc_id
+        if id_field != "id":
+            payload.pop("id", None)
+        if payload.get(id_field) is None:
+            payload[id_field] = self.doc_id
         if merge:
             existing = self.get()
             if existing.exists:
@@ -83,10 +103,12 @@ class DocumentReference:
         return _supabase().table(self.table_name).upsert(payload).execute()
 
     def update(self, data: dict[str, Any]):
-        return _supabase().table(self.table_name).update(dict(data)).eq("id", self.doc_id).execute()
-
+        id_field = self._resolve_id_field()
+        return _supabase().table(self.table_name).update(dict(data)).eq(id_field, self.doc_id).execute()
+        
     def delete(self):
-        return _supabase().table(self.table_name).delete().eq("id", self.doc_id).execute()
+        id_field = self._resolve_id_field()
+        return _supabase().table(self.table_name).delete().eq(id_field, self.doc_id).execute()
 
 
 class QueryRef:
