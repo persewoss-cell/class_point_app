@@ -113,7 +113,7 @@ class QueryRef:
         self._limit = int(n)
         return self
 
-        def _apply_filters_python(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _apply_filters_python(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out = rows
         for f in self._filters:
             if f.op == "==":
@@ -170,7 +170,7 @@ class QueryRef:
             raw_rows = _supabase().table(self.table_name).select("*").execute().data or []
             rows = self._apply_order_limit_python(self._apply_filters_python(raw_rows))
             
-            return [_DocStreamItem(self.table_name, str(r.get("id", "")), r) for r in rows]
+        return [_DocStreamItem(self.table_name, str(r.get("id", "")), r) for r in rows]
 
     def get(self):
         return list(self.stream())
