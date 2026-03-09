@@ -791,20 +791,23 @@ def savings_active_total(savings_list: list[dict]) -> int:
         if str(s.get("status", "")).lower().strip() in ("active", "running")
     )
 
+
+def _stream_students_active_safe():
+    """students.is_active 컬럼 누락 환경에서도 안전하게 활성 학생 스트림을 반환."""
+    try:
+        return db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+    except Exception:
+        return db.table("students").stream()
+
 @st.cache_data(ttl=20, show_spinner=False)
 def _list_active_students_full_cached() -> list[dict]:
     """활성 학생 전체를 1회 조회 후 재사용(리렌더/버튼 rerun read 절감)."""
     rows: list[dict] = []
-    try:
-        docs = db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-    except Exception:
-        # 일부 배포 환경에서 bool 필터가 PostgREST APIError를 일으키는 경우가 있어,
-        # 전체 조회 후 Python에서 활성 상태를 필터링하는 안전 경로로 폴백한다.
-        docs = db.table("students").stream()
-        
+    docs = _stream_students_active_safe()
+    
     for d in docs:
         x = d.to_dict() or {}
-        if not bool(x.get("is_active", False)):
+        if x.get("is_active") is False:
             continue
         rows.append({"student_id": d.id, **x})
     return rows
@@ -1352,14 +1355,18 @@ def fs_get_student_doc_by_name(name: str):
     name = (name or "").strip()
     if not name:
         return None
-    q = (
-        dbtable("students")
-        .where(filter=FieldFilter("name", "==", name))
-        .where(filter=FieldFilter("is_active", "==", True))
-        .limit(1)
-        .stream()
-    )
-    docs = list(q)
+    try:
+        q = (
+            dbtable("students")
+            .where(filter=FieldFilter("name", "==", name))
+            .where(filter=FieldFilter("is_active", "==", True))
+            .limit(1)
+            .stream()
+        )
+        docs = list(q)
+    except Exception:
+        q = dbtable("students").where(filter=FieldFilter("name", "==", name)).limit(1).stream()
+        docs = [d for d in q if (d.to_dict() or {}).get("is_active") is not False]
     return docs[0] if docs else None
 
 def fs_auth_student(name: str, pin: str):
@@ -1484,7 +1491,7 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
 
-    docs = list(db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream())
+    docs = list(_stream_students_active_safe())
     count = 0
     for d in docs:
         student_id = d.id
@@ -1527,7 +1534,7 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
 
-    docs = list(dbtable("students").where(filter=FieldFilter("is_active", "==", True)).stream())
+    docs = list(_stream_students_active_safe())
     count = 0
     for d in docs:
         student_id = d.id
@@ -10422,7 +10429,7 @@ if "⭐ 권한부여" in tabs:
             st.rerun()
 
         if btn_revoke_all and confirm_all:
-            docs_perm3 = db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+            docs_perm3 = _stream_students_active_safe()
             n = 0
             for x in _list_active_students_full_cached():
                 db.table("students").document(str(x.get("student_id", "") or "")).update({"extra_permissions": []})
@@ -10915,7 +10922,7 @@ if "💼 직업/월급" in tabs:
         # -------------------------------------------------
         accounts = api_list_accounts_cached().get("accounts", [])
         # students 컬렉션에서 'no'도 같이 가져와서 "번호+이름" 만들기
-        docs_acc = db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        docs_acc = _stream_students_active_safe()
         acc_rows = []
         for d in docs_acc:
             x = d.to_dict() or {}
@@ -12341,7 +12348,7 @@ if "📊 통계청" in tabs:
         # -------------------------
         # api_list_accounts_cached()는 name/balance/student_id만 주므로,
         # 번호(no)까지 필요해서 students에서 직접 읽어옴.
-        docs_acc2 = db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        docs_acc2 = _stream_students_active_safe()
         stu_rows = []
         for d in docs_acc2:
             x = d.to_dict() or {}
@@ -12938,7 +12945,7 @@ if "💳 신용등급" in tabs:
         # -------------------------
         # 0) 학생 목록(번호/이름) : 계정정보 탭과 동일(활성 학생)
         # -------------------------
-        docs_acc = db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        docs_acc = _stream_students_active_safe()
         stu_rows = []
         for d in docs_acc:
             x = d.to_dict() or {}
