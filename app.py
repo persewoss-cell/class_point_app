@@ -706,6 +706,7 @@ class _DocRef:
         return db_delete(self.table_name, self.doc_id)
 
 class _Query:
+    ASCENDING = "asc"
     DESCENDING = "desc"
 
     def __init__(self, table_name):
