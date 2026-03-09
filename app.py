@@ -1610,10 +1610,8 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
             snap = student_ref.get()
             bal = int((snap.to_dict() or {}).get("balance", 0))
             new_bal = bal + amount
-            transaction.update(student_ref, {"balance": new_bal})
-            transaction.set(
-                tx_ref,
-                {
+            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
+            tx_ref.set({
                     "student_id": student_id,
                     "type": "deposit",
                     "amount": amount,
@@ -1652,10 +1650,8 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
             snap = student_ref.get()
             bal = int((snap.to_dict() or {}).get("balance", 0))
             new_bal = bal - amount
-            transaction.update(student_ref, {"balance": new_bal})
-            transaction.set(
-                tx_ref,
-                {
+            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
+            tx_ref.set({
                     "student_id": student_id,
                     "type": "withdraw",
                     "amount": -amount,
@@ -2244,10 +2240,8 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
             bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
             new_bal = bal + int(deposit)
 
-            transaction.update(student_ref, {"balance": new_bal})
-            transaction.set(
-                tx_ref,
-                {
+            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
+            tx_ref.set({
                     "student_id": student_id,
                     "type": "deposit",
                     "amount": int(deposit),
@@ -2733,10 +2727,8 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
                 )
 
             new_bal = bal + rollback_amount
-            transaction.update(student_ref, {"balance": new_bal})
-            transaction.set(
-                rollback_ref,
-                {
+            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
+            tx_ref.set({
                     "student_id": student_id,
                     "type": "rollback",
                     "amount": rollback_amount,
@@ -2996,11 +2988,8 @@ def api_process_maturities(login_name: str, login_pin: str):
             bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
             new_bal = bal + amount
 
-            transaction.update(student_ref, {"balance": new_bal})
-            transaction.update(savings_ref, {"status": "matured"})
-            transaction.set(
-                tx_ref,
-                {
+            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
+            tx_ref.set({
                     "student_id": student_doc.id,
                     "type": "maturity",
                     "amount": amount,
