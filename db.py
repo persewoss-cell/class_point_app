@@ -790,3 +790,4 @@ index 1087b8cb9f69c6ff21bcce7af96bfea59093a449..dc1865169eee0db9a93d536176a1ba47
 +    if isinstance(value, list):
 +        return [_normalize_value(v) for v in value]
 +    return value
+
