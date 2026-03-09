@@ -833,12 +833,12 @@ def _get_invest_products_map_cached() -> dict[str, tuple[str, float]]:
 def _get_role_lookup_cached() -> tuple[dict[str, str], dict[str, list[str]]]:
     """roles + job_salary를 캐시해 학생별 직업명 조회 read를 최소화."""
     role_by_id = {}
-    for d in ("roles").stream():
+    for d in db.table("roles").stream():
         x = d.to_dict() or {}
         role_by_id[d.id] = str(x.get("role_name") or x.get("name") or d.id).strip() or d.id
 
     jobs_by_student = {}
-    for jdoc in ("job_salary").stream():
+    for jdoc in db.table("job_salary").stream():
         jd = jdoc.to_dict() or {}
         jname = str(jd.get("job") or jd.get("role_name") or "").strip()
         if not jname:
@@ -872,7 +872,7 @@ def _get_role_name_by_student_id(student_id: str) -> str:
                 role_names.append(nm)        
 
         # (1) students 문서에서 먼저 찾기 (job_name/job/role_id/job_role_id/job_id 등)
-        snap = ("students").document(sid).get()
+        snap = db.table("students").document(sid).get()
         if snap.exists:
             sdata = snap.to_dict() or {}
 
