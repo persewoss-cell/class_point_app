@@ -8,7 +8,7 @@ import random
 
 from datetime import datetime, timezone, timedelta, date
 
-from db import FailedPrecondition, FieldFilter, firestore, init_db
+from db import build_filter, init_db, mongo
 
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
@@ -782,7 +782,7 @@ def savings_active_total(savings_list: list[dict]) -> int:
 @st.cache_data(ttl=20, show_spinner=False)
 def _list_active_students_full_cached() -> list[dict]:
     """활성 학생 전체를 1회 조회 후 재사용(리렌더/버튼 rerun read 절감)."""
-    docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+    docs = db.collection("students").where(filter=build_filter("is_active", "==", True)).stream()
     rows = []
     for d in docs:
         x = d.to_dict() or {}
@@ -911,7 +911,7 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
         prod_map = _get_invest_products_map_cached()
 
         # 2) 보유 장부(미환매) → 종목별 현재가치 합산
-        q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
+        q = db.collection(INV_LEDGER_COL).where(filter=build_filter("student_id", "==", sid)).stream()
         per_prod_val = {}  # pid -> value
 
         for d in q:
@@ -997,7 +997,7 @@ def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
         prod_name = {k: v[0] for k, v in _get_invest_products_map_cached().items()}
 
         # 2) 보유 장부(미환매) → 종목별 원금 합산
-        q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
+        q = db.collection(INV_LEDGER_COL).where(filter=build_filter("student_id", "==", sid)).stream()
         per_prod_amt = {}  # pid -> principal(sum invest_amount)
 
         for d in q:
@@ -1135,7 +1135,7 @@ def _render_user_bank_header(student_id: str):
         try:
             sdocs = (
                 db.collection("savings")
-                .where(filter=FieldFilter("student_id", "==", sid))
+                .where(filter=build_filter("student_id", "==", sid))
                 .stream()
             )
             for d in sdocs:
@@ -1294,8 +1294,8 @@ def api_set_goal_by_student_id(student_id: str, target_amount: int, goal_date_st
                 "student_id": student_id,
                 "target_amount": int(target_amount or 0),
                 "goal_date": goal_date_str,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "updated_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
+                "updated_at": mongo.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -1326,7 +1326,7 @@ def api_set_goal(name: str, pin: str, goal_amount: int, goal_date_str: str):
     # ✅ 목표 저장은 student_id 문서에 1개로 고정(로그아웃/재로그인 후에도 그대로 불러옴)
     return api_set_goal_by_student_id(student_doc.id, int(goal_amount), goal_date_str)
 # =========================
-# Firestore helpers (students/auth) - 너 코드 유지
+# mongo helpers (students/auth) - 너 코드 유지
 # =========================
 def fs_get_student_doc_by_name(name: str):
     name = (name or "").strip()
@@ -1334,8 +1334,8 @@ def fs_get_student_doc_by_name(name: str):
         return None
     q = (
         db.collection("students")
-        .where(filter=FieldFilter("name", "==", name))
-        .where(filter=FieldFilter("is_active", "==", True))
+        .where(filter=build_filter("name", "==", name))
+        .where(filter=build_filter("is_active", "==", True))
         .limit(1)
         .stream()
     )
@@ -1464,14 +1464,14 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
 
-    docs = list(db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream())
+    docs = list(db.collection("students").where(filter=build_filter("is_active", "==", True)).stream())
     count = 0
     for d in docs:
         student_id = d.id
         student_ref = db.collection("students").document(student_id)
         tx_ref = db.collection("transactions").document()
 
-        @firestore.transactional
+        @mongo.transactional
         def _do(transaction):
             snap = student_ref.get(transaction=transaction)
             bal = int((snap.to_dict() or {}).get("balance", 0))
@@ -1486,7 +1486,7 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
                     "balance_after": new_bal,
                     "memo": memo,
                     "recorder": recorder,
-                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "created_at": mongo.SERVER_TIMESTAMP,
                 },
             )
 
@@ -1507,14 +1507,14 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
 
-    docs = list(db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream())
+    docs = list(db.collection("students").where(filter=build_filter("is_active", "==", True)).stream())
     count = 0
     for d in docs:
         student_id = d.id
         student_ref = db.collection("students").document(student_id)
         tx_ref = db.collection("transactions").document()
 
-        @firestore.transactional
+        @mongo.transactional
         def _do(transaction):
             snap = student_ref.get(transaction=transaction)
             bal = int((snap.to_dict() or {}).get("balance", 0))
@@ -1529,7 +1529,7 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
                     "balance_after": new_bal,
                     "memo": memo,
                     "recorder": recorder,
-                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "created_at": mongo.SERVER_TIMESTAMP,
                 },
             )
 
@@ -1700,7 +1700,7 @@ def api_list_stat_templates_cached():
 def api_list_stat_submissions_cached(limit_cols: int = 10):
     q = (
         db.collection("stat_submissions")
-        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .order_by("created_at", direction=mongo.Query.DESCENDING)
         .limit(int(limit_cols))
         .stream()
     )
@@ -1760,7 +1760,7 @@ def api_admin_upsert_stat_template(admin_pin: str, template_id: str, label: str,
         ref = db.collection("stat_templates").document(str(row["template_id"]))
         payload = {"label": str(row.get("label", "") or ""), "order": idx}
         if row["template_id"] == target_id and not is_update:
-            payload["created_at"] = firestore.SERVER_TIMESTAMP
+            payload["created_at"] = mongo.SERVER_TIMESTAMP
         batch.set(ref, payload, merge=True)
     batch.commit()
 
@@ -1805,7 +1805,7 @@ def api_admin_add_stat_submission(admin_pin: str, label: str, active_accounts: l
             "date_iso": today.isoformat(),
             "date_display": format_kr_md_date(today),
             "statuses": statuses,
-            "created_at": firestore.SERVER_TIMESTAMP,
+            "created_at": mongo.SERVER_TIMESTAMP,
         }
     )
 
@@ -1887,7 +1887,7 @@ def api_create_account(name, pin):
             "credit_grade": DEFAULT_CREDIT_GRADE,            
             "is_active": True,
             "role_id": "",
-            "created_at": firestore.SERVER_TIMESTAMP,
+            "created_at": mongo.SERVER_TIMESTAMP,
         }
     )
     api_list_accounts_cached.clear()
@@ -1959,7 +1959,7 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
@@ -1979,7 +1979,7 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
                 "balance_after": int(new_bal),
                 "memo": memo,
                 "recorder": recorder,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         return new_bal
@@ -2025,7 +2025,7 @@ def api_admin_add_tx_by_student_id(
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         if not snap.exists:
@@ -2047,7 +2047,7 @@ def api_admin_add_tx_by_student_id(
                 "balance_after": int(new_bal),
                 "memo": memo,
                 "recorder": recorder,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         return new_bal
@@ -2106,7 +2106,7 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
         student_ref = db.collection("students").document(student_id)
         tx_ref = db.collection("transactions").document()
 
-        @firestore.transactional
+        @mongo.transactional
         def _do(transaction):
             snap = student_ref.get(transaction=transaction)
             if not snap.exists:
@@ -2124,7 +2124,7 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
                     "balance_after": new_bal,
                     "memo": memo,
                     "recorder": _get_admin_action_recorder(),
-                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "created_at": mongo.SERVER_TIMESTAMP,
                 },
             )
             return new_bal
@@ -2140,17 +2140,17 @@ def api_get_txs_by_student_id(student_id: str, limit=200):
     try:
         q = (
             db.collection("transactions")
-            .where(filter=FieldFilter("student_id", "==", student_id))
-            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .where(filter=build_filter("student_id", "==", student_id))
+            .order_by("created_at", direction=mongo.Query.DESCENDING)
             .limit(int(limit))
             .stream()
         )
         tx_docs = list(q)
-    except FailedPrecondition:
+    except Exception:
         # 신규 배포 환경에서 복합 인덱스가 준비되지 않은 경우를 대비
         fallback_q = (
             db.collection("transactions")
-            .where(filter=FieldFilter("student_id", "==", student_id))
+            .where(filter=build_filter("student_id", "==", student_id))
             .stream()
         )
         tx_docs = list(fallback_q)
@@ -2252,7 +2252,7 @@ def api_create_deposit_request(name: str, pin: str, memo: str, amount: int, appl
             "apply_treasury": bool(apply_treasury),
             "treasury_memo": treasury_memo,
             "status": "pending",
-            "created_at": firestore.SERVER_TIMESTAMP,
+            "created_at": mongo.SERVER_TIMESTAMP,
             "processed_at": None,
             "tx_id": "",
         }
@@ -2269,7 +2269,7 @@ def api_list_pending_deposit_requests(limit: int = 300):
         # 인덱스 문제 피하려고 where+order_by 조합 최소화(파이썬에서 pending만 필터)
         q = (
             db.collection(DEP_REQ_COL)
-            .order_by("created_at", direction=firestore.Query.ASCENDING)
+            .order_by("created_at", direction=mongo.Query.ASCENDING)
             .limit(int(limit))
             .stream()
         )
@@ -2307,7 +2307,7 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
 
     req_ref = db.collection(DEP_REQ_COL).document(request_id)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         req_snap = req_ref.get(transaction=transaction)
         if not req_snap.exists:
@@ -2362,7 +2362,7 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
                 "balance_after": int(new_bal),
                 "memo": memo,
                 "recorder": _get_recorder_label(True, str(globals().get("login_name", "") or "").strip()),
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
 
@@ -2371,7 +2371,7 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
             req_ref,
             {
                 "status": "approved",
-                "processed_at": firestore.SERVER_TIMESTAMP,
+                "processed_at": mongo.SERVER_TIMESTAMP,
                 "tx_id": str(tx_ref.id),
             },
         )
@@ -2409,7 +2409,7 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
 
     req_ref = db.collection(DEP_REQ_COL).document(request_id)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         req_snap = req_ref.get(transaction=transaction)
         if not req_snap.exists:
@@ -2421,7 +2421,7 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
 
         transaction.update(
             req_ref,
-            {"status": "rejected", "processed_at": firestore.SERVER_TIMESTAMP}
+            {"status": "rejected", "processed_at": mongo.SERVER_TIMESTAMP}
         )
         return True
 
@@ -2461,7 +2461,7 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
 
     def _fmt_md(dt_utc):
         try:
-            # created_at이 Firestore Timestamp일 수 있음
+            # created_at이 mongo Timestamp일 수 있음
             dt = _to_utc_datetime(dt_utc)
             if not dt:
                 return ""
@@ -2512,9 +2512,9 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
 def _already_rolled_back(student_id: str, tx_id: str) -> bool:
     q = (
         db.collection("transactions")
-        .where(filter=FieldFilter("student_id", "==", student_id))
-        .where(filter=FieldFilter("type", "==", "rollback"))
-        .where(filter=FieldFilter("related_tx", "==", tx_id))
+        .where(filter=build_filter("student_id", "==", student_id))
+        .where(filter=build_filter("type", "==", "rollback"))
+        .where(filter=build_filter("related_tx", "==", tx_id))
         .limit(1)
         .stream()
     )
@@ -2591,7 +2591,7 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
         orig_tre_signed = int(tx.get("treasury_signed", 0) or 0)
         orig_tre_memo = str(tx.get("treasury_memo", "") or "").strip() or _orig_memo
 
-        @firestore.transactional
+        @mongo.transactional
         def _do_one(transaction):
             st_snap = student_ref.get(transaction=transaction)
             bal = int((st_snap.to_dict() or {}).get("balance", 0))
@@ -2620,7 +2620,7 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
                     "treasury_memo": str(rollback_memo),
                     "related_tx": tid,
                     "recorder": _get_recorder_label(True, str(globals().get("login_name", "") or "").strip()),
-                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "created_at": mongo.SERVER_TIMESTAMP,
                 },
             )
             return new_bal
@@ -2671,7 +2671,7 @@ def api_savings_list_by_student_id(student_id: str):
         # 1) student_id가 문자열로 저장된 경우
         docs1 = (
             db.collection(col)
-            .where(filter=FieldFilter("student_id", "==", sid_str))
+            .where(filter=build_filter("student_id", "==", sid_str))
             .limit(50)
             .stream()
         )
@@ -2682,7 +2682,7 @@ def api_savings_list_by_student_id(student_id: str):
             sid_int = int(sid_str)
             docs2 = (
                 db.collection(col)
-                .where(filter=FieldFilter("student_id", "==", sid_int))
+                .where(filter=build_filter("student_id", "==", sid_int))
                 .limit(50)
                 .stream()
             )
@@ -2727,7 +2727,7 @@ def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: i
     interest = round(principal * rate)
     maturity_date = datetime.now(timezone.utc) + timedelta(days=weeks * 7)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
@@ -2746,7 +2746,7 @@ def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: i
                 "balance_after": new_bal,
                 "memo": f"적금 가입({weeks}주)",
                 "recorder": str((student_doc.to_dict() or {}).get("name", "") or login_name or ""),
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         transaction.set(
@@ -2756,7 +2756,7 @@ def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: i
                 "principal": principal,
                 "weeks": weeks,
                 "interest": interest,
-                "start_date": firestore.SERVER_TIMESTAMP,
+                "start_date": mongo.SERVER_TIMESTAMP,
                 "maturity_date": maturity_date,
                 "status": "active",
             },
@@ -2785,7 +2785,7 @@ def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
     student_ref = db.collection("students").document(student_doc.id)
     savings_ref = db.collection(SAV_COL if "SAV_COL" in globals() else "savings").document(savings_id)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         s_snap = savings_ref.get(transaction=transaction)
         if not s_snap.exists:
@@ -2816,7 +2816,7 @@ def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
                 "balance_after": new_bal,
                 "memo": f"적금 해지({weeks}주)",
                 "recorder": str((student_doc.to_dict() or {}).get("name", "") or login_name or ""),
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         return principal
@@ -2841,8 +2841,8 @@ def api_process_maturities(login_name: str, login_pin: str):
 
     q = (
         db.collection(SAV_COL if "SAV_COL" in globals() else "savings")
-        .where(filter=FieldFilter("student_id", "==", student_doc.id))
-        .where(filter=FieldFilter("status", "==", "active"))
+        .where(filter=build_filter("student_id", "==", student_doc.id))
+        .where(filter=build_filter("status", "==", "active"))
         .stream()
     )
 
@@ -2866,7 +2866,7 @@ def api_process_maturities(login_name: str, login_pin: str):
         savings_ref = db.collection(SAV_COL if "SAV_COL" in globals() else "savings").document(sid)
         tx_ref = db.collection("transactions").document()
 
-        @firestore.transactional
+        @mongo.transactional
         def _do_one(transaction):
             st_snap = student_ref.get(transaction=transaction)
             bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
@@ -2883,7 +2883,7 @@ def api_process_maturities(login_name: str, login_pin: str):
                     "balance_after": new_bal,
                     "memo": f"적금 만기({weeks}주)",
                     "recorder": _get_recorder_label(False, str((student_doc.to_dict() or {}).get("name", "") or login_name or "")),
-                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "created_at": mongo.SERVER_TIMESTAMP,
                 },
             )
             return new_bal
@@ -2905,7 +2905,7 @@ def api_get_treasury_state_cached():
     ref = db.collection("treasury").document("state")
     snap = ref.get()
     if not snap.exists:
-        ref.set({"balance": 0, "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        ref.set({"balance": 0, "updated_at": mongo.SERVER_TIMESTAMP}, merge=True)
         return {"ok": True, "balance": 0}
     d = snap.to_dict() or {}
     return {"ok": True, "balance": int(d.get("balance", 0) or 0)}
@@ -2943,7 +2943,7 @@ def api_add_treasury_tx(
     amount = income if income > 0 else -expense
     tx_type = "income" if income > 0 else "expense"
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         st_snap = state_ref.get(transaction=transaction)
         cur_bal = 0
@@ -2956,7 +2956,7 @@ def api_add_treasury_tx(
             state_ref,
             {
                 "balance": int(new_bal),
-                "updated_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": mongo.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -2972,7 +2972,7 @@ def api_add_treasury_tx(
                 "memo": memo,
                 "actor": str(actor or ""),
                 "recorder": recorder,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         return new_bal
@@ -3024,7 +3024,7 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
         state_ref,
         {
             "balance": int(new_bal),
-            "updated_at": firestore.SERVER_TIMESTAMP,
+            "updated_at": mongo.SERVER_TIMESTAMP,
         },
         merge=True,
     )
@@ -3039,7 +3039,7 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
             "memo": memo,
             "actor": str(actor or ""),
             "recorder": recorder,
-            "created_at": firestore.SERVER_TIMESTAMP,
+            "created_at": mongo.SERVER_TIMESTAMP,
         },
     )
 
@@ -3073,7 +3073,7 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
     if bool(apply_treasury):
         tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
@@ -3103,7 +3103,7 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
                 "balance_after": new_bal,
                 "memo": memo,
                 "recorder": recorder,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
 
@@ -3158,7 +3158,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
     if bool(apply_treasury):
         tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
@@ -3188,7 +3188,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
                 "balance_after": new_bal,
                 "memo": memo,
                 "recorder": recorder,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
 
@@ -3225,7 +3225,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
         income = 0
         expense = int(-signed_amount)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(transaction):
         st_snap = state_ref.get(transaction=transaction)
         cur_bal = 0
@@ -3235,7 +3235,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
 
         transaction.set(
             state_ref,
-            {"balance": int(new_bal), "updated_at": firestore.SERVER_TIMESTAMP},
+            {"balance": int(new_bal), "updated_at": mongo.SERVER_TIMESTAMP},
             merge=True,
         )
         transaction.set(
@@ -3249,7 +3249,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
                 "memo": memo,
                 "actor": str(actor or ""),
                 "recorder": _get_admin_action_recorder(recorder_override),
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         return new_bal
@@ -3266,7 +3266,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
 def api_list_treasury_ledger_cached(limit=300):
     q = (
         db.collection("treasury_ledger")
-        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .order_by("created_at", direction=mongo.Query.DESCENDING)
         .limit(int(limit))
         .stream()
     )
@@ -3335,7 +3335,7 @@ def api_upsert_treasury_template(admin_pin: str, template_id: str, label: str, k
             "kind": kind,
             "amount": amount,
             "order": order,
-            "updated_at": firestore.SERVER_TIMESTAMP,
+            "updated_at": mongo.SERVER_TIMESTAMP,
         },
         merge=True,
     )
@@ -3443,7 +3443,7 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
 # Templates (공용) - 너 코드 유지
 # =========================
 def _get_trade_templates_state():
-    """전역 실행 시 Firestore read 방지: 템플릿은 함수 내부에서만 조회."""
+    """전역 실행 시 mongo read 방지: 템플릿은 함수 내부에서만 조회."""
     tpl_res = api_list_templates_cached()
     templates = tpl_res.get("templates", []) if tpl_res.get("ok") else []
     return {
@@ -3770,8 +3770,8 @@ def api_get_open_auction_round() -> dict:
     try:
         q = (
             db.collection("auction_rounds")
-            .where(filter=FieldFilter("status", "==", "open"))
-            .order_by("round_no", direction=firestore.Query.DESCENDING)
+            .where(filter=build_filter("status", "==", "open"))
+            .order_by("round_no", direction=mongo.Query.DESCENDING)
             .limit(1)
             .stream()
         )
@@ -3779,12 +3779,12 @@ def api_get_open_auction_round() -> dict:
             row = d.to_dict() or {}
             row["round_id"] = d.id
             return {"ok": True, "round": row}
-    except FailedPrecondition:
+    except Exception:
         # 복합 인덱스가 아직 준비되지 않은 프로젝트에서도 앱이 중단되지 않도록
         # 정렬 없이 조회한 뒤 round_no 최대값을 선택한다.
         fallback_docs = (
             db.collection("auction_rounds")
-            .where(filter=FieldFilter("status", "==", "open"))
+            .where(filter=build_filter("status", "==", "open"))
             .stream()
         )
         best_row = None
@@ -3812,7 +3812,7 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
     state_ref = db.collection("config").document(AUC_STATE_DOC)
     round_ref = db.collection("auction_rounds").document()
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_data = st_snap.to_dict() if st_snap.exists else {}
@@ -3834,10 +3834,10 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
                 "bid_name": bid_name,
                 "affiliation": affiliation,
                 "status": "open",
-                "opened_at": firestore.SERVER_TIMESTAMP,
+                "opened_at": mongo.SERVER_TIMESTAMP,
                 "closed_at": None,
                 "ledger_applied": False,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         tx.set(
@@ -3846,7 +3846,7 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
                 "current_round_no": next_no,
                 "current_round_id": round_ref.id,
                 "status": "open",
-                "updated_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": mongo.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -3890,7 +3890,7 @@ def api_submit_auction_bid(name: str, pin: str, amount: int):
 
     memo = f"[경매 {int(round_row.get('round_no', 0) or 0):02d}회] {str(round_row.get('bid_name', '') or '')} 입찰 제출"
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(tx):
         b_snap = bid_ref.get(transaction=tx)
         if b_snap.exists:
@@ -3918,7 +3918,7 @@ def api_submit_auction_bid(name: str, pin: str, amount: int):
                 "balance_after": int(new_bal),
                 "memo": memo,
                 "recorder": str(student_name or name or ""),
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         tx.set(
@@ -3932,7 +3932,7 @@ def api_submit_auction_bid(name: str, pin: str, amount: int):
                 "affiliation": str(round_row.get("affiliation", "") or ""),
                 "bid_name": str(round_row.get("bid_name", "") or ""),
                 "amount": int(amount),
-                "submitted_at": firestore.SERVER_TIMESTAMP,
+                "submitted_at": mongo.SERVER_TIMESTAMP,
                 "status": "submitted",
             },
         )
@@ -3961,7 +3961,7 @@ def api_close_auction(admin_pin: str):
     db.collection("auction_rounds").document(round_id).set(
         {
             "status": "closed",
-            "closed_at": firestore.SERVER_TIMESTAMP,
+            "closed_at": mongo.SERVER_TIMESTAMP,
         },
         merge=True,
     )
@@ -3969,7 +3969,7 @@ def api_close_auction(admin_pin: str):
         {
             "current_round_id": "",
             "status": "closed",
-            "updated_at": firestore.SERVER_TIMESTAMP,
+            "updated_at": mongo.SERVER_TIMESTAMP,
         },
         merge=True,
     )
@@ -3980,7 +3980,7 @@ def api_list_auction_bids(round_id: str):
     if not round_id:
         return {"ok": True, "rows": []}
 
-    q = db.collection("auction_bids").where(filter=FieldFilter("round_id", "==", round_id)).stream()
+    q = db.collection("auction_bids").where(filter=build_filter("round_id", "==", round_id)).stream()
     rows = []
     for d in q:
         r = d.to_dict() or {}
@@ -4005,8 +4005,8 @@ def api_get_latest_closed_auction_round():
     try:
         q = (
             db.collection("auction_rounds")
-            .where(filter=FieldFilter("status", "==", "closed"))
-            .order_by("round_no", direction=firestore.Query.DESCENDING)
+            .where(filter=build_filter("status", "==", "closed"))
+            .order_by("round_no", direction=mongo.Query.DESCENDING)
             .limit(1)
             .stream()
         )
@@ -4014,11 +4014,11 @@ def api_get_latest_closed_auction_round():
             row = d.to_dict() or {}
             row["round_id"] = d.id
             return {"ok": True, "round": row}
-    except FailedPrecondition:
+    except Exception:
         # 복합 인덱스가 아직 준비되지 않은 환경(예: 신규 Streamlit Cloud 배포) 대비
         fallback_docs = (
             db.collection("auction_rounds")
-            .where(filter=FieldFilter("status", "==", "closed"))
+            .where(filter=build_filter("status", "==", "closed"))
             .stream()
         )
         best_row = None
@@ -4092,7 +4092,7 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
                     "balance_after": int(new_bal),
                     "memo": f"[경매 {int(r.get('round_no', 0) or 0):02d}회] 낙찰 실패 입찰금 반환(수수료 10% 차감)",
                     "recorder": "관리자",
-                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "created_at": mongo.SERVER_TIMESTAMP,
                 }
             )
 
@@ -4136,15 +4136,15 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
             "refund_non_winners": bool(refund_non_winners),
             "fee_amount": int(fee_total),
             "winner_amount": int(winner_amount),
-            "created_at": firestore.SERVER_TIMESTAMP,
+            "created_at": mongo.SERVER_TIMESTAMP,
         }
     )
 
-    r_ref.set({"ledger_applied": True, "ledger_applied_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    r_ref.set({"ledger_applied": True, "ledger_applied_at": mongo.SERVER_TIMESTAMP}, merge=True)
     return {"ok": True, "total": int(tre_total), "participants": participants, "fee_total": int(fee_total)}
     
 def api_list_auction_admin_ledger(limit=100):
-    q = db.collection("auction_admin_ledger").order_by("created_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    q = db.collection("auction_admin_ledger").order_by("created_at", direction=mongo.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
@@ -4227,8 +4227,8 @@ def api_get_open_lottery_round() -> dict:
     try:
         q = (
             db.collection("lottery_rounds")
-            .where(filter=FieldFilter("status", "==", "open"))
-            .order_by("round_no", direction=firestore.Query.DESCENDING)
+            .where(filter=build_filter("status", "==", "open"))
+            .order_by("round_no", direction=mongo.Query.DESCENDING)
             .limit(1)
             .stream()
         )
@@ -4236,8 +4236,8 @@ def api_get_open_lottery_round() -> dict:
             row = d.to_dict() or {}
             row["round_id"] = d.id
             return {"ok": True, "round": row}
-    except FailedPrecondition:
-        fallback_docs = db.collection("lottery_rounds").where(filter=FieldFilter("status", "==", "open")).stream()
+    except Exception:
+        fallback_docs = db.collection("lottery_rounds").where(filter=build_filter("status", "==", "open")).stream()
         best_row = None
         for d in fallback_docs:
             row = d.to_dict() or {}
@@ -4272,7 +4272,7 @@ def api_open_lottery(admin_pin: str, cfg: dict):
     state_ref = db.collection("config").document(LOT_STATE_DOC)
     round_ref = db.collection("lottery_rounds").document()
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_row = st_snap.to_dict() if st_snap.exists else {}
@@ -4301,10 +4301,10 @@ def api_open_lottery(admin_pin: str, cfg: dict):
                 "winners": [],
                 "payout_done": False,
                 "ledger_applied": False,
-                "opened_at": firestore.SERVER_TIMESTAMP,
+                "opened_at": mongo.SERVER_TIMESTAMP,
                 "closed_at": None,
                 "drawn_at": None,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         tx.set(
@@ -4313,7 +4313,7 @@ def api_open_lottery(admin_pin: str, cfg: dict):
                 "current_round_no": int(next_no),
                 "current_round_id": round_ref.id,
                 "status": "open",
-                "updated_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": mongo.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -4335,7 +4335,7 @@ def api_close_lottery(admin_pin: str):
 
     state_ref = db.collection("config").document(LOT_STATE_DOC)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_row = st_snap.to_dict() if st_snap.exists else {}
@@ -4351,8 +4351,8 @@ def api_close_lottery(admin_pin: str):
         if str(r.get("status", "")) != "open":
             raise ValueError("진행 중인 복권만 마감할 수 있습니다.")
 
-        tx.update(r_ref, {"status": "closed", "closed_at": firestore.SERVER_TIMESTAMP})
-        tx.set(state_ref, {"status": "closed", "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        tx.update(r_ref, {"status": "closed", "closed_at": mongo.SERVER_TIMESTAMP})
+        tx.set(state_ref, {"status": "closed", "updated_at": mongo.SERVER_TIMESTAMP}, merge=True)
         return {"round_id": rid, "round_no": int(r.get("round_no", 0) or 0)}
 
     try:
@@ -4397,14 +4397,14 @@ def api_list_lottery_entries(round_id: str):
     try:
         q = (
             db.collection("lottery_entries")
-            .where(filter=FieldFilter("round_id", "==", rid))
-            .order_by("submitted_at", direction=firestore.Query.ASCENDING)
+            .where(filter=build_filter("round_id", "==", rid))
+            .order_by("submitted_at", direction=mongo.Query.ASCENDING)
             .stream()
         )
         rows = _rows_from_stream(q)
-    except FailedPrecondition:
+    except Exception:
         # 복합 인덱스가 없어도 동작하도록 서버 정렬 없이 조회 후 앱에서 정렬
-        q = db.collection("lottery_entries").where(filter=FieldFilter("round_id", "==", rid)).stream()
+        q = db.collection("lottery_entries").where(filter=build_filter("round_id", "==", rid)).stream()
         rows = _rows_from_stream(q)
         rows.sort(
             key=lambda r: (
@@ -4425,13 +4425,13 @@ def api_list_lottery_entries_by_student(student_id: str, round_id: str = ""):
 
     rid = str(round_id or "").strip()
     
-    q_ref = db.collection("lottery_entries").where(filter=FieldFilter("student_id", "==", sid))
+    q_ref = db.collection("lottery_entries").where(filter=build_filter("student_id", "==", sid))
     if rid:
-        q_ref = q_ref.where(filter=FieldFilter("round_id", "==", rid))
+        q_ref = q_ref.where(filter=build_filter("round_id", "==", rid))
     
     rows = []
     try:
-        q = q_ref.order_by("submitted_at", direction=firestore.Query.DESCENDING).stream()
+        q = q_ref.order_by("submitted_at", direction=mongo.Query.DESCENDING).stream()
         for d in q:
             x = d.to_dict() or {}
             rows.append(
@@ -4443,7 +4443,7 @@ def api_list_lottery_entries_by_student(student_id: str, round_id: str = ""):
                     "_submitted_at": x.get("submitted_at"),
                 }
             )
-    except FailedPrecondition:
+    except Exception:
         q = q_ref.stream()
         for d in q:
             x = d.to_dict() or {}
@@ -4490,7 +4490,7 @@ def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
     entry_ref = db.collection("lottery_entries").document()
     tx_ref = db.collection("transactions").document()
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
@@ -4518,7 +4518,7 @@ def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
                 "balance_after": int(new_bal),
                 "memo": f"복권 {int(round_no)}회 구매",
                 "recorder": str(s.get("name", "") or name or ""),
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
         tx.set(
@@ -4530,7 +4530,7 @@ def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
                 "student_no": int(s.get("no", 0) or 0),
                 "student_name": str(s.get("name", "") or name),
                 "numbers": nums,
-                "submitted_at": firestore.SERVER_TIMESTAMP,
+                "submitted_at": mongo.SERVER_TIMESTAMP,
                 "ticket_price": int(price),
             },
         )
@@ -4577,7 +4577,7 @@ def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
     round_ref = db.collection("lottery_rounds").document(rid)
     tx_ref = db.collection("transactions").document()
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
@@ -4605,7 +4605,7 @@ def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
                 "balance_after": int(new_bal),
                 "memo": f"복권 {int(round_no)}회 {len(normalized_games)}게임 구매",
                 "recorder": str(s.get("name", "") or name or ""),
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
         )
 
@@ -4620,7 +4620,7 @@ def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
                     "student_no": int(s.get("no", 0) or 0),
                     "student_name": str(s.get("name", "") or name),
                     "numbers": nums,
-                    "submitted_at": firestore.SERVER_TIMESTAMP,
+                    "submitted_at": mongo.SERVER_TIMESTAMP,
                     "ticket_price": int(price),
                 },
             )
@@ -4669,7 +4669,7 @@ def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_trea
 
     round_ref = db.collection("lottery_rounds").document(rid)
 
-    @firestore.transactional
+    @mongo.transactional
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
@@ -4697,7 +4697,7 @@ def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_trea
                     "student_no": 0,
                     "student_name": ADMIN_NAME,
                     "numbers": nums,
-                    "submitted_at": firestore.SERVER_TIMESTAMP,
+                    "submitted_at": mongo.SERVER_TIMESTAMP,
                     "ticket_price": int(price),
                     "is_admin": True,
                     "treasury_applied": bool(apply_treasury),
@@ -4826,7 +4826,7 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
             "ticket_count": int(len(entries)),
             "payout_total": int(payout_total),
             "tax_total": int(tax_total),
-            "drawn_at": firestore.SERVER_TIMESTAMP,
+            "drawn_at": mongo.SERVER_TIMESTAMP,
         },
         merge=True,
     )
@@ -4874,7 +4874,7 @@ def api_pay_lottery_prizes(admin_pin: str, round_id: str):
     r_ref.set(
         {
             "payout_done": True,
-            "payout_done_at": firestore.SERVER_TIMESTAMP,
+            "payout_done_at": mongo.SERVER_TIMESTAMP,
             "payout_total": int(paid_total),
         },
         merge=True,
@@ -4998,15 +4998,15 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
             "national_amount": int(national_amount),
             "admin_winning_total": int(admin_winning_total),
             "drawn_at": r.get("drawn_at"),
-            "created_at": firestore.SERVER_TIMESTAMP,
+            "created_at": mongo.SERVER_TIMESTAMP,
         }
     )
-    r_ref.set({"ledger_applied": True, "ledger_applied_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    r_ref.set({"ledger_applied": True, "ledger_applied_at": mongo.SERVER_TIMESTAMP}, merge=True)
     return {"ok": True}
 
 
 def api_list_lottery_admin_ledger(limit=200):
-    q = db.collection("lottery_admin_ledger").order_by("round_no", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    q = db.collection("lottery_admin_ledger").order_by("round_no", direction=mongo.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
@@ -5040,7 +5040,7 @@ def api_list_lottery_admin_ledger(limit=200):
                             "tax_total": int(tax_total),
                             "national_amount": int(national_amount),
                             "admin_winning_total": int(admin_winning_total),
-                            "updated_at": firestore.SERVER_TIMESTAMP,
+                            "updated_at": mongo.SERVER_TIMESTAMP,
                         },
                         merge=True,
                     )
@@ -5107,7 +5107,7 @@ def api_set_mart_weekly_limit(admin_pin: str, weekly_limit: int):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     try:
         db.collection("configs").document("mart").set(
-            {"weekly_limit": int(weekly_limit or 0), "updated_at": firestore.SERVER_TIMESTAMP},
+            {"weekly_limit": int(weekly_limit or 0), "updated_at": mongo.SERVER_TIMESTAMP},
             merge=True,
         )
         return {"ok": True}
@@ -5174,7 +5174,7 @@ def _normalize_mart_template_orders(preferred_template_id: str = "", preferred_o
         if int(r.get("order", 999999) or 999999) != i:
             batch.set(
                 db.collection("mart_templates").document(str(r["template_id"])),
-                {"order": i, "updated_at": firestore.SERVER_TIMESTAMP},
+                {"order": i, "updated_at": mongo.SERVER_TIMESTAMP},
                 merge=True,
             )
             dirty = True
@@ -5202,8 +5202,8 @@ def api_upsert_mart_template(
                 "item": item,
                 "price": int(price or 0),
                 "order": max(1, int(order or 1)),
-                "updated_at": firestore.SERVER_TIMESTAMP,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": mongo.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -5235,9 +5235,9 @@ def api_count_mart_used_this_week(student_id: str, include_pending: bool = True)
     for stx in statuses:
         q = (
             db.collection("mart_requests")
-            .where(filter=FieldFilter("student_id", "==", student_id))
-            .where(filter=FieldFilter("week_key", "==", wk))
-            .where(filter=FieldFilter("status", "==", stx))
+            .where(filter=build_filter("student_id", "==", student_id))
+            .where(filter=build_filter("week_key", "==", wk))
+            .where(filter=build_filter("status", "==", stx))
             .stream()
         )
         cnt += len(list(q))
@@ -5277,7 +5277,7 @@ def api_create_mart_request(name: str, pin: str, item: str, price: int):
                 "price": int(price),
                 "status": "pending",
                 "week_key": _mart_week_key(),
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -5290,17 +5290,17 @@ def api_list_mart_requests(status: str = "pending", limit: int = 300):
     try:
         q = (
             db.collection("mart_requests")
-            .where(filter=FieldFilter("status", "==", str(status)))
-            .order_by("created_at", direction=firestore.Query.ASCENDING)
+            .where(filter=build_filter("status", "==", str(status)))
+            .order_by("created_at", direction=mongo.Query.ASCENDING)
             .limit(int(limit))
             .stream()
         )
         docs = list(q)
-    except FailedPrecondition:
+    except Exception:
         # 신규/변경 배포 환경에서 복합 인덱스가 준비되지 않은 경우를 대비
         fallback_q = (
             db.collection("mart_requests")
-            .where(filter=FieldFilter("status", "==", str(status)))
+            .where(filter=build_filter("status", "==", str(status)))
             .stream()
         )
         docs = list(fallback_q)
@@ -5362,7 +5362,7 @@ def api_admin_approve_mart_request(admin_pin: str, request_id: str):
             return {"ok": False, "error": pay_res.get("error", "결제 실패")}
 
         ref.set(
-            {"status": "approved", "approved_at": firestore.SERVER_TIMESTAMP, "approved_by": approver_label},
+            {"status": "approved", "approved_at": mongo.SERVER_TIMESTAMP, "approved_by": approver_label},
             merge=True,
         )
         db.collection("mart_ledger").document().set(
@@ -5373,7 +5373,7 @@ def api_admin_approve_mart_request(admin_pin: str, request_id: str):
                 "student_name": name,
                 "item": item,
                 "price": int(price),
-                "approved_at": firestore.SERVER_TIMESTAMP,
+                "approved_at": mongo.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -5387,7 +5387,7 @@ def api_admin_reject_mart_request(admin_pin: str, request_id: str):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     try:
         db.collection("mart_requests").document(str(request_id)).set(
-            {"status": "rejected", "rejected_at": firestore.SERVER_TIMESTAMP},
+            {"status": "rejected", "rejected_at": mongo.SERVER_TIMESTAMP},
             merge=True,
         )
         return {"ok": True}
@@ -5396,7 +5396,7 @@ def api_admin_reject_mart_request(admin_pin: str, request_id: str):
 
 
 def api_list_mart_ledger(limit: int = 300):
-    q = db.collection("mart_ledger").order_by("approved_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    q = db.collection("mart_ledger").order_by("approved_at", direction=mongo.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
@@ -5537,7 +5537,7 @@ def upsert_roles_from_paytable(admin_pin: str, pay_df: pd.DataFrame):
             perms += ["treasury_read"]
         return list(sorted(set(perms)))
 
-    # Firestore upsert: role_name을 키로 삼고 싶으면 별도 index가 필요하므로
+    # mongo upsert: role_name을 키로 삼고 싶으면 별도 index가 필요하므로
     # 여기서는 "role_name 문서"를 생성(간단)
     # 문서ID를 role_name으로 쓰면 초보에게 가장 쉬움.
     batch = db.batch()
@@ -5566,7 +5566,7 @@ def upsert_roles_from_paytable(admin_pin: str, pay_df: pd.DataFrame):
                 "desk_rent": desk,
                 "electric_fee": elec,
                 "health_fee": health,
-                "updated_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": mongo.SERVER_TIMESTAMP,
             },
             merge=True,
         )
@@ -6057,7 +6057,7 @@ with st.sidebar:
                             "role_id": "",
                             "io_enabled": True,
                             "invest_enabled": True,
-                            "created_at": firestore.SERVER_TIMESTAMP,
+                            "created_at": mongo.SERVER_TIMESTAMP,
                         }
                     )
 
@@ -8416,7 +8416,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         try:
             q = (
                 db.collection(INV_LEDGER_COL)
-                .order_by("buy_at", direction=firestore.Query.DESCENDING)
+                .order_by("buy_at", direction=mongo.Query.DESCENDING)
                 .limit(400)
                 .stream()
             )
@@ -8451,8 +8451,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         try:
             q = (
                 db.collection(INV_HIST_COL)
-                .where(filter=FieldFilter("product_id", "==", pid))
-                .order_by("created_at", direction=firestore.Query.DESCENDING)
+                .where(filter=build_filter("product_id", "==", pid))
+                .order_by("created_at", direction=mongo.Query.DESCENDING)
                 .limit(int(limit))
                 .stream()
             )
@@ -8474,7 +8474,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         try:
             q = (
                 db.collection(INV_HIST_COL)
-                .where(filter=FieldFilter("product_id", "==", pid))
+                .where(filter=build_filter("product_id", "==", pid))
                 .limit(int(limit))
                 .stream()
             )
@@ -8500,7 +8500,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         try:
             q = db.collection(INV_PROD_COL)
             if active_only:
-                q = q.where(filter=FieldFilter("is_active", "==", True))
+                q = q.where(filter=build_filter("is_active", "==", True))
             docs = q.stream()
             out = []
             for d in docs:
@@ -8645,11 +8645,11 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     "reason": reason2,
                                     "price_before": _as_price1(cur),
                                     "price_after": _as_price1(new_price),
-                                    "created_at": firestore.SERVER_TIMESTAMP,
+                                    "created_at": mongo.SERVER_TIMESTAMP,
                                 }
                                 db.collection(INV_HIST_COL).document().set(payload)
                                 db.collection(INV_PROD_COL).document(p["product_id"]).set(
-                                    {"current_price": _as_price1(new_price), "updated_at": firestore.SERVER_TIMESTAMP},
+                                    {"current_price": _as_price1(new_price), "updated_at": mongo.SERVER_TIMESTAMP},
                                     merge=True,
                                 )
                                 toast("주가가 반영되었습니다.", icon="✅")
@@ -9345,7 +9345,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     db.collection(INV_LEDGER_COL).document(doc_id).update(
                                         {
                                             "redeemed": True,
-                                            "redeemed_at": firestore.SERVER_TIMESTAMP,
+                                            "redeemed_at": mongo.SERVER_TIMESTAMP,
                                             "sell_date_label": sell_label,
                                             "sell_price": _as_price1(cur_price),
                                             "diff": _as_price1(diff),
@@ -9422,7 +9422,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         "name": str(sdata.get("name", "") or ""),
                                         "product_id": sel_prod["product_id"],
                                         "product_name": sel_prod["name"],
-                                        "buy_at": firestore.SERVER_TIMESTAMP,
+                                        "buy_at": mongo.SERVER_TIMESTAMP,
                                         "buy_date_label": buy_label,
                                         "buy_price": _as_price1(sel_prod["current_price"]),
                                         "invest_amount": int(amt),
@@ -9510,7 +9510,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         "name": nm,
                                         "current_price": _as_price1(new_price),
                                         "is_active": True,
-                                        "updated_at": firestore.SERVER_TIMESTAMP,
+                                        "updated_at": mongo.SERVER_TIMESTAMP,
                                     },
                                     merge=True,
                                 )
@@ -9532,8 +9532,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     "name": nm,
                                     "current_price": _as_price1(new_price),
                                     "is_active": True,
-                                    "created_at": firestore.SERVER_TIMESTAMP,
-                                    "updated_at": firestore.SERVER_TIMESTAMP,
+                                    "created_at": mongo.SERVER_TIMESTAMP,
+                                    "updated_at": mongo.SERVER_TIMESTAMP,
                                 }
                             )
                             toast("종목이 추가되었습니다.", icon="✅")
@@ -9543,7 +9543,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     "name": nm,
                                     "current_price": _as_price1(new_price),
                                     "is_active": True,
-                                    "updated_at": firestore.SERVER_TIMESTAMP,
+                                    "updated_at": mongo.SERVER_TIMESTAMP,
                                 },
                                 merge=True,
                             )
@@ -9557,7 +9557,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     st.stop()
                 try:
                     db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
-                        {"is_active": False, "updated_at": firestore.SERVER_TIMESTAMP},
+                        {"is_active": False, "updated_at": mongo.SERVER_TIMESTAMP},
                         merge=True,
                     )
                     toast("삭제(비활성화) 완료", icon="🗑️")
@@ -9647,7 +9647,7 @@ if "admin::🏦 은행(적금)" in tabs:
             return "X"
 
         # -------------------------------------------------
-        # (1) 이자율 표(설정값 Firestore에서 로드)
+        # (1) 이자율 표(설정값 mongo에서 로드)
         #  - config/bank_rates : {"weeks":[1..10], "rates": {"1":{"1":10, ...}, ...}}
         #  - ✅ 엑셀 표(1~10주) 기준. DB값이 다르면 자동으로 덮어씀.
         # -------------------------------------------------
@@ -9699,7 +9699,7 @@ if "admin::🏦 은행(적금)" in tabs:
 
             # 2) DB가 없거나 / 내용이 다르면 → 엑셀 표로 덮어쓰기
             ref.set(
-                {"weeks": weeks_x, "rates": rates_x, "updated_at": firestore.SERVER_TIMESTAMP},
+                {"weeks": weeks_x, "rates": rates_x, "updated_at": mongo.SERVER_TIMESTAMP},
                 merge=False
             )
             return {"weeks": weeks_x, "rates": rates_x}
@@ -9779,7 +9779,7 @@ if "admin::🏦 은행(적금)" in tabs:
             return score, grade
 
         # -------------------------------------------------
-        # (3) 적금 저장/조회/처리 (Firestore: savings)
+        # (3) 적금 저장/조회/처리 (mongo: savings)
         # -------------------------------------------------
         SAV_COL = "savings"
         GOAL_COL = "goals"
@@ -9799,7 +9799,7 @@ if "admin::🏦 은행(적금)" in tabs:
             - 원금+이자를 학생 통장에 입금(+)
             """
             now = datetime.now(timezone.utc)
-            q = db.collection(SAV_COL).where(filter=FieldFilter("status", "==", "running")).stream()
+            q = db.collection(SAV_COL).where(filter=build_filter("status", "==", "running")).stream()
 
             proc_cnt = 0
             for d in q:
@@ -9827,7 +9827,7 @@ if "admin::🏦 은행(적금)" in tabs:
                             {
                                 "status": "matured",
                                 "payout_amount": payout,
-                                "processed_at": firestore.SERVER_TIMESTAMP,
+                                "processed_at": mongo.SERVER_TIMESTAMP,
                             }
                         )
                         proc_cnt += 1
@@ -9869,7 +9869,7 @@ if "admin::🏦 은행(적금)" in tabs:
                     {
                         "status": "canceled",
                         "payout_amount": principal,
-                        "processed_at": firestore.SERVER_TIMESTAMP,
+                        "processed_at": mongo.SERVER_TIMESTAMP,
                     }
                 )
                 return {"ok": True}
@@ -9926,13 +9926,13 @@ if "admin::🏦 은행(적금)" in tabs:
                 "maturity_utc": _dt_to_iso_z(maturity_utc),
                 "status": "running",          # running / matured / canceled
                 "payout_amount": None,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             }
             db.collection(SAV_COL).document().set(payload)
             return {"ok": True}
 
         def _load_savings_rows(limit=500):
-            q = db.collection(SAV_COL).order_by("start_utc", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+            q = db.collection(SAV_COL).order_by("start_utc", direction=mongo.Query.DESCENDING).limit(int(limit)).stream()
             rows = []
             for d in q:
                 x = d.to_dict() or {}
@@ -10059,7 +10059,7 @@ if "🔎 개별조회" in tabs:
         # =========================
         docs = (
             db.collection("students")
-            .where(filter=FieldFilter("is_active", "==", True))
+            .where(filter=build_filter("is_active", "==", True))
             .stream()
         )
 
@@ -10395,7 +10395,7 @@ if "⭐ 권한부여" in tabs:
             st.rerun()
 
         if btn_revoke_all and confirm_all:
-            docs_perm3 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+            docs_perm3 = db.collection("students").where(filter=build_filter("is_active", "==", True)).stream()
             n = 0
             for x in _list_active_students_full_cached():
                 db.collection("students").document(str(x.get("student_id", "") or "")).update({"extra_permissions": []})
@@ -10730,7 +10730,7 @@ if "👥 계정 정보" in tabs:
                                     "credit_score": DEFAULT_CREDIT_SCORE,
                                     "credit_grade": DEFAULT_CREDIT_GRADE,                            
                                     "role_id": "",
-                                    "created_at": firestore.SERVER_TIMESTAMP,
+                                    "created_at": mongo.SERVER_TIMESTAMP,
                                 }
                             )
                             created += 1
@@ -10888,7 +10888,7 @@ if "💼 직업/월급" in tabs:
         # -------------------------------------------------
         accounts = api_list_accounts_cached().get("accounts", [])
         # students 컬렉션에서 'no'도 같이 가져와서 "번호+이름" 만들기
-        docs_acc = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        docs_acc = db.collection("students").where(filter=build_filter("is_active", "==", True)).stream()
         acc_rows = []
         for d in docs_acc:
             x = d.to_dict() or {}
@@ -10910,7 +10910,7 @@ if "💼 직업/월급" in tabs:
 
         # -------------------------------------------------
         # ✅ 공제 설정(세금% / 자리임대료 / 전기세 / 건강보험료)
-        #   - Firestore config/salary_deductions 에 저장
+        #   - mongo config/salary_deductions 에 저장
         # -------------------------------------------------
         def _get_salary_cfg():
             ref = db.collection("config").document("salary_deductions")
@@ -10937,7 +10937,7 @@ if "💼 직업/월급" in tabs:
                     "desk_rent": int(cfg.get("desk_rent", 50) or 50),
                     "electric_fee": int(cfg.get("electric_fee", 10) or 10),
                     "health_fee": int(cfg.get("health_fee", 10) or 10),
-                    "updated_at": firestore.SERVER_TIMESTAMP,
+                    "updated_at": mongo.SERVER_TIMESTAMP,
                 },
                 merge=True,
             )
@@ -10999,7 +10999,7 @@ if "💼 직업/월급" in tabs:
                 {
                     "pay_day": int(cfg2.get("pay_day", 25) or 25),
                     "auto_enabled": bool(cfg2.get("auto_enabled", False)),
-                    "updated_at": firestore.SERVER_TIMESTAMP,
+                    "updated_at": mongo.SERVER_TIMESTAMP,
                 },
                 merge=True,
             )
@@ -11043,7 +11043,7 @@ if "💼 직업/월급" in tabs:
                     "job": str(job_name or ""),
                     "job_id": str(job_id or ""),
                     "method": str(method or ""),  # "auto" / "manual"
-                    "paid_at": firestore.SERVER_TIMESTAMP,
+                    "paid_at": mongo.SERVER_TIMESTAMP,
                 },
                 merge=True,
             )
@@ -11802,7 +11802,7 @@ if "💼 직업/월급" in tabs:
                             "salary": int(sal_in),
                             "student_count": int(sc_in),
                             "assigned_ids": cur_ids,
-                            "updated_at": firestore.SERVER_TIMESTAMP,
+                            "updated_at": mongo.SERVER_TIMESTAMP,
                         }
                     )
                     toast("수정 완료!", icon="✅")
@@ -11818,8 +11818,8 @@ if "💼 직업/월급" in tabs:
                             "salary": int(sal_in),
                             "student_count": int(sc_in),
                             "assigned_ids": [""] * int(sc_in),
-                            "created_at": firestore.SERVER_TIMESTAMP,
-                            "updated_at": firestore.SERVER_TIMESTAMP,
+                            "created_at": mongo.SERVER_TIMESTAMP,
+                            "updated_at": mongo.SERVER_TIMESTAMP,
                         }
                     )
                     toast("추가 완료!", icon="✅")
@@ -11980,7 +11980,7 @@ if "💼 직업/월급" in tabs:
                                 "salary": int(r["월급"]),
                                 "student_count": int(r["배정 수"]),
                                 "assigned_ids": [""] * int(r["배정 수"]),
-                                "created_at": firestore.SERVER_TIMESTAMP,
+                                "created_at": mongo.SERVER_TIMESTAMP,
                             }
                         )
 
@@ -12314,7 +12314,7 @@ if "📊 통계청" in tabs:
         # -------------------------
         # api_list_accounts_cached()는 name/balance/student_id만 주므로,
         # 번호(no)까지 필요해서 students에서 직접 읽어옴.
-        docs_acc2 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        docs_acc2 = db.collection("students").where(filter=build_filter("is_active", "==", True)).stream()
         stu_rows = []
         for d in docs_acc2:
             x = d.to_dict() or {}
@@ -12911,7 +12911,7 @@ if "💳 신용등급" in tabs:
         # -------------------------
         # 0) 학생 목록(번호/이름) : 계정정보 탭과 동일(활성 학생)
         # -------------------------
-        docs_acc = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+        docs_acc = db.collection("students").where(filter=build_filter("is_active", "==", True)).stream()
         stu_rows = []
         for d in docs_acc:
             x = d.to_dict() or {}
@@ -12951,7 +12951,7 @@ if "💳 신용등급" in tabs:
                     "o": int(cfg.get("o", 1) if cfg.get("o", None) is not None else 1),
                     "x": int(cfg.get("x", -3) if cfg.get("x", None) is not None else -3),
                     "tri": int(cfg.get("tri", 0) if cfg.get("tri", None) is not None else 0),
-                    "updated_at": firestore.SERVER_TIMESTAMP,
+                    "updated_at": mongo.SERVER_TIMESTAMP,
                 },
                 merge=True,
             )
@@ -13314,7 +13314,7 @@ if "🏦 은행(적금)" in tabs:
             return "X"
 
         # -------------------------------------------------
-        # (1) 이자율 표(설정값 Firestore에서 로드)
+        # (1) 이자율 표(설정값 mongo에서 로드)
         #  - config/bank_rates : {"weeks":[1..10], "rates": {"1":{"1":10, ...}, ...}}
         #  - ✅ 엑셀 표(1~10주) 기준. DB값이 다르면 자동으로 덮어씀.
         # -------------------------------------------------
@@ -13366,7 +13366,7 @@ if "🏦 은행(적금)" in tabs:
 
             # 2) DB가 없거나 / 내용이 다르면 → 엑셀 표로 덮어쓰기
             ref.set(
-                {"weeks": weeks_x, "rates": rates_x, "updated_at": firestore.SERVER_TIMESTAMP},
+                {"weeks": weeks_x, "rates": rates_x, "updated_at": mongo.SERVER_TIMESTAMP},
                 merge=False
             )
             return {"weeks": weeks_x, "rates": rates_x}
@@ -13446,7 +13446,7 @@ if "🏦 은행(적금)" in tabs:
             return score, grade
 
         # -------------------------------------------------
-        # (3) 적금 저장/조회/처리 (Firestore: savings)
+        # (3) 적금 저장/조회/처리 (mongo: savings)
         # -------------------------------------------------
         SAV_COL = "savings"
         GOAL_COL = "goals"
@@ -13466,7 +13466,7 @@ if "🏦 은행(적금)" in tabs:
             - 원금+이자를 학생 통장에 입금(+)
             """
             now = datetime.now(timezone.utc)
-            q = db.collection(SAV_COL).where(filter=FieldFilter("status", "==", "running")).stream()
+            q = db.collection(SAV_COL).where(filter=build_filter("status", "==", "running")).stream()
 
             proc_cnt = 0
             for d in q:
@@ -13494,7 +13494,7 @@ if "🏦 은행(적금)" in tabs:
                             {
                                 "status": "matured",
                                 "payout_amount": payout,
-                                "processed_at": firestore.SERVER_TIMESTAMP,
+                                "processed_at": mongo.SERVER_TIMESTAMP,
                             }
                         )
                         proc_cnt += 1
@@ -13536,7 +13536,7 @@ if "🏦 은행(적금)" in tabs:
                     {
                         "status": "canceled",
                         "payout_amount": principal,
-                        "processed_at": firestore.SERVER_TIMESTAMP,
+                        "processed_at": mongo.SERVER_TIMESTAMP,
                     }
                 )
                 return {"ok": True}
@@ -13593,13 +13593,13 @@ if "🏦 은행(적금)" in tabs:
                 "maturity_utc": _dt_to_iso_z(maturity_utc),
                 "status": "running",          # running / matured / canceled
                 "payout_amount": None,
-                "created_at": firestore.SERVER_TIMESTAMP,
+                "created_at": mongo.SERVER_TIMESTAMP,
             }
             db.collection(SAV_COL).document().set(payload)
             return {"ok": True}
 
         def _load_savings_rows(limit=500):
-            q = db.collection(SAV_COL).order_by("start_utc", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+            q = db.collection(SAV_COL).order_by("start_utc", direction=mongo.Query.DESCENDING).limit(int(limit)).stream()
             rows = []
             for d in q:
                 x = d.to_dict() or {}
@@ -13797,7 +13797,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
             st.markdown("### 📒 내 적금 내역")
             my_rows = []
             if my_student_id:
-                q = db.collection(SAV_COL).where(filter=FieldFilter("student_id", "==", str(my_student_id))).stream()
+                q = db.collection(SAV_COL).where(filter=build_filter("student_id", "==", str(my_student_id))).stream()
                 for d in q:
                     x = d.to_dict() or {}
                     x["_id"] = d.id
@@ -14434,7 +14434,7 @@ if "🍀 복권" in tabs:
             current_round = dict(open_round)
             if not current_round_id:
                 try:
-                    cq = db.collection("lottery_rounds").order_by("round_no", direction=firestore.Query.DESCENDING).limit(1).stream()
+                    cq = db.collection("lottery_rounds").order_by("round_no", direction=mongo.Query.DESCENDING).limit(1).stream()
                     for d in cq:
                         current_round = d.to_dict() or {}
                         current_round["round_id"] = d.id
@@ -14994,13 +14994,13 @@ def add_schedule(area: str, d: date, title: str, owner_roles: list[str], created
             "title": title,
             "owner_role_ids": owner_roles,
             "created_by": created_by,
-            "created_at": firestore.SERVER_TIMESTAMP,
+            "created_at": mongo.SERVER_TIMESTAMP,
         }
     )
     return {"ok": True}
 
 def list_schedule(limit=200):
-    q = db.collection("schedule_items").order_by("date", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    q = db.collection("schedule_items").order_by("date", direction=mongo.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
@@ -15094,8 +15094,8 @@ if "🎯 목표" in tabs and (not is_admin):
         try:
             sdocs = (
                 db.collection(SAV_COL)
-                .where(filter=FieldFilter("student_id", "==", sid))
-                .where(filter=FieldFilter("status", "==", "running"))
+                .where(filter=build_filter("student_id", "==", sid))
+                .where(filter=build_filter("status", "==", "running"))
                 .stream()
             )
             for d in sdocs:
