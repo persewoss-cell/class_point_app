@@ -1,22 +1,21 @@
 import streamlit as st
-import os
-
 import streamlit.components.v1 as components
 from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import altair as alt
 from io import BytesIO
 import random
-from postgrest.exceptions import APIError
 
 from datetime import datetime, timezone, timedelta, date
 
-from database import *
+import firebase_admin
+from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
+from google.api_core.exceptions import FailedPrecondition
 
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
 import json
-import uuid
 
 # =========================
 # 설정
@@ -644,141 +643,25 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
 st.markdown(f'<div class="app-title"> {APP_TITLE}</div>', unsafe_allow_html=True)
 
 # =========================
-# Supabase DB init
+# Firestore init
 # =========================
-class FailedPrecondition(Exception):
-    pass
-
-
-class FieldFilter:
-    def __init__(self, field, op, value):
-        self.field = field
-        self.op = op
-        self.value = value
-
-
-def _doc_pk_column(table_name):
-    return "id"
-
-
-class _Doc:
-    def __init__(self, table_name, row):
-        self._table = table_name
-        self._row = row or {}
-        self.id = str((row or {}).get("id", ""))
-        
-    @property
-    def exists(self):
-        return bool(self._row)
-
-    def to_dict(self):
-        row = dict(self._row or {})
-        payload = row.get("data")
-        if isinstance(payload, dict):
-            return payload
-        return {}
-
-
-class _DocRef:
-    def __init__(self, table_name, doc_id):
-        self.table_name = table_name
-        self.doc_id = doc_id
-
-    def get(self, *args, **kwargs):
-        return _Doc(self.table_name, db_select_one(self.table_name, "id", self.doc_id))
-
-    def set(self, data, merge=False):
-        if not self.doc_id:
-            # Supabase의 id(not null) 제약을 만족하도록 문서 ID 자동 생성
-            self.doc_id = uuid.uuid4().hex
-        payload = dict(data or {})
-        if merge:
-            existing = db_select_one(self.table_name, "id", self.doc_id)
-            existing_payload = dict((existing or {}).get("data") or {})
-            existing_payload.update(payload)
-            payload = existing_payload
-        return db_insert(self.table_name, self.doc_id, payload)
-
-    def update(self, data):
-        payload = dict(data or {})
-        existing = db_select_one(self.table_name, "id", self.doc_id)
-        merged = dict((existing or {}).get("data") or {})
-        merged.update(payload)
-        return db_update(self.table_name, self.doc_id, merged)
-        
-    def delete(self):
-        return db_delete(self.table_name, self.doc_id)
-
-class _Query:
-    ASCENDING = "asc"
-    DESCENDING = "desc"
-
-    def __init__(self, table_name):
-        self.table_name = table_name
-        self._filters = []
-        self._order = None
-        self._limit = None
-
-    def document(self, doc_id=None):
-        if not doc_id:
-            doc_id = uuid.uuid4().hex
-        return _DocRef(self.table_name, doc_id)
-
-    def where(self, filter=None):
-        if filter is not None:
-            self._filters.append(filter)
-        return self
-
-    def order_by(self, field, direction="asc"):
-        self._order = (field, direction)
-        return self
-
-    def limit(self, n):
-        self._limit = int(n)
-        return self
-
-    def stream(self):
-        rows = db_select_all(self.table_name)
-        docs = []
-        for row in rows:
-            payload = dict(row.get("data") or {})
-            docs.append({"id": row.get("id"), "data": payload, **payload})        
-        for f in self._filters:
-            if f.op == "==":
-                docs = [r for r in docs if r.get(f.field) == f.value]
-        if self._order:
-            field, direction = self._order
-            docs = sorted(docs, key=lambda r: r.get(field), reverse=(direction == self.DESCENDING))
-        if self._limit is not None:
-            docs = docs[: self._limit]
-        return [_Doc(self.table_name, r) for r in rows]
-
-
-class _DB:
-    def table(self, name):
-        return _Query(name)
-
-
-def dbtable(name: str):
-    return db.table(name)    
-
-
-class _Compat:
-    SERVER_TIMESTAMP = datetime.now(timezone.utc).isoformat()
-    Query = _Query
-
-
-firestore = _Compat()
-
+@st.cache_resource
+def init_firestore():
+    firebase_dict = dict(st.secrets["firebase"])
+    firebase_dict["private_key"] = firebase_dict["private_key"].replace("\\n", "\n").strip()
+    cred = credentials.Certificate(firebase_dict)
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+    return firestore.client()
 
 try:
-    db = _DB()
+    db = init_firestore()
 except StreamlitSecretNotFoundError:
-    st.error("Supabase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY를 추가해 주세요.")
-    st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Supabase 연결 초기화 실패입니다.")
+    st.error("Firebase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 firebase 설정을 추가해 주세요.")
+    st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Firestore 연결 초기화 실패입니다.")
     st.stop()
 except Exception as e:
-    st.error(f"Supabase 초기화 실패: {e}")
+    st.error(f"Firestore 초기화 실패: {e}")
     st.stop()
 
 # =========================
@@ -899,24 +782,13 @@ def savings_active_total(savings_list: list[dict]) -> int:
         if str(s.get("status", "")).lower().strip() in ("active", "running")
     )
 
-
-def _stream_students_active_safe():
-    """students.is_active 컬럼 누락 환경에서도 안전하게 활성 학생 스트림을 반환."""
-    try:
-        return db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-    except Exception:
-        return db.table("students").stream()
-
 @st.cache_data(ttl=20, show_spinner=False)
 def _list_active_students_full_cached() -> list[dict]:
     """활성 학생 전체를 1회 조회 후 재사용(리렌더/버튼 rerun read 절감)."""
-    rows: list[dict] = []
-    docs = _stream_students_active_safe()
-    
+    docs = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+    rows = []
     for d in docs:
         x = d.to_dict() or {}
-        if x.get("is_active") is False:
-            continue
         rows.append({"student_id": d.id, **x})
     return rows
 
@@ -925,7 +797,7 @@ def _list_active_students_full_cached() -> list[dict]:
 def _get_invest_products_map_cached() -> dict[str, tuple[str, float]]:
     """invest_products 전체 스냅샷 캐시(학생별 요약 계산 시 중복 stream 방지)."""
     prod_map = {}
-    for d in (INV_PROD_COL).stream():
+    for d in db.collection(INV_PROD_COL).stream():
         x = d.to_dict() or {}
         pid = str(x.get("product_id", d.id) or d.id)
         pname = (
@@ -944,12 +816,12 @@ def _get_invest_products_map_cached() -> dict[str, tuple[str, float]]:
 def _get_role_lookup_cached() -> tuple[dict[str, str], dict[str, list[str]]]:
     """roles + job_salary를 캐시해 학생별 직업명 조회 read를 최소화."""
     role_by_id = {}
-    for d in db.table("roles").stream():
+    for d in db.collection("roles").stream():
         x = d.to_dict() or {}
         role_by_id[d.id] = str(x.get("role_name") or x.get("name") or d.id).strip() or d.id
 
     jobs_by_student = {}
-    for jdoc in db.table("job_salary").stream():
+    for jdoc in db.collection("job_salary").stream():
         jd = jdoc.to_dict() or {}
         jname = str(jd.get("job") or jd.get("role_name") or "").strip()
         if not jname:
@@ -983,7 +855,7 @@ def _get_role_name_by_student_id(student_id: str) -> str:
                 role_names.append(nm)        
 
         # (1) students 문서에서 먼저 찾기 (job_name/job/role_id/job_role_id/job_id 등)
-        snap = db.table("students").document(sid).get()
+        snap = db.collection("students").document(sid).get()
         if snap.exists:
             sdata = snap.to_dict() or {}
 
@@ -1042,7 +914,7 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
         prod_map = _get_invest_products_map_cached()
 
         # 2) 보유 장부(미환매) → 종목별 현재가치 합산
-        q = (INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
+        q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
         per_prod_val = {}  # pid -> value
 
         for d in q:
@@ -1128,7 +1000,7 @@ def _get_invest_principal_by_student_id(student_id: str) -> tuple[str, int]:
         prod_name = {k: v[0] for k, v in _get_invest_products_map_cached().items()}
 
         # 2) 보유 장부(미환매) → 종목별 원금 합산
-        q = (INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
+        q = db.collection(INV_LEDGER_COL).where(filter=FieldFilter("student_id", "==", sid)).stream()
         per_prod_amt = {}  # pid -> principal(sum invest_amount)
 
         for d in q:
@@ -1192,7 +1064,7 @@ def _score_to_grade(score: int) -> int:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _get_credit_cfg():
-    ref = dbtable("config").document("credit_scoring")
+    ref = db.collection("config").document("credit_scoring")
     snap = ref.get()
     if not snap.exists:
         return {"base": 50, "o": 1, "x": -3, "tri": 0}
@@ -1255,7 +1127,7 @@ def _render_user_bank_header(student_id: str):
         # 통장잔액
         bal_now = 0
         try:
-            snap = dbtable("students").document(sid).get()
+            snap = db.collection("students").document(sid).get()
             if snap.exists:
                 bal_now = int((snap.to_dict() or {}).get("balance", 0) or 0)
         except Exception:
@@ -1265,7 +1137,7 @@ def _render_user_bank_header(student_id: str):
         sv_total = 0
         try:
             sdocs = (
-                dbtable("savings")
+                db.collection("savings")
                 .where(filter=FieldFilter("student_id", "==", sid))
                 .stream()
             )
@@ -1354,7 +1226,7 @@ def _safe_credit(student_id: str):
                 pass
 
         # students 문서에 저장된 값 사용
-        snap = dbtable("students").document(str(student_id)).get()
+        snap = db.collection("students").document(str(student_id)).get()
         if not snap.exists:
             return (DEFAULT_CREDIT_SCORE, DEFAULT_CREDIT_GRADE)
         data = snap.to_dict() or {}
@@ -1403,7 +1275,7 @@ def api_get_goal_by_student_id(student_id: str):
     """학생별 목표(학생 1명당 문서 1개: doc_id = student_id) 조회"""
     GOAL_COL = "goals"
     try:
-        ref = dbtable(GOAL_COL).document(student_id).get()
+        ref = db.collection(GOAL_COL).document(student_id).get()
         if not ref.exists:
             return {"ok": True, "goal_amount": 0, "goal_date": ""}
         g = ref.to_dict() or {}
@@ -1420,7 +1292,7 @@ def api_set_goal_by_student_id(student_id: str, target_amount: int, goal_date_st
     """학생별 목표 저장(학생 1명당 문서 1개: doc_id = student_id)"""
     GOAL_COL = "goals"
     try:
-        dbtable(GOAL_COL).document(student_id).set(
+        db.collection(GOAL_COL).document(student_id).set(
             {
                 "student_id": student_id,
                 "target_amount": int(target_amount or 0),
@@ -1463,18 +1335,14 @@ def fs_get_student_doc_by_name(name: str):
     name = (name or "").strip()
     if not name:
         return None
-    try:
-        q = (
-            dbtable("students")
-            .where(filter=FieldFilter("name", "==", name))
-            .where(filter=FieldFilter("is_active", "==", True))
-            .limit(1)
-            .stream()
-        )
-        docs = list(q)
-    except Exception:
-        q = dbtable("students").where(filter=FieldFilter("name", "==", name)).limit(1).stream()
-        docs = [d for d in q if (d.to_dict() or {}).get("is_active") is not False]
+    q = (
+        db.collection("students")
+        .where(filter=FieldFilter("name", "==", name))
+        .where(filter=FieldFilter("is_active", "==", True))
+        .limit(1)
+        .stream()
+    )
+    docs = list(q)
     return docs[0] if docs else None
 
 def fs_auth_student(name: str, pin: str):
@@ -1544,7 +1412,7 @@ def api_list_accounts_cached():
 
 @st.cache_data(ttl=300, show_spinner=False)
 def api_list_templates_cached():
-    docs = dbtable("templates").stream()
+    docs = db.collection("templates").stream()
     templates = []
     for d in docs:
         t = d.to_dict() or {}
@@ -1599,19 +1467,22 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
 
-    docs = list(_stream_students_active_safe())
+    docs = list(db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream())
     count = 0
     for d in docs:
         student_id = d.id
-        student_ref = db.table("students").document(student_id)
-        tx_ref = db.table("transactions").document()
+        student_ref = db.collection("students").document(student_id)
+        tx_ref = db.collection("transactions").document()
 
-        def _do():
-            snap = student_ref.get()
+        @firestore.transactional
+        def _do(transaction):
+            snap = student_ref.get(transaction=transaction)
             bal = int((snap.to_dict() or {}).get("balance", 0))
             new_bal = bal + amount
-            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
-            tx_ref.set({
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.set(
+                tx_ref,
+                {
                     "student_id": student_id,
                     "type": "deposit",
                     "amount": amount,
@@ -1622,7 +1493,7 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
                 },
             )
 
-        _do()
+        _do(db.transaction())
         count += 1
 
     api_list_accounts_cached.clear()
@@ -1639,19 +1510,22 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
     if amount <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
 
-    docs = list(_stream_students_active_safe())
+    docs = list(db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream())
     count = 0
     for d in docs:
         student_id = d.id
-        student_ref = dbtable("students").document(student_id)
-        tx_ref = dbtable("transactions").document()
+        student_ref = db.collection("students").document(student_id)
+        tx_ref = db.collection("transactions").document()
 
-        def _do():
-            snap = student_ref.get()
+        @firestore.transactional
+        def _do(transaction):
+            snap = student_ref.get(transaction=transaction)
             bal = int((snap.to_dict() or {}).get("balance", 0))
             new_bal = bal - amount
-            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
-            tx_ref.set({
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.set(
+                tx_ref,
+                {
                     "student_id": student_id,
                     "type": "withdraw",
                     "amount": -amount,
@@ -1662,7 +1536,7 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
                 },
             )
 
-        _do()
+        _do(db.transaction())
         count += 1
 
     api_list_accounts_cached.clear()
@@ -1699,10 +1573,10 @@ def api_admin_upsert_template(admin_pin: str, template_id: str, base_label: str,
         "order": order,
     }
     if template_id:
-        dbtable("templates").document(template_id).set(payload, merge=True)
+        db.collection("templates").document(template_id).set(payload, merge=True)
     else:
-        dbtable("templates").document().set(payload)
-        
+        db.collection("templates").document().set(payload)
+
     api_list_templates_cached.clear()
     return {"ok": True}
 
@@ -1713,7 +1587,7 @@ def api_admin_delete_template(admin_pin: str, template_id: str):
     template_id = (template_id or "").strip()
     if not template_id:
         return {"ok": False, "error": "template_id가 필요합니다."}
-    dbtable("templates").document(template_id).delete()
+    db.collection("templates").document(template_id).delete()
     api_list_templates_cached.clear()
     return {"ok": True}
 
@@ -1723,7 +1597,7 @@ def api_admin_backfill_template_order(admin_pin: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
 
-    docs = list(dbtable("templates").stream())
+    docs = list(db.collection("templates").stream())
     items = []
     for d in docs:
         t = d.to_dict() or {}
@@ -1734,7 +1608,7 @@ def api_admin_backfill_template_order(admin_pin: str):
     batch = db.batch()
     for idx, (doc_id, t) in enumerate(items, start=1):
         if (t or {}).get("order", None) is None:
-            ref = dbtable("templates").document(doc_id)
+            ref = db.collection("templates").document(doc_id)
             batch.set(ref, {"order": idx}, merge=True)
     batch.commit()
 
@@ -1747,7 +1621,7 @@ def api_admin_normalize_template_order(admin_pin: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
 
-    docs = list(dbtable("templates").stream())
+    docs = list(db.collection("templates").stream())
     items = []
     for d in docs:
         t = d.to_dict() or {}
@@ -1763,7 +1637,7 @@ def api_admin_normalize_template_order(admin_pin: str):
 
     batch = db.batch()
     for idx, (doc_id, _) in enumerate(items, start=1):
-        ref = dbtable("templates").document(doc_id)
+        ref = db.collection("templates").document(doc_id)
         batch.set(ref, {"order": idx}, merge=True)
     batch.commit()
 
@@ -1779,7 +1653,7 @@ def api_admin_save_template_orders(admin_pin: str, ordered_template_ids: list[st
     try:
         batch = db.batch()
         for idx, tid in enumerate(ordered_template_ids, start=1):
-            ref = dbtable("templates").document(str(tid))
+            ref = db.collection("templates").document(str(tid))
             batch.set(ref, {"order": idx}, merge=True)
         batch.commit()
 
@@ -1809,7 +1683,7 @@ def format_kr_md_date(d: date) -> str:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def api_list_stat_templates_cached():
-    docs = dbtable("stat_templates").stream()
+    docs = db.collection("stat_templates").stream()
     items = []
     for d in docs:
         t = d.to_dict() or {}
@@ -1828,7 +1702,7 @@ def api_list_stat_templates_cached():
 @st.cache_data(ttl=30, show_spinner=False)
 def api_list_stat_submissions_cached(limit_cols: int = 10):
     q = (
-        db.table("stat_submissions")
+        db.collection("stat_submissions")
         .order_by("created_at", direction=firestore.Query.DESCENDING)
         .limit(int(limit_cols))
         .stream()
@@ -1861,7 +1735,7 @@ def api_admin_upsert_stat_template(admin_pin: str, template_id: str, label: str,
     if order <= 0:
         return {"ok": False, "error": "순서는 1 이상이어야 합니다."}
 
-    docs = list(db.table("stat_templates").stream())
+    docs = list(db.collection("stat_templates").stream())
     rows = []
     for d in docs:
         t = d.to_dict() or {}
@@ -1874,7 +1748,7 @@ def api_admin_upsert_stat_template(admin_pin: str, template_id: str, label: str,
         )
 
     is_update = bool(template_id and any(r["template_id"] == template_id for r in rows))
-    target_id = template_id if is_update else db.table("stat_templates").document().id
+    target_id = template_id if is_update else db.collection("stat_templates").document().id
 
     # 대상 제외 후 현재 순서대로 정렬 → 원하는 위치에 끼워 넣은 뒤 1..N으로 재배치
     others = [r for r in rows if r["template_id"] != target_id]
@@ -1886,7 +1760,7 @@ def api_admin_upsert_stat_template(admin_pin: str, template_id: str, label: str,
 
     batch = db.batch()
     for idx, row in enumerate(others, start=1):
-        ref = db.table("stat_templates").document(str(row["template_id"]))
+        ref = db.collection("stat_templates").document(str(row["template_id"]))
         payload = {"label": str(row.get("label", "") or ""), "order": idx}
         if row["template_id"] == target_id and not is_update:
             payload["created_at"] = firestore.SERVER_TIMESTAMP
@@ -1903,7 +1777,7 @@ def api_admin_delete_stat_template(admin_pin: str, template_id: str):
     template_id = (template_id or "").strip()
     if not template_id:
         return {"ok": False, "error": "template_id가 필요합니다."}
-    db.table("stat_templates").document(template_id).delete()
+    db.collection("stat_templates").document(template_id).delete()
     api_list_stat_templates_cached.clear()
     return {"ok": True}
 
@@ -1928,7 +1802,7 @@ def api_admin_add_stat_submission(admin_pin: str, label: str, active_accounts: l
         if sid:
             statuses[sid] = "X"
 
-    db.table("stat_submissions").document().set(
+    db.collection("stat_submissions").document().set(
         {
             "label": label,
             "date_iso": today.isoformat(),
@@ -1960,7 +1834,7 @@ def api_admin_save_stat_table(admin_pin: str, submission_ids: list[str], edited:
     batch = db.batch()
     for sub_id in submission_ids:
         sub_id = str(sub_id)
-        ref = db.table("stat_submissions").document(sub_id)
+        ref = db.collection("stat_submissions").document(sub_id)
 
         # 기존 + 편집본 병합: 활성 학생은 모두 키가 존재하도록 보정
         cur_map = dict((edited or {}).get(sub_id, {}) or {})
@@ -1982,7 +1856,7 @@ def api_admin_delete_stat_submission(admin_pin: str, submission_id: str):
     submission_id = (submission_id or "").strip()
     if not submission_id:
         return {"ok": False, "error": "submission_id가 필요합니다."}
-    db.table("stat_submissions").document(submission_id).delete()
+    db.collection("stat_submissions").document(submission_id).delete()
     api_list_stat_submissions_cached.clear()
     return {"ok": True}
 
@@ -2007,7 +1881,7 @@ def api_create_account(name, pin):
         return {"ok": False, "error": "PIN은 4자리여야 합니다."}
     if fs_get_student_doc_by_name(name):
         return {"ok": False, "error": "이미 존재하는 계정입니다."}
-    db.table("students").document().set(
+    db.collection("students").document().set(
         {
             "name": name,
             "pin": pin,
@@ -2026,7 +1900,7 @@ def api_delete_account(name, pin):
     doc = fs_auth_student(login_name, login_pin)
     if not doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
-    db.table("students").document(doc.id).update({"is_active": False})
+    db.collection("students").document(doc.id).update({"is_active": False})
     api_list_accounts_cached.clear()
     return {"ok": True}
 
@@ -2050,7 +1924,7 @@ def api_change_pin_student(name: str, old_pin: str, new_pin: str):
     if not doc:
         return {"ok": False, "error": "이름 또는 기존 비밀번호가 틀립니다."}
 
-    db.table("students").document(doc.id).update({"pin": str(new_pin)})
+    db.collection("students").document(doc.id).update({"pin": str(new_pin)})
     api_list_accounts_cached.clear()
     return {"ok": True}
 
@@ -2059,7 +1933,7 @@ def api_admin_set_role(admin_pin: str, student_id: str, role_id: str):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     if not student_id:
         return {"ok": False, "error": "student_id가 없습니다."}
-    db.table("students").document(student_id).update({"role_id": str(role_id or "")})
+    db.collection("students").document(student_id).update({"role_id": str(role_id or "")})
     api_list_accounts_cached.clear()
     return {"ok": True}
 
@@ -2081,15 +1955,16 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
 
-    student_ref = db.table("students").document(student_doc.id)
-    tx_ref = db.table("transactions").document()
+    student_ref = db.collection("students").document(student_doc.id)
+    tx_ref = db.collection("transactions").document()
     recorder = str((student_doc.to_dict() or {}).get("name", "") or name or "")
 
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    def _do():
-        snap = student_ref.get()
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
 
         # 출금은 잔액 부족이면 불가
@@ -2113,7 +1988,7 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
         return new_bal
 
     try:
-        new_bal = _do()
+        new_bal = _do(db.transaction())
         return {"ok": True, "balance": int(new_bal)}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2146,15 +2021,16 @@ def api_admin_add_tx_by_student_id(
     if not student_id:
         return {"ok": False, "error": "student_id가 없습니다."}
 
-    student_ref = db.table("students").document(str(student_id))
-    tx_ref = db.table("transactions").document()
+    student_ref = db.collection("students").document(str(student_id))
+    tx_ref = db.collection("transactions").document()
     recorder = _get_admin_action_recorder(recorder_override)
     
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    def _do():
-        snap = student_ref.get()
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
         if not snap.exists:
             raise ValueError("계정을 찾지 못했습니다.")
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
@@ -2180,7 +2056,7 @@ def api_admin_add_tx_by_student_id(
         return new_bal
 
     try:
-        new_bal = _do()
+        new_bal = _do(db.transaction())
         api_list_accounts_cached.clear()
         return {"ok": True, "balance": int(new_bal)}
     except ValueError as e:
@@ -2211,7 +2087,7 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
 
         # ✅ 역할 확인: roles에서 role_name == '투자증권'
         try:
-            actor_snap = db.table("students").document(actor_student_id).get()
+            actor_snap = db.collection("students").document(actor_student_id).get()
             if not actor_snap.exists:
                 return {"ok": False, "error": "권한 확인 실패(계정 없음)."}
             actor = actor_snap.to_dict() or {}
@@ -2230,18 +2106,21 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
         except Exception:
             return {"ok": False, "error": "권한 확인 실패."}
 
-        student_ref = db.table("students").document(student_id)
-        tx_ref = db.table("transactions").document()
+        student_ref = db.collection("students").document(student_id)
+        tx_ref = db.collection("transactions").document()
 
-        def _do():
-            snap = student_ref.get()
+        @firestore.transactional
+        def _do(transaction):
+            snap = student_ref.get(transaction=transaction)
             if not snap.exists:
                 raise ValueError("대상 학생을 찾지 못했어요.")
             bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
             new_bal = bal + int(deposit)
 
-            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
-            tx_ref.set({
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.set(
+                tx_ref,
+                {
                     "student_id": student_id,
                     "type": "deposit",
                     "amount": int(deposit),
@@ -2253,7 +2132,7 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
             )
             return new_bal
 
-        new_bal = _do()
+        new_bal = _do(db.transaction())
         return {"ok": True, "balance": int(new_bal)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2263,7 +2142,7 @@ def api_get_txs_by_student_id(student_id: str, limit=200):
         return {"ok": False, "error": "student_id가 없습니다."}
     try:
         q = (
-            db.table("transactions")
+            db.collection("transactions")
             .where(filter=FieldFilter("student_id", "==", student_id))
             .order_by("created_at", direction=firestore.Query.DESCENDING)
             .limit(int(limit))
@@ -2273,7 +2152,7 @@ def api_get_txs_by_student_id(student_id: str, limit=200):
     except FailedPrecondition:
         # 신규 배포 환경에서 복합 인덱스가 준비되지 않은 경우를 대비
         fallback_q = (
-            db.table("transactions")
+            db.collection("transactions")
             .where(filter=FieldFilter("student_id", "==", student_id))
             .stream()
         )
@@ -2328,7 +2207,7 @@ def api_get_credit_grade_by_student_id(student_id: str) -> int:
     try:
         if not student_id:
             return DEFAULT_CREDIT_GRADE
-        snap = db.table("students").document(student_id).get()
+        snap = db.collection("students").document(student_id).get()
         if not snap.exists:
             return DEFAULT_CREDIT_GRADE
         data = snap.to_dict() or {}
@@ -2365,7 +2244,7 @@ def api_create_deposit_request(name: str, pin: str, memo: str, amount: int, appl
             return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
 
         sdata = stu_doc.to_dict() or {}
-        req_ref = db.table(DEP_REQ_COL).document()
+        req_ref = db.collection(DEP_REQ_COL).document()
 
         payload = {
             "student_id": str(stu_doc.id),
@@ -2392,7 +2271,7 @@ def api_list_pending_deposit_requests(limit: int = 300):
         rows = []
         # 인덱스 문제 피하려고 where+order_by 조합 최소화(파이썬에서 pending만 필터)
         q = (
-            db.table(DEP_REQ_COL)
+            db.collection(DEP_REQ_COL)
             .order_by("created_at", direction=firestore.Query.ASCENDING)
             .limit(int(limit))
             .stream()
@@ -2407,7 +2286,7 @@ def api_list_pending_deposit_requests(limit: int = 300):
         # fallback(정렬 실패 등)
         try:
             rows = []
-            q = db.table(DEP_REQ_COL).limit(int(limit)).stream()
+            q = db.collection(DEP_REQ_COL).limit(int(limit)).stream()
             for d in q:
                 x = d.to_dict() or {}
                 if str(x.get("status", "pending") or "pending") != "pending":
@@ -2429,10 +2308,11 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
     if not request_id:
         return {"ok": False, "error": "request_id가 없습니다."}
 
-    req_ref = db.table(DEP_REQ_COL).document(request_id)
+    req_ref = db.collection(DEP_REQ_COL).document(request_id)
 
-    def _do():
-        req_snap = req_ref.get()
+    @firestore.transactional
+    def _do(transaction):
+        req_snap = req_ref.get(transaction=transaction)
         if not req_snap.exists:
             raise ValueError("신청서를 찾지 못했습니다.")
         req = req_snap.to_dict() or {}
@@ -2453,8 +2333,8 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
         treasury_memo = str(req.get("treasury_memo", "") or memo).strip()
 
         # 학생 문서
-        student_ref = db.table("students").document(student_id)
-        st_snap = student_ref.get()
+        student_ref = db.collection("students").document(student_id)
+        st_snap = student_ref.get(transaction=transaction)
         if not st_snap.exists:
             raise ValueError("대상 학생을 찾지 못했습니다.")
 
@@ -2474,7 +2354,7 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
         new_bal = int(bal + amount)
 
         # 거래 기록
-        tx_ref = db.table("transactions").document()
+        tx_ref = db.collection("transactions").document()
         transaction.update(student_ref, {"balance": int(new_bal)})
         transaction.set(
             tx_ref,
@@ -2502,7 +2382,7 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
         return new_bal
 
     try:
-        new_bal = _do()
+        new_bal = _do(db.transaction())
 
         # 캐시 갱신
         try:
@@ -2530,10 +2410,11 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
     if not request_id:
         return {"ok": False, "error": "request_id가 없습니다."}
 
-    req_ref = db.table(DEP_REQ_COL).document(request_id)
+    req_ref = db.collection(DEP_REQ_COL).document(request_id)
 
-    def _do():
-        req_snap = req_ref.get()
+    @firestore.transactional
+    def _do(transaction):
+        req_snap = req_ref.get(transaction=transaction)
         if not req_snap.exists:
             raise ValueError("신청서를 찾지 못했습니다.")
         req = req_snap.to_dict() or {}
@@ -2548,7 +2429,7 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
         return True
 
     try:
-        _do()
+        _do(db.transaction())
         return {"ok": True}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2633,7 +2514,7 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
 # =========================
 def _already_rolled_back(student_id: str, tx_id: str) -> bool:
     q = (
-        db.table("transactions")
+        db.collection("transactions")
         .where(filter=FieldFilter("student_id", "==", student_id))
         .where(filter=FieldFilter("type", "==", "rollback"))
         .where(filter=FieldFilter("related_tx", "==", tx_id))
@@ -2648,11 +2529,11 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
     if not student_id or not tx_ids:
         return {"ok": False, "error": "되돌릴 항목이 없습니다."}
 
-    student_ref = db.table("students").document(student_id)
+    student_ref = db.collection("students").document(student_id)
 
     tx_docs = []
     for tid in tx_ids:
-        snap = db.table("transactions").document(tid).get()
+        snap = db.collection("transactions").document(tid).get()
         if not snap.exists:
             continue
         tx = snap.to_dict() or {}
@@ -2697,7 +2578,7 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
     for tid, tx in valid:
         amount = int(tx.get("amount", 0) or 0)
         rollback_amount = -amount
-        rollback_ref = db.table("transactions").document()
+        rollback_ref = db.collection("transactions").document()
 
         # ✅ 되돌리기 메모를 "내역명(mm.dd.) 되돌리기" 형식으로 표시
         _orig_memo = str(tx.get("memo", "") or "").strip()
@@ -2713,8 +2594,9 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
         orig_tre_signed = int(tx.get("treasury_signed", 0) or 0)
         orig_tre_memo = str(tx.get("treasury_memo", "") or "").strip() or _orig_memo
 
+        @firestore.transactional
         def _do_one(transaction):
-            st_snap = student_ref.get()
+            st_snap = student_ref.get(transaction=transaction)
             bal = int((st_snap.to_dict() or {}).get("balance", 0))
 
             # ✅ 국고 되돌리기(원거래가 국고 반영된 경우에만)
@@ -2727,8 +2609,10 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
                 )
 
             new_bal = bal + rollback_amount
-            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
-            tx_ref.set({
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.set(
+                rollback_ref,
+                {
                     "student_id": student_id,
                     "type": "rollback",
                     "amount": rollback_amount,
@@ -2789,7 +2673,7 @@ def api_savings_list_by_student_id(student_id: str):
 
         # 1) student_id가 문자열로 저장된 경우
         docs1 = (
-            db.table(col)
+            db.collection(col)
             .where(filter=FieldFilter("student_id", "==", sid_str))
             .limit(50)
             .stream()
@@ -2800,7 +2684,7 @@ def api_savings_list_by_student_id(student_id: str):
         if (not out) and sid_str.isdigit():
             sid_int = int(sid_str)
             docs2 = (
-                db.table(col)
+                db.collection(col)
                 .where(filter=FieldFilter("student_id", "==", sid_int))
                 .limit(50)
                 .stream()
@@ -2838,23 +2722,24 @@ def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: i
     if weeks < 1 or weeks > 10:
         return {"ok": False, "error": "기간은 1~10주만 가능합니다."}
 
-    student_ref = db.table("students").document(student_doc.id)
-    savings_ref = db.table(SAV_COL if "SAV_COL" in globals() else "savings").document()
+    student_ref = db.collection("students").document(student_doc.id)
+    savings_ref = db.collection(SAV_COL if "SAV_COL" in globals() else "savings").document()
 
     # 이자율: 1주=5% (기존 하우스포인트뱅크 로직과 동일)
     rate = float(weeks) * 0.05
     interest = round(principal * rate)
     maturity_date = datetime.now(timezone.utc) + timedelta(days=weeks * 7)
 
-    def _do():
-        snap = student_ref.get()
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
         if principal > bal:
             raise ValueError("잔액보다 큰 원금은 가입할 수 없습니다.")
         new_bal = bal - principal
         transaction.update(student_ref, {"balance": new_bal})
 
-        tx_ref = db.table("transactions").document()
+        tx_ref = db.collection("transactions").document()
         transaction.set(
             tx_ref,
             {
@@ -2882,7 +2767,7 @@ def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: i
         return interest, maturity_date
 
     try:
-        interest2, maturity_dt = _do()
+        interest2, maturity_dt = _do(db.transaction())
         return {"ok": True, "interest": int(interest2), "maturity_datetime": maturity_dt}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2900,11 +2785,12 @@ def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
     if not savings_id:
         return {"ok": False, "error": "savings_id가 필요합니다."}
 
-    student_ref = db.table("students").document(student_doc.id)
-    savings_ref = db.table(SAV_COL if "SAV_COL" in globals() else "savings").document(savings_id)
+    student_ref = db.collection("students").document(student_doc.id)
+    savings_ref = db.collection(SAV_COL if "SAV_COL" in globals() else "savings").document(savings_id)
 
-    def _do():
-        s_snap = savings_ref.get()
+    @firestore.transactional
+    def _do(transaction):
+        s_snap = savings_ref.get(transaction=transaction)
         if not s_snap.exists:
             raise ValueError("해당 적금을 찾지 못했습니다.")
         s = s_snap.to_dict() or {}
@@ -2916,14 +2802,14 @@ def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
         principal = int(s.get("principal", 0) or 0)
         weeks = int(s.get("weeks", 0) or 0)
 
-        st_snap = student_ref.get()
+        st_snap = student_ref.get(transaction=transaction)
         bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
         new_bal = bal + principal
 
         transaction.update(savings_ref, {"status": "canceled"})
         transaction.update(student_ref, {"balance": new_bal})
 
-        tx_ref = db.table("transactions").document()
+        tx_ref = db.collection("transactions").document()
         transaction.set(
             tx_ref,
             {
@@ -2939,7 +2825,7 @@ def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
         return principal
 
     try:
-        refunded = _do()
+        refunded = _do(db.transaction())
         return {"ok": True, "refunded": int(refunded)}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2953,11 +2839,11 @@ def api_process_maturities(login_name: str, login_pin: str):
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
 
-    student_ref = db.table("students").document(student_doc.id)
+    student_ref = db.collection("students").document(student_doc.id)
     now = datetime.now(timezone.utc)
 
     q = (
-        db.table(SAV_COL if "SAV_COL" in globals() else "savings")
+        db.collection(SAV_COL if "SAV_COL" in globals() else "savings")
         .where(filter=FieldFilter("student_id", "==", student_doc.id))
         .where(filter=FieldFilter("status", "==", "active"))
         .stream()
@@ -2980,16 +2866,20 @@ def api_process_maturities(login_name: str, login_pin: str):
         amount = principal + interest
         weeks = int(s.get("weeks", 0) or 0)
 
-        savings_ref = db.table(SAV_COL if "SAV_COL" in globals() else "savings").document(sid)
-        tx_ref = db.table("transactions").document()
+        savings_ref = db.collection(SAV_COL if "SAV_COL" in globals() else "savings").document(sid)
+        tx_ref = db.collection("transactions").document()
 
+        @firestore.transactional
         def _do_one(transaction):
-            st_snap = student_ref.get()
+            st_snap = student_ref.get(transaction=transaction)
             bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
             new_bal = bal + amount
 
-            db_update(student_ref.table_name, student_ref.doc_id, {"balance": new_bal})
-            tx_ref.set({
+            transaction.update(student_ref, {"balance": new_bal})
+            transaction.update(savings_ref, {"status": "matured"})
+            transaction.set(
+                tx_ref,
+                {
                     "student_id": student_doc.id,
                     "type": "maturity",
                     "amount": amount,
@@ -3015,55 +2905,13 @@ TREASURY_UNIT = "드림"   # ✅ 표시 단위만 드림(시스템 숫자는 그
 
 @st.cache_data(ttl=30, show_spinner=False)
 def api_get_treasury_state_cached():
-    row = _get_treasury_state_row()
-    if not row:
-        return {"ok": True, "balance": int(_compute_treasury_balance_from_ledger())}
-    d = row or {}
+    ref = db.collection("treasury").document("state")
+    snap = ref.get()
+    if not snap.exists:
+        ref.set({"balance": 0, "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        return {"ok": True, "balance": 0}
+    d = snap.to_dict() or {}
     return {"ok": True, "balance": int(d.get("balance", 0) or 0)}
-
-
-def _compute_treasury_balance_from_ledger() -> int:
-    """treasury 테이블을 사용할 수 없을 때 ledger 합산으로 잔액 계산."""
-    rows = [
-        (doc.to_dict() if hasattr(doc, "to_dict") else dict(doc or {}))
-        for doc in db.table("treasury_ledger").order_by("created_at", direction="asc").stream()
-    ]
-
-    total = 0
-    for r in rows:
-        if r.get("amount") is not None:
-            total += int(r.get("amount") or 0)
-        else:
-            total += int(r.get("income", 0) or 0) - int(r.get("expense", 0) or 0)
-    return int(total)
-
-
-def _get_treasury_state_row():
-    try:
-        rows = db_select_all("treasury") or []
-        return (rows[0] if rows else None)
-    except APIError as e:
-        msg = str(getattr(e, "message", "") or e)
-        if "balance" in msg and "treasury" in msg:
-            return {"balance": int(_compute_treasury_balance_from_ledger()), "_virtual": True}
-        raise
-
-
-def _set_treasury_balance(new_balance: int):
-    payload = {"balance": int(new_balance), "updated_at": firestore.SERVER_TIMESTAMP}
-    try:
-        row = _get_treasury_state_row()
-        if row and row.get("_virtual"):
-            return
-        if row and row.get("id"):
-            db_update("treasury", row.get("id"), payload)
-        else:
-            db_insert("treasury", "treasury_state", payload)
-    except APIError as e:
-        msg = str(getattr(e, "message", "") or e)
-        if "balance" in msg and "treasury" in msg:
-            return
-        raise
 
 def api_add_treasury_tx(
     admin_pin: str,
@@ -3091,22 +2939,30 @@ def api_add_treasury_tx(
     if (income > 0 and expense > 0) or (income == 0 and expense == 0):
         return {"ok": False, "error": "세입/세출 중 하나만 입력하세요."}
 
-    led_ref = db.table("treasury_ledger").document()
+    state_ref = db.collection("treasury").document("state")
+    led_ref = db.collection("treasury_ledger").document()
     recorder = _get_admin_action_recorder(recorder_override)
     
     amount = income if income > 0 else -expense
     tx_type = "income" if income > 0 else "expense"
 
-    
-    def _do():
-        st_row = _get_treasury_state_row() or {}
+    @firestore.transactional
+    def _do(transaction):
+        st_snap = state_ref.get(transaction=transaction)
         cur_bal = 0
-        if st_row:
-            cur_bal = int(st_row.get("balance", 0) or 0)
+        if st_snap.exists:
+            cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
 
         new_bal = int(cur_bal + amount)
 
-        _set_treasury_balance(int(new_bal))
+        transaction.set(
+            state_ref,
+            {
+                "balance": int(new_bal),
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
 
         transaction.set(
             led_ref,
@@ -3125,7 +2981,7 @@ def api_add_treasury_tx(
         return new_bal
 
     try:
-        new_bal = _do()
+        new_bal = _do(db.transaction())
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
         return {"ok": True, "balance": int(new_bal)}
@@ -3147,7 +3003,8 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
     if signed_amount == 0 or (not memo):
         return
 
-    led_ref = db.table("treasury_ledger").document()
+    state_ref = db.collection("treasury").document("state")
+    led_ref = db.collection("treasury_ledger").document()
     recorder = _get_admin_action_recorder(recorder_override)
     
     if signed_amount > 0:
@@ -3159,14 +3016,21 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
         income = 0
         expense = int(-signed_amount)
 
-    st_row = _get_treasury_state_row() or {}
+    st_snap = state_ref.get(transaction=transaction)
     cur_bal = 0
-    if st_row:
-        cur_bal = int(st_row.get("balance", 0) or 0)
+    if st_snap.exists:
+        cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
 
     new_bal = int(cur_bal + signed_amount)
 
-    _set_treasury_balance(int(new_bal))
+    transaction.set(
+        state_ref,
+        {
+            "balance": int(new_bal),
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
     transaction.set(
         led_ref,
         {
@@ -3198,8 +3062,8 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
     if not student_doc:
         return {"ok": False, "error": "이름 또는 비밀번호가 틀립니다."}
 
-    student_ref = db.table("students").document(student_doc.id)
-    tx_ref = db.table("transactions").document()
+    student_ref = db.collection("students").document(student_doc.id)
+    tx_ref = db.collection("transactions").document()
     recorder = str((student_doc.to_dict() or {}).get("name", "") or name or "")
 
     amount = deposit if deposit > 0 else -withdraw
@@ -3212,9 +3076,9 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
     if bool(apply_treasury):
         tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
-    
-    def _do():
-        snap = student_ref.get()
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
 
         # 일반 출금은 잔액 부족이면 불가
@@ -3249,7 +3113,7 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
         return new_bal
 
     try:
-        new_bal = _do()
+        new_bal = _do(db.transaction())
         # 캐시 갱신
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
@@ -3286,8 +3150,8 @@ def api_admin_add_tx_by_student_id_with_treasury(
     if not student_id:
         return {"ok": False, "error": "student_id가 없습니다."}
 
-    student_ref = db.table("students").document(student_id)
-    tx_ref = db.table("transactions").document()
+    student_ref = db.collection("students").document(student_id)
+    tx_ref = db.collection("transactions").document()
     recorder = _get_admin_action_recorder(recorder_override)
     
     amount = deposit if deposit > 0 else -withdraw
@@ -3297,9 +3161,9 @@ def api_admin_add_tx_by_student_id_with_treasury(
     if bool(apply_treasury):
         tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
-    
-    def _do():
-        snap = student_ref.get()
+    @firestore.transactional
+    def _do(transaction):
+        snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
 
         # 일반 출금은 잔액 부족이면 불가
@@ -3334,7 +3198,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
         return new_bal
 
     try:
-        new_bal = _do()
+        new_bal = _do(db.transaction())
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
         api_list_accounts_cached.clear()
@@ -3352,7 +3216,8 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
     if (not memo) or signed_amount == 0:
         return {"ok": True}
 
-    led_ref = db.table("treasury_ledger").document()
+    state_ref = db.collection("treasury").document("state")
+    led_ref = db.collection("treasury_ledger").document()
 
     if signed_amount > 0:
         tx_type = "income"
@@ -3363,15 +3228,19 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
         income = 0
         expense = int(-signed_amount)
 
-    
-    def _do():
-        st_row = _get_treasury_state_row() or {}
+    @firestore.transactional
+    def _do(transaction):
+        st_snap = state_ref.get(transaction=transaction)
         cur_bal = 0
-        if st_row:
-            cur_bal = int(st_row.get("balance", 0) or 0)
+        if st_snap.exists:
+            cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
         new_bal = int(cur_bal + signed_amount)
 
-        _set_treasury_balance(int(new_bal))
+        transaction.set(
+            state_ref,
+            {"balance": int(new_bal), "updated_at": firestore.SERVER_TIMESTAMP},
+            merge=True,
+        )
         transaction.set(
             led_ref,
             {
@@ -3389,7 +3258,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
         return new_bal
 
     try:
-        _do()
+        _do(db.transaction())
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
         return {"ok": True}
@@ -3399,7 +3268,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
 @st.cache_data(ttl=30, show_spinner=False)
 def api_list_treasury_ledger_cached(limit=300):
     q = (
-        db.table("treasury_ledger")
+        db.collection("treasury_ledger")
         .order_by("created_at", direction=firestore.Query.DESCENDING)
         .limit(int(limit))
         .stream()
@@ -3424,7 +3293,7 @@ def api_list_treasury_ledger_cached(limit=300):
 # ---------- 국고 전용 템플릿 ----------
 @st.cache_data(ttl=120, show_spinner=False)
 def api_list_treasury_templates_cached():
-    docs = db.table("treasury_templates").stream()
+    docs = db.collection("treasury_templates").stream()
     templates = []
     for d in docs:
         t = d.to_dict() or {}
@@ -3459,9 +3328,9 @@ def api_upsert_treasury_template(admin_pin: str, template_id: str, label: str, k
         return {"ok": False, "error": "금액은 0보다 커야 합니다."}
 
     if template_id:
-        ref = db.table("treasury_templates").document(str(template_id))
+        ref = db.collection("treasury_templates").document(str(template_id))
     else:
-        ref = db.table("treasury_templates").document()
+        ref = db.collection("treasury_templates").document()
 
     ref.set(
         {
@@ -3482,7 +3351,7 @@ def api_delete_treasury_template(admin_pin: str, template_id: str):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     if not template_id:
         return {"ok": False, "error": "template_id가 없습니다."}
-    db.table("treasury_templates").document(str(template_id)).delete()
+    db.collection("treasury_templates").document(str(template_id)).delete()
     api_list_treasury_templates_cached.clear()
     return {"ok": True}
 
@@ -3880,7 +3749,7 @@ def _fmt_auction_dt(val) -> str:
     return f"{kst_dt.year}년 {kst_dt.month:02d}월 {kst_dt.day:02d}일 {ampm} {hour12}시 {kst_dt.minute:02d}분 {kst_dt.second:02d}초"
 
 def _get_auction_state() -> dict:
-    snap = db.table("config").document(AUC_STATE_DOC).get()
+    snap = db.collection("config").document(AUC_STATE_DOC).get()
     if not snap.exists:
         return {"current_round_no": 0, "current_round_id": "", "status": "idle"}
     d = snap.to_dict() or {}
@@ -3894,7 +3763,7 @@ def api_get_open_auction_round() -> dict:
     stt = _get_auction_state()
     rid = str(stt.get("current_round_id", "") or "")
     if rid:
-        snap = db.table("auction_rounds").document(rid).get()
+        snap = db.collection("auction_rounds").document(rid).get()
         if snap.exists:
             row = snap.to_dict() or {}
             if str(row.get("status", "")).strip() == "open":
@@ -3903,7 +3772,7 @@ def api_get_open_auction_round() -> dict:
 
     try:
         q = (
-            db.table("auction_rounds")
+            db.collection("auction_rounds")
             .where(filter=FieldFilter("status", "==", "open"))
             .order_by("round_no", direction=firestore.Query.DESCENDING)
             .limit(1)
@@ -3917,7 +3786,7 @@ def api_get_open_auction_round() -> dict:
         # 복합 인덱스가 아직 준비되지 않은 프로젝트에서도 앱이 중단되지 않도록
         # 정렬 없이 조회한 뒤 round_no 최대값을 선택한다.
         fallback_docs = (
-            db.table("auction_rounds")
+            db.collection("auction_rounds")
             .where(filter=FieldFilter("status", "==", "open"))
             .stream()
         )
@@ -3943,10 +3812,10 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
     if not affiliation:
         return {"ok": False, "error": "소속을 입력해 주세요."}
 
-    state_ref = db.table("config").document(AUC_STATE_DOC)
-    round_ref = db.table("auction_rounds").document()
+    state_ref = db.collection("config").document(AUC_STATE_DOC)
+    round_ref = db.collection("auction_rounds").document()
 
-    
+    @firestore.transactional
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_data = st_snap.to_dict() if st_snap.exists else {}
@@ -3955,7 +3824,7 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
         cur_status = str((st_data or {}).get("status", "idle") or "idle")
 
         if cur_status == "open" and cur_id:
-            cur_round_snap = db.table("auction_rounds").document(cur_id).get(transaction=tx)
+            cur_round_snap = db.collection("auction_rounds").document(cur_id).get(transaction=tx)
             if cur_round_snap.exists and str((cur_round_snap.to_dict() or {}).get("status", "")) == "open":
                 raise ValueError("이미 진행 중인 경매가 있습니다. 먼저 마감해 주세요.")
 
@@ -3987,7 +3856,7 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
         return next_no, round_ref.id
 
     try:
-        round_no, round_id = _do()
+        round_no, round_id = _do(db.transaction())
         return {"ok": True, "round_no": int(round_no), "round_id": str(round_id)}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -4017,14 +3886,14 @@ def api_submit_auction_bid(name: str, pin: str, amount: int):
     student_no = int(st_data.get("no", 0) or 0)
     student_name = str(st_data.get("name", name) or name)
 
-    bid_ref = db.table("auction_bids").document(f"{round_id}_{student_id}")
-    student_ref = db.table("students").document(student_id)
-    round_ref = db.table("auction_rounds").document(round_id)
-    tx_ref = db.table("transactions").document()
+    bid_ref = db.collection("auction_bids").document(f"{round_id}_{student_id}")
+    student_ref = db.collection("students").document(student_id)
+    round_ref = db.collection("auction_rounds").document(round_id)
+    tx_ref = db.collection("transactions").document()
 
     memo = f"[경매 {int(round_row.get('round_no', 0) or 0):02d}회] {str(round_row.get('bid_name', '') or '')} 입찰 제출"
 
-    
+    @firestore.transactional
     def _do(tx):
         b_snap = bid_ref.get(transaction=tx)
         if b_snap.exists:
@@ -4072,7 +3941,7 @@ def api_submit_auction_bid(name: str, pin: str, amount: int):
         )
 
     try:
-        _do()
+        _do(db.transaction())
         return {"ok": True}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -4092,14 +3961,14 @@ def api_close_auction(admin_pin: str):
     if not round_id:
         return {"ok": False, "error": "경매 정보를 찾지 못했습니다."}
 
-    db.table("auction_rounds").document(round_id).set(
+    db.collection("auction_rounds").document(round_id).set(
         {
             "status": "closed",
             "closed_at": firestore.SERVER_TIMESTAMP,
         },
         merge=True,
     )
-    db.table("config").document(AUC_STATE_DOC).set(
+    db.collection("config").document(AUC_STATE_DOC).set(
         {
             "current_round_id": "",
             "status": "closed",
@@ -4114,7 +3983,7 @@ def api_list_auction_bids(round_id: str):
     if not round_id:
         return {"ok": True, "rows": []}
 
-    q = db.table("auction_bids").where(filter=FieldFilter("round_id", "==", round_id)).stream()
+    q = db.collection("auction_bids").where(filter=FieldFilter("round_id", "==", round_id)).stream()
     rows = []
     for d in q:
         r = d.to_dict() or {}
@@ -4138,7 +4007,7 @@ def api_list_auction_bids(round_id: str):
 def api_get_latest_closed_auction_round():
     try:
         q = (
-            db.table("auction_rounds")
+            db.collection("auction_rounds")
             .where(filter=FieldFilter("status", "==", "closed"))
             .order_by("round_no", direction=firestore.Query.DESCENDING)
             .limit(1)
@@ -4151,7 +4020,7 @@ def api_get_latest_closed_auction_round():
     except FailedPrecondition:
         # 복합 인덱스가 아직 준비되지 않은 환경(예: 신규 Streamlit Cloud 배포) 대비
         fallback_docs = (
-            db.table("auction_rounds")
+            db.collection("auction_rounds")
             .where(filter=FieldFilter("status", "==", "closed"))
             .stream()
         )
@@ -4175,7 +4044,7 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
     if not round_id:
         return {"ok": False, "error": "round_id가 없습니다."}
 
-    r_ref = db.table("auction_rounds").document(round_id)
+    r_ref = db.collection("auction_rounds").document(round_id)
     r_snap = r_ref.get()
     if not r_snap.exists:
         return {"ok": False, "error": "경매 회차를 찾지 못했습니다."}
@@ -4211,14 +4080,14 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
             if payback_amt <= 0:
                 continue
             
-            s_ref = db.table("students").document(sid)
+            s_ref = db.collection("students").document(sid)
             s_snap = s_ref.get()
             if not s_snap.exists:
                 continue
             bal = int((s_snap.to_dict() or {}).get("balance", 0) or 0)
             new_bal = int(bal + payback_amt)
             s_ref.update({"balance": new_bal})
-            db.table("transactions").document().set(
+            db.collection("transactions").document().set(
                 {
                     "student_id": sid,
                     "type": "deposit",
@@ -4258,7 +4127,7 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
             return {"ok": False, "error": f"국고 반영 실패: {fee_res.get('error', 'unknown')}"}
         tre_total += int(fee_total)
     
-    db.table("auction_admin_ledger").document().set(
+    db.collection("auction_admin_ledger").document().set(
         {
             "round_id": round_id,
             "round_no": int(r.get("round_no", 0) or 0),
@@ -4278,7 +4147,7 @@ def api_apply_auction_ledger(admin_pin: str, round_id: str, refund_non_winners: 
     return {"ok": True, "total": int(tre_total), "participants": participants, "fee_total": int(fee_total)}
     
 def api_list_auction_admin_ledger(limit=100):
-    q = db.table("auction_admin_ledger").order_by("created_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    q = db.collection("auction_admin_ledger").order_by("created_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
@@ -4336,7 +4205,7 @@ def _normalize_lottery_numbers(nums) -> list[int]:
 
 @st.cache_data(ttl=5, show_spinner=False)
 def _get_lottery_state() -> dict:
-    snap = db.table("config").document(LOT_STATE_DOC).get()
+    snap = db.collection("config").document(LOT_STATE_DOC).get()
     if not snap.exists:
         return {"current_round_no": 0, "current_round_id": "", "status": "idle"}
     d = snap.to_dict() or {}
@@ -4351,7 +4220,7 @@ def api_get_open_lottery_round() -> dict:
     stt = _get_lottery_state()
     rid = str(stt.get("current_round_id", "") or "")
     if rid:
-        snap = db.table("lottery_rounds").document(rid).get()
+        snap = db.collection("lottery_rounds").document(rid).get()
         if snap.exists:
             row = snap.to_dict() or {}
             if str(row.get("status", "")).strip() == "open":
@@ -4360,7 +4229,7 @@ def api_get_open_lottery_round() -> dict:
 
     try:
         q = (
-            db.table("lottery_rounds")
+            db.collection("lottery_rounds")
             .where(filter=FieldFilter("status", "==", "open"))
             .order_by("round_no", direction=firestore.Query.DESCENDING)
             .limit(1)
@@ -4371,7 +4240,7 @@ def api_get_open_lottery_round() -> dict:
             row["round_id"] = d.id
             return {"ok": True, "round": row}
     except FailedPrecondition:
-        fallback_docs = db.table("lottery_rounds").where(filter=FieldFilter("status", "==", "open")).stream()
+        fallback_docs = db.collection("lottery_rounds").where(filter=FieldFilter("status", "==", "open")).stream()
         best_row = None
         for d in fallback_docs:
             row = d.to_dict() or {}
@@ -4403,17 +4272,17 @@ def api_open_lottery(admin_pin: str, cfg: dict):
     if third_prize < 0:
         return {"ok": False, "error": "3등 당첨금은 0 이상이어야 합니다."}
 
-    state_ref = db.table("config").document(LOT_STATE_DOC)
-    round_ref = db.table("lottery_rounds").document()
+    state_ref = db.collection("config").document(LOT_STATE_DOC)
+    round_ref = db.collection("lottery_rounds").document()
 
-    
+    @firestore.transactional
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_row = st_snap.to_dict() if st_snap.exists else {}
         cur_id = str((st_row or {}).get("current_round_id", "") or "")
 
         if cur_id:
-            cur_ref = db.table("lottery_rounds").document(cur_id)
+            cur_ref = db.collection("lottery_rounds").document(cur_id)
             cur_snap = cur_ref.get(transaction=tx)
             if cur_snap.exists:
                 cur = cur_snap.to_dict() or {}
@@ -4454,7 +4323,7 @@ def api_open_lottery(admin_pin: str, cfg: dict):
         return next_no
 
     try:
-        no = int(_do())
+        no = int(_do(db.transaction()))
         _get_lottery_state.clear()
         api_get_open_lottery_round.clear()
         return {"ok": True, "round_no": no}
@@ -4467,9 +4336,9 @@ def api_close_lottery(admin_pin: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
 
-    state_ref = db.table("config").document(LOT_STATE_DOC)
+    state_ref = db.collection("config").document(LOT_STATE_DOC)
 
-    
+    @firestore.transactional
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_row = st_snap.to_dict() if st_snap.exists else {}
@@ -4477,7 +4346,7 @@ def api_close_lottery(admin_pin: str):
         if not rid:
             raise ValueError("개시된 복권이 없습니다.")
 
-        r_ref = db.table("lottery_rounds").document(rid)
+        r_ref = db.collection("lottery_rounds").document(rid)
         r_snap = r_ref.get(transaction=tx)
         if not r_snap.exists:
             raise ValueError("복권 회차를 찾지 못했습니다.")
@@ -4490,7 +4359,7 @@ def api_close_lottery(admin_pin: str):
         return {"round_id": rid, "round_no": int(r.get("round_no", 0) or 0)}
 
     try:
-        out = _do()
+        out = _do(db.transaction())
         _get_lottery_state.clear()
         api_get_open_lottery_round.clear()
         return {"ok": True, **out}
@@ -4530,7 +4399,7 @@ def api_list_lottery_entries(round_id: str):
 
     try:
         q = (
-            db.table("lottery_entries")
+            db.collection("lottery_entries")
             .where(filter=FieldFilter("round_id", "==", rid))
             .order_by("submitted_at", direction=firestore.Query.ASCENDING)
             .stream()
@@ -4538,7 +4407,7 @@ def api_list_lottery_entries(round_id: str):
         rows = _rows_from_stream(q)
     except FailedPrecondition:
         # 복합 인덱스가 없어도 동작하도록 서버 정렬 없이 조회 후 앱에서 정렬
-        q = db.table("lottery_entries").where(filter=FieldFilter("round_id", "==", rid)).stream()
+        q = db.collection("lottery_entries").where(filter=FieldFilter("round_id", "==", rid)).stream()
         rows = _rows_from_stream(q)
         rows.sort(
             key=lambda r: (
@@ -4559,7 +4428,7 @@ def api_list_lottery_entries_by_student(student_id: str, round_id: str = ""):
 
     rid = str(round_id or "").strip()
     
-    q_ref = db.table("lottery_entries").where(filter=FieldFilter("student_id", "==", sid))
+    q_ref = db.collection("lottery_entries").where(filter=FieldFilter("student_id", "==", sid))
     if rid:
         q_ref = q_ref.where(filter=FieldFilter("round_id", "==", rid))
     
@@ -4619,12 +4488,12 @@ def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
     if price <= 0:
         return {"ok": False, "error": "복권 가격 설정이 올바르지 않습니다."}
 
-    student_ref = db.table("students").document(student_doc.id)
-    round_ref = db.table("lottery_rounds").document(rid)
-    entry_ref = db.table("lottery_entries").document()
-    tx_ref = db.table("transactions").document()
+    student_ref = db.collection("students").document(student_doc.id)
+    round_ref = db.collection("lottery_rounds").document(rid)
+    entry_ref = db.collection("lottery_entries").document()
+    tx_ref = db.collection("transactions").document()
 
-    
+    @firestore.transactional
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
@@ -4671,7 +4540,7 @@ def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
         return new_bal
 
     try:
-        nb = int(_do())
+        nb = int(_do(db.transaction()))
         api_list_lottery_entries.clear()
         api_list_lottery_entries_by_student.clear()
         api_get_open_lottery_round.clear()
@@ -4707,11 +4576,11 @@ def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
         return {"ok": False, "error": "복권 가격 설정이 올바르지 않습니다."}
 
     total_price = int(price * len(normalized_games))
-    student_ref = db.table("students").document(student_doc.id)
-    round_ref = db.table("lottery_rounds").document(rid)
-    tx_ref = db.table("transactions").document()
+    student_ref = db.collection("students").document(student_doc.id)
+    round_ref = db.collection("lottery_rounds").document(rid)
+    tx_ref = db.collection("transactions").document()
 
-    
+    @firestore.transactional
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
@@ -4744,7 +4613,7 @@ def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
         )
 
         for nums in normalized_games:
-            entry_ref = db.table("lottery_entries").document()
+            entry_ref = db.collection("lottery_entries").document()
             tx.set(
                 entry_ref,
                 {
@@ -4761,7 +4630,7 @@ def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
         return new_bal
 
     try:
-        nb = int(_do())
+        nb = int(_do(db.transaction()))
         api_list_lottery_entries.clear()
         api_list_lottery_entries_by_student.clear()
         api_get_open_lottery_round.clear()
@@ -4801,9 +4670,9 @@ def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_trea
     numbers_games = _generate_admin_lottery_numbers(count)
     total_cost = int(max(price, 0) * count)
 
-    round_ref = db.table("lottery_rounds").document(rid)
+    round_ref = db.collection("lottery_rounds").document(rid)
 
-    
+    @firestore.transactional
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
@@ -4821,7 +4690,7 @@ def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_trea
             )
         
         for nums in numbers_games:
-            entry_ref = db.table("lottery_entries").document()
+            entry_ref = db.collection("lottery_entries").document()
             tx.set(
                 entry_ref,
                 {
@@ -4839,7 +4708,7 @@ def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_trea
             )
 
     try:
-        _do()
+        _do(db.transaction())
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
         api_list_lottery_entries.clear()
@@ -4869,7 +4738,7 @@ def api_draw_lottery(admin_pin: str, round_id: str, winning_numbers: list[int]):
     if len(win_nums) != 4:
         return {"ok": False, "error": "당첨번호는 1~20 숫자 중 중복 없이 4개여야 합니다."}
 
-    r_ref = db.table("lottery_rounds").document(rid)
+    r_ref = db.collection("lottery_rounds").document(rid)
     r_snap = r_ref.get()
     if not r_snap.exists:
         return {"ok": False, "error": "복권 회차를 찾지 못했습니다."}
@@ -4975,7 +4844,7 @@ def api_pay_lottery_prizes(admin_pin: str, round_id: str):
     if not rid:
         return {"ok": False, "error": "round_id가 없습니다."}
 
-    r_ref = db.table("lottery_rounds").document(rid)
+    r_ref = db.collection("lottery_rounds").document(rid)
     snap = r_ref.get()
     if not snap.exists:
         return {"ok": False, "error": "복권 회차를 찾지 못했습니다."}
@@ -5067,7 +4936,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
     if not rid:
         return {"ok": False, "error": "round_id가 없습니다."}
 
-    r_ref = db.table("lottery_rounds").document(rid)
+    r_ref = db.collection("lottery_rounds").document(rid)
     snap = r_ref.get()
     if not snap.exists:
         return {"ok": False, "error": "복권 회차를 찾지 못했습니다."}
@@ -5120,7 +4989,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
         if not admin_win_res.get("ok"):
             return {"ok": False, "error": f"관리자 당첨금 국고 반영 실패: {admin_win_res.get('error', 'unknown')}"}
             
-    db.table("lottery_admin_ledger").document().set(
+    db.collection("lottery_admin_ledger").document().set(
         {
             "round_id": rid,
             "round_no": round_no,
@@ -5140,7 +5009,7 @@ def api_apply_lottery_ledger(admin_pin: str, round_id: str):
 
 
 def api_list_lottery_admin_ledger(limit=200):
-    q = db.table("lottery_admin_ledger").order_by("round_no", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    q = db.collection("lottery_admin_ledger").order_by("round_no", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
@@ -5152,7 +5021,7 @@ def api_list_lottery_admin_ledger(limit=200):
         admin_winning_total = int(x.get("admin_winning_total", 0) or 0)
 
         if rid:
-            r_snap = db.table("lottery_rounds").document(rid).get()
+            r_snap = db.collection("lottery_rounds").document(rid).get()
             if r_snap.exists:
                 r = r_snap.to_dict() or {}
                 financials = _calc_lottery_financials(r)
@@ -5229,7 +5098,7 @@ def _mart_block_message(msg: str):
 
 def api_get_mart_config():
     try:
-        snap = db.table("configs").document("mart").get()
+        snap = db.collection("configs").document("mart").get()
         d = (snap.to_dict() or {}) if snap.exists else {}
         return {"ok": True, "weekly_limit": int(d.get("weekly_limit", 0) or 0)}
     except Exception as e:
@@ -5240,7 +5109,7 @@ def api_set_mart_weekly_limit(admin_pin: str, weekly_limit: int):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     try:
-        db.table("configs").document("mart").set(
+        db.collection("configs").document("mart").set(
             {"weekly_limit": int(weekly_limit or 0), "updated_at": firestore.SERVER_TIMESTAMP},
             merge=True,
         )
@@ -5252,9 +5121,9 @@ def api_set_mart_weekly_limit(admin_pin: str, weekly_limit: int):
 def api_list_mart_templates():
     rows = []
     try:
-        q = db.table("mart_templates").order_by("order").stream()
+        q = db.collection("mart_templates").order_by("order").stream()
     except Exception:
-        q = db.table("mart_templates").stream()
+        q = db.collection("mart_templates").stream()
     for d in q:
         x = d.to_dict() or {}
         rows.append(
@@ -5275,7 +5144,7 @@ def _normalize_mart_template_orders(preferred_template_id: str = "", preferred_o
     preferred_order = int(preferred_order) if preferred_order is not None else None
 
     raw = []
-    for d in db.table("mart_templates").stream():
+    for d in db.collection("mart_templates").stream():
         x = d.to_dict() or {}
         item = str(x.get("item", "") or "").strip()
         if not item:
@@ -5307,7 +5176,7 @@ def _normalize_mart_template_orders(preferred_template_id: str = "", preferred_o
     for i, r in enumerate(rows, start=1):
         if int(r.get("order", 999999) or 999999) != i:
             batch.set(
-                db.table("mart_templates").document(str(r["template_id"])),
+                db.collection("mart_templates").document(str(r["template_id"])),
                 {"order": i, "updated_at": firestore.SERVER_TIMESTAMP},
                 merge=True,
             )
@@ -5330,7 +5199,7 @@ def api_upsert_mart_template(
     if not item:
         return {"ok": False, "error": "내역을 입력해 주세요."}
     try:
-        ref = db.table("mart_templates").document(str(template_id)) if template_id else db.table("mart_templates").document()
+        ref = db.collection("mart_templates").document(str(template_id)) if template_id else db.collection("mart_templates").document()
         ref.set(
             {
                 "item": item,
@@ -5352,7 +5221,7 @@ def api_delete_mart_template(admin_pin: str, template_id: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     try:
-        db.table("mart_templates").document(str(template_id)).delete()
+        db.collection("mart_templates").document(str(template_id)).delete()
         _normalize_mart_template_orders()        
         return {"ok": True}
     except Exception as e:
@@ -5368,7 +5237,7 @@ def api_count_mart_used_this_week(student_id: str, include_pending: bool = True)
     cnt = 0
     for stx in statuses:
         q = (
-            db.table("mart_requests")
+            db.collection("mart_requests")
             .where(filter=FieldFilter("student_id", "==", student_id))
             .where(filter=FieldFilter("week_key", "==", wk))
             .where(filter=FieldFilter("status", "==", stx))
@@ -5402,7 +5271,7 @@ def api_create_mart_request(name: str, pin: str, item: str, price: int):
 
     try:
         s = student_doc.to_dict() or {}
-        db.table("mart_requests").document().set(
+        db.collection("mart_requests").document().set(
             {
                 "student_id": student_doc.id,
                 "student_no": int(s.get("no", 0) or 0),
@@ -5423,7 +5292,7 @@ def api_create_mart_request(name: str, pin: str, item: str, price: int):
 def api_list_mart_requests(status: str = "pending", limit: int = 300):
     try:
         q = (
-            db.table("mart_requests")
+            db.collection("mart_requests")
             .where(filter=FieldFilter("status", "==", str(status)))
             .order_by("created_at", direction=firestore.Query.ASCENDING)
             .limit(int(limit))
@@ -5433,7 +5302,7 @@ def api_list_mart_requests(status: str = "pending", limit: int = 300):
     except FailedPrecondition:
         # 신규/변경 배포 환경에서 복합 인덱스가 준비되지 않은 경우를 대비
         fallback_q = (
-            db.table("mart_requests")
+            db.collection("mart_requests")
             .where(filter=FieldFilter("status", "==", str(status)))
             .stream()
         )
@@ -5464,7 +5333,7 @@ def api_admin_approve_mart_request(admin_pin: str, request_id: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     try:
-        ref = db.table("mart_requests").document(str(request_id))
+        ref = db.collection("mart_requests").document(str(request_id))
         snap = ref.get()
         if not snap.exists:
             return {"ok": False, "error": "요청을 찾을 수 없습니다."}
@@ -5499,7 +5368,7 @@ def api_admin_approve_mart_request(admin_pin: str, request_id: str):
             {"status": "approved", "approved_at": firestore.SERVER_TIMESTAMP, "approved_by": approver_label},
             merge=True,
         )
-        db.table("mart_ledger").document().set(
+        db.collection("mart_ledger").document().set(
             {
                 "request_id": str(request_id),
                 "student_id": sid,
@@ -5520,7 +5389,7 @@ def api_admin_reject_mart_request(admin_pin: str, request_id: str):
     if not is_admin_pin(admin_pin):
         return {"ok": False, "error": "관리자 PIN이 틀립니다."}
     try:
-        db.table("mart_requests").document(str(request_id)).set(
+        db.collection("mart_requests").document(str(request_id)).set(
             {"status": "rejected", "rejected_at": firestore.SERVER_TIMESTAMP},
             merge=True,
         )
@@ -5530,7 +5399,7 @@ def api_admin_reject_mart_request(admin_pin: str, request_id: str):
 
 
 def api_list_mart_ledger(limit: int = 300):
-    q = db.table("mart_ledger").order_by("approved_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    q = db.collection("mart_ledger").order_by("approved_at", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
@@ -5550,7 +5419,7 @@ def api_list_mart_ledger(limit: int = 300):
 # =========================
 @st.cache_data(ttl=120, show_spinner=False)
 def api_list_roles_cached():
-    docs = db.table("roles").stream()
+    docs = db.collection("roles").stream()
     roles = []
     for d in docs:
         r = d.to_dict() or {}
@@ -5579,7 +5448,7 @@ def get_my_permissions(student_id: str, is_admin: bool):
     if not student_id:
         return set()
 
-    snap = db.table("students").document(student_id).get()
+    snap = db.collection("students").document(student_id).get()
     if not snap.exists:
         return set()
 
@@ -5589,7 +5458,7 @@ def get_my_permissions(student_id: str, is_admin: bool):
     perms = set()
     role_id = str(sd.get("role_id", "") or "")
     if role_id:
-        rdoc = db.table("roles").document(role_id).get()
+        rdoc = db.collection("roles").document(role_id).get()
         if rdoc.exists:
             perms |= set((rdoc.to_dict() or {}).get("permissions", []) or [])
 
@@ -5688,7 +5557,7 @@ def upsert_roles_from_paytable(admin_pin: str, pay_df: pd.DataFrame):
         if gross > 0 and tax > 0:
             tax_rate = round(tax / gross, 4)
 
-        ref = db.table("roles").document(role_name)  # ✅ 문서ID=직업명
+        ref = db.collection("roles").document(role_name)  # ✅ 문서ID=직업명
         batch.set(
             ref,
             {
@@ -5742,14 +5611,14 @@ def upsert_bank_rates(admin_pin: str, rate_rows: list[dict]):
         weeks = int(row.get("weeks", 0) or 0)
         if weeks <= 0:
             continue
-        ref = db.table("bank_products_rates").document(str(weeks))
+        ref = db.collection("bank_products_rates").document(str(weeks))
         batch.set(ref, row, merge=True)
     batch.commit()
     return {"ok": True}
 
 def get_bank_rate(weeks: int, credit_grade: int) -> int:
     # % 정수 반환
-    snap = db.table("bank_products_rates").document(str(int(weeks))).get()
+    snap = db.collection("bank_products_rates").document(str(int(weeks))).get()
     if not snap.exists:
         return 0
     d = snap.to_dict() or {}
@@ -6147,7 +6016,7 @@ with st.sidebar:
         if not doc:
             return {"ok": False, "error": "해당 이름의 계정을 찾지 못했습니다."}
 
-        db.table("students").document(doc.id).update({"pin": str(new_pin)})
+        db.collection("students").document(doc.id).update({"pin": str(new_pin)})
         api_list_accounts_cached.clear()
         return {"ok": True}
 
@@ -6179,7 +6048,7 @@ with st.sidebar:
                     new_no = int(max_no + 1)
 
                     # 계정 생성(no 포함)
-                    db.table("students").document().set(
+                    db.collection("students").document().set(
                         {
                             "no": new_no,
                             "name": manage_name,
@@ -6246,7 +6115,7 @@ with st.sidebar:
                     if not doc:
                         st.error("해당 이름의 계정을 찾지 못했습니다.")
                     else:
-                        db.table("students").document(doc.id).update({"is_active": False})
+                        db.collection("students").document(doc.id).update({"is_active": False})
                         api_list_accounts_cached.clear()
                         toast("삭제 완료!", icon="🗑️")
                         st.session_state.delete_confirm = False
@@ -6463,7 +6332,7 @@ else:
     inv_ok = True
     try:
         if my_student_id:
-            snap = db.table("students").document(str(my_student_id)).get()
+            snap = db.collection("students").document(str(my_student_id)).get()
             if snap.exists:
                 inv_ok = bool((snap.to_dict() or {}).get("invest_enabled", True))
     except Exception:
@@ -6598,7 +6467,7 @@ def _score_to_grade(score: int) -> int:
     return 10
 
 def _get_credit_cfg():
-    ref = db.table("config").document("credit_scoring")
+    ref = db.collection("config").document("credit_scoring")
     snap = ref.get()
     if not snap.exists:
         return {"base": 50, "o": 1, "x": -3, "tri": 0}
@@ -7328,7 +7197,7 @@ if "🏦 내 통장" in tabs:
                         try:
                             # 1) 기존 삭제(옵션)
                             if del_old:
-                                docs = list(db.table("templates").stream())
+                                docs = list(db.collection("templates").stream())
                                 batch = db.batch()
                                 for d in docs:
                                     batch.delete(d.reference)
@@ -7540,7 +7409,7 @@ if "🏦 내 통장" in tabs:
                         disp_name = str(login_name or "")
                         try:
                             if student_id:
-                                _s = db.table("students").document(str(student_id)).get()
+                                _s = db.collection("students").document(str(student_id)).get()
                                 if _s.exists:
                                     _d = _s.to_dict() or {}
                                     _no = int(_d.get("no", 0) or 0)
@@ -8295,7 +8164,7 @@ if "admin::🏦 내 통장" in tabs:
                         try:
                             # 1) 기존 삭제(옵션)
                             if del_old:
-                                docs = list(db.table("templates").stream())
+                                docs = list(db.collection("templates").stream())
                                 batch = db.batch()
                                 for d in docs:
                                     batch.delete(d.reference)
@@ -8529,7 +8398,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         try:
             if not actor_student_id:
                 return False
-            snap = db.table("students").document(str(actor_student_id)).get()
+            snap = db.collection("students").document(str(actor_student_id)).get()
             if not snap.exists:
                 return False
             rid = str((snap.to_dict() or {}).get("role_id", "") or "")
@@ -8549,7 +8418,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     def _load_ledger(for_student_id: str | None):
         try:
             q = (
-                db.table(INV_LEDGER_COL)
+                db.collection(INV_LEDGER_COL)
                 .order_by("buy_at", direction=firestore.Query.DESCENDING)
                 .limit(400)
                 .stream()
@@ -8564,7 +8433,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         except Exception:
             # fallback(인덱스 등)
             try:
-                q = db.table(INV_LEDGER_COL).limit(400).stream()
+                q = db.collection(INV_LEDGER_COL).limit(400).stream()
                 rows = []
                 for d in q:
                     x = d.to_dict() or {}
@@ -8584,7 +8453,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         # 1) 인덱스 OK일 때
         try:
             q = (
-                db.table(INV_HIST_COL)
+                db.collection(INV_HIST_COL)
                 .where(filter=FieldFilter("product_id", "==", pid))
                 .order_by("created_at", direction=firestore.Query.DESCENDING)
                 .limit(int(limit))
@@ -8607,7 +8476,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         # 2) fallback
         try:
             q = (
-                db.table(INV_HIST_COL)
+                db.collection(INV_HIST_COL)
                 .where(filter=FieldFilter("product_id", "==", pid))
                 .limit(int(limit))
                 .stream()
@@ -8632,7 +8501,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     # -------------------------
     def _get_products(active_only=True):
         try:
-            q = db.table(INV_PROD_COL)
+            q = db.collection(INV_PROD_COL)
             if active_only:
                 q = q.where(filter=FieldFilter("is_active", "==", True))
             docs = q.stream()
@@ -8672,7 +8541,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         cur_bal = 0
         try:
             if my_student_id:
-                s = db.table("students").document(str(my_student_id)).get()
+                s = db.collection("students").document(str(my_student_id)).get()
                 if s.exists:
                     cur_bal = int((s.to_dict() or {}).get("balance", 0) or 0)
         except Exception:
@@ -8781,8 +8650,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     "price_after": _as_price1(new_price),
                                     "created_at": firestore.SERVER_TIMESTAMP,
                                 }
-                                db.table(INV_HIST_COL).document().set(payload)
-                                db.table(INV_PROD_COL).document(p["product_id"]).set(
+                                db.collection(INV_HIST_COL).document().set(payload)
+                                db.collection(INV_PROD_COL).document(p["product_id"]).set(
                                     {"current_price": _as_price1(new_price), "updated_at": firestore.SERVER_TIMESTAMP},
                                     merge=True,
                                 )
@@ -9476,7 +9345,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             if res.get("ok"):
                                 # 지급완료 처리 + 지급일 기록
                                 try:
-                                    db.table(INV_LEDGER_COL).document(doc_id).update(
+                                    db.collection(INV_LEDGER_COL).document(doc_id).update(
                                         {
                                             "redeemed": True,
                                             "redeemed_at": firestore.SERVER_TIMESTAMP,
@@ -9507,7 +9376,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     
         inv_ok2 = True
         try:
-            snap = db.table("students").document(str(my_student_id)).get()
+            snap = db.collection("students").document(str(my_student_id)).get()
             if snap.exists:
                 inv_ok2 = bool((snap.to_dict() or {}).get("invest_enabled", True))
         except Exception:
@@ -9549,7 +9418,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 buy_dt = datetime.now(tz=KST)
                                 buy_label = _fmt_kor_date_md(buy_dt)
     
-                                db.table(INV_LEDGER_COL).document().set(
+                                db.collection(INV_LEDGER_COL).document().set(
                                     {
                                         "student_id": sd.id,
                                         "no": no,
@@ -9639,7 +9508,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         else:
                             # ✅ 비활성 종목 복구
                             try:
-                                db.table(INV_PROD_COL).document(dup["product_id"]).set(
+                                db.collection(INV_PROD_COL).document(dup["product_id"]).set(
                                     {
                                         "name": nm,
                                         "current_price": _as_price1(new_price),
@@ -9661,7 +9530,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     
                     try:
                         if cur_obj is None:
-                            db.table(INV_PROD_COL).document().set(
+                            db.collection(INV_PROD_COL).document().set(
                                 {
                                     "name": nm,
                                     "current_price": _as_price1(new_price),
@@ -9672,7 +9541,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             )
                             toast("종목이 추가되었습니다.", icon="✅")
                         else:
-                            db.table(INV_PROD_COL).document(cur_obj["product_id"]).set(
+                            db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
                                 {
                                     "name": nm,
                                     "current_price": _as_price1(new_price),
@@ -9690,7 +9559,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 if cur_obj is None:
                     st.stop()
                 try:
-                    db.table(INV_PROD_COL).document(cur_obj["product_id"]).set(
+                    db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
                         {"is_active": False, "updated_at": firestore.SERVER_TIMESTAMP},
                         merge=True,
                     )
@@ -9816,7 +9685,7 @@ if "admin::🏦 은행(적금)" in tabs:
                 return False
 
         def _get_bank_rate_cfg(force_excel: bool = True):
-            ref = db.table("config").document("bank_rates")
+            ref = db.collection("config").document("bank_rates")
             snap = ref.get()
 
             # ✅ 엑셀 표 만들기
@@ -9864,7 +9733,7 @@ if "admin::🏦 은행(적금)" in tabs:
         #  - credit_scoring 설정 + 통계청 제출물(statuses) 누적
         # -------------------------------------------------
         def _get_credit_cfg():
-            ref = db.table("config").document("credit_scoring")
+            ref = db.collection("config").document("credit_scoring")
             snap = ref.get()
             if not snap.exists:
                 return {"base": 50, "o": 1, "x": -3, "tri": 0}
@@ -9933,7 +9802,7 @@ if "admin::🏦 은행(적금)" in tabs:
             - 원금+이자를 학생 통장에 입금(+)
             """
             now = datetime.now(timezone.utc)
-            q = db.table(SAV_COL).where(filter=FieldFilter("status", "==", "running")).stream()
+            q = db.collection(SAV_COL).where(filter=FieldFilter("status", "==", "running")).stream()
 
             proc_cnt = 0
             for d in q:
@@ -9957,7 +9826,7 @@ if "admin::🏦 은행(적금)" in tabs:
                         recorder_override="관리자",
                     )
                     if res.get("ok"):
-                        db.table(SAV_COL).document(d.id).update(
+                        db.collection(SAV_COL).document(d.id).update(
                             {
                                 "status": "matured",
                                 "payout_amount": payout,
@@ -9975,7 +9844,7 @@ if "admin::🏦 은행(적금)" in tabs:
             - 원금만 학생 통장에 입금(+)
             - status=canceled
             """
-            snap = db.table(SAV_COL).document(doc_id).get()
+            snap = db.collection(SAV_COL).document(doc_id).get()
             if not snap.exists:
                 return {"ok": False, "error": "해당 적금을 찾지 못했어요."}
             x = snap.to_dict() or {}
@@ -9999,7 +9868,7 @@ if "admin::🏦 은행(적금)" in tabs:
                 recorder_override=recorder_override,
             )
             if res.get("ok"):
-                db.table(SAV_COL).document(doc_id).update(
+                db.collection(SAV_COL).document(doc_id).update(
                     {
                         "status": "canceled",
                         "payout_amount": principal,
@@ -10062,11 +9931,11 @@ if "admin::🏦 은행(적금)" in tabs:
                 "payout_amount": None,
                 "created_at": firestore.SERVER_TIMESTAMP,
             }
-            db.table(SAV_COL).document().set(payload)
+            db.collection(SAV_COL).document().set(payload)
             return {"ok": True}
 
         def _load_savings_rows(limit=500):
-            q = db.table(SAV_COL).order_by("start_utc", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+            q = db.collection(SAV_COL).order_by("start_utc", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
             rows = []
             for d in q:
                 x = d.to_dict() or {}
@@ -10191,22 +10060,15 @@ if "🔎 개별조회" in tabs:
         # =========================
         # ✅ students에서 번호(no) 포함해서 다시 로드(번호순 정렬)
         # =========================
-        try:
-            docs = (
-                db.table("students")
-                .where(filter=FieldFilter("is_active", "==", True))
-                .stream()
-            )
-        except Exception:
-            # 일부 배포 환경에서는 students 테이블에 is_active 컬럼이 없어
-            # PostgREST 질의가 실패할 수 있으므로 전체 조회로 안전하게 폴백.
-            docs = db.table("students").stream()
+        docs = (
+            db.collection("students")
+            .where(filter=FieldFilter("is_active", "==", True))
+            .stream()
+        )
 
         acc_rows = []
         for d in docs:
             x = d.to_dict() or {}
-            if x.get("is_active") is False:
-                continue
             nm = str(x.get("name", "") or "").strip()
             if not nm:
                 continue
@@ -10475,7 +10337,7 @@ if "⭐ 권한부여" in tabs:
         def _update_student_extra(doc_id: str, add_keys=None, remove_keys=None, clear_all=False):
             add_keys = add_keys or []
             remove_keys = remove_keys or []
-            ref = db.table("students").document(str(doc_id))
+            ref = db.collection("students").document(str(doc_id))
             snap = ref.get()
             cur = []
             if snap.exists:
@@ -10536,10 +10398,10 @@ if "⭐ 권한부여" in tabs:
             st.rerun()
 
         if btn_revoke_all and confirm_all:
-            docs_perm3 = _stream_students_active_safe()
+            docs_perm3 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
             n = 0
             for x in _list_active_students_full_cached():
-                db.table("students").document(str(x.get("student_id", "") or "")).update({"extra_permissions": []})
+                db.collection("students").document(str(x.get("student_id", "") or "")).update({"extra_permissions": []})
                 n += 1
             _list_active_students_full_cached.clear()
             st.success(f"전체 학생 권한 전체 회수 완료: {n}명")
@@ -10858,13 +10720,13 @@ if "👥 계정 정보" in tabs:
 
                         # ✅ 번호 우선 업데이트, 없으면 이름으로 업데이트, 없으면 신규 생성
                         if int(no) in by_no:
-                            db.table("students").document(by_no[int(no)]).update(payload)
+                            db.collection("students").document(by_no[int(no)]).update(payload)
                             updated += 1
                         elif name in by_name:
-                            db.table("students").document(by_name[name]).update(payload)
+                            db.collection("students").document(by_name[name]).update(payload)
                             updated += 1
                         else:
-                            db.table("students").document().set(
+                            db.collection("students").document().set(
                                 {
                                     **payload,
                                     "balance": 0,
@@ -10949,7 +10811,7 @@ if "👥 계정 정보" in tabs:
             with y:
                 if st.button("예", key="acc_del_yes2", use_container_width=True):
                     for sid in st.session_state._delete_targets:
-                        db.table("students").document(sid).update({"is_active": False})
+                        db.collection("students").document(sid).update({"is_active": False})
                     st.session_state.pop("_delete_targets")
                     api_list_accounts_cached.clear()
                     toast("삭제 완료", icon="🗑️")
@@ -11029,7 +10891,7 @@ if "💼 직업/월급" in tabs:
         # -------------------------------------------------
         accounts = api_list_accounts_cached().get("accounts", [])
         # students 컬렉션에서 'no'도 같이 가져와서 "번호+이름" 만들기
-        docs_acc = _stream_students_active_safe()
+        docs_acc = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
         acc_rows = []
         for d in docs_acc:
             x = d.to_dict() or {}
@@ -11054,7 +10916,7 @@ if "💼 직업/월급" in tabs:
         #   - Firestore config/salary_deductions 에 저장
         # -------------------------------------------------
         def _get_salary_cfg():
-            ref = db.table("config").document("salary_deductions")
+            ref = db.collection("config").document("salary_deductions")
             snap = ref.get()
             if not snap.exists:
                 return {
@@ -11072,7 +10934,7 @@ if "💼 직업/월급" in tabs:
             }
 
         def _save_salary_cfg(cfg: dict):
-            db.table("config").document("salary_deductions").set(
+            db.collection("config").document("salary_deductions").set(
                 {
                     "tax_percent": float(cfg.get("tax_percent", 10.0) or 10.0),
                     "desk_rent": int(cfg.get("desk_rent", 50) or 50),
@@ -11125,7 +10987,7 @@ if "💼 직업/월급" in tabs:
         #  - payroll_log/{YYYY-MM}_{student_id} 로 "이번달 지급 여부" 기록
         # -------------------------------------------------
         def _get_payroll_cfg():
-            ref = db.table("config").document("salary_payroll")
+            ref = db.collection("config").document("salary_payroll")
             snap = ref.get()
             if not snap.exists:
                 return {"pay_day": 17, "auto_enabled": False}
@@ -11136,7 +10998,7 @@ if "💼 직업/월급" in tabs:
             }
 
         def _save_payroll_cfg(cfg2: dict):
-            db.table("config").document("salary_payroll").set(
+            db.collection("config").document("salary_payroll").set(
                 {
                     "pay_day": int(cfg2.get("pay_day", 25) or 25),
                     "auto_enabled": bool(cfg2.get("auto_enabled", False)),
@@ -11159,13 +11021,13 @@ if "💼 직업/월급" in tabs:
             - 레거시(호환): payroll_log/{YYYY-MM}_{studentId} 가 있으면, 저장된 job 이름이 같을 때만 True
             """
             # 1) 신규 키
-            snap = db.table("payroll_log").document(_paylog_id(month_key, student_id, job_id)).get()
+            snap = db.collection("payroll_log").document(_paylog_id(month_key, student_id, job_id)).get()
             if bool(snap.exists):
                 return True
 
             # 2) 레거시 키(기존 데이터 호환)
             legacy_id = f"{month_key}_{student_id}"
-            legacy = db.table("payroll_log").document(legacy_id).get()
+            legacy = db.collection("payroll_log").document(legacy_id).get()
             if legacy.exists:
                 ld = legacy.to_dict() or {}
                 legacy_job = str(ld.get("job", "") or "")
@@ -11176,7 +11038,7 @@ if "💼 직업/월급" in tabs:
             return False
 
         def _write_paylog(month_key: str, student_id: str, amount: int, job_name: str, method: str, job_id: str = ""):
-            db.table("payroll_log").document(_paylog_id(month_key, student_id, job_id)).set(
+            db.collection("payroll_log").document(_paylog_id(month_key, student_id, job_id)).set(
                 {
                     "month": month_key,
                     "student_id": student_id,
@@ -11219,7 +11081,7 @@ if "💼 직업/월급" in tabs:
             id_to_name = {a.get("student_id"): a.get("name") for a in accs if a.get("student_id")}
 
             # job_salary 기준으로 배정된 학생들에게 지급
-            q = db.table("job_salary").order_by("order").stream()
+            q = db.collection("job_salary").order_by("order").stream()
             paid_cnt, skip_cnt, err_cnt = 0, 0, 0
 
             for d in q:
@@ -11312,7 +11174,7 @@ if "💼 직업/월급" in tabs:
 
             # 이번 달에 지급된 로그가 있는지 빠르게 확인
             # (수동지급은 '모든 배정 학생' 대상으로 동일 로직)
-            q2 = db.table("job_salary").order_by("order").stream()
+            q2 = db.collection("job_salary").order_by("order").stream()
             targets = []  # (student_id, amount, job_name)
             for d in q2:
                 x = d.to_dict() or {}
@@ -11394,7 +11256,7 @@ if "💼 직업/월급" in tabs:
         # ✅ 직업/월급 표 데이터 로드 (job_salary 컬렉션)
         # -------------------------------------------------
         def _list_job_rows():
-            q = db.table("job_salary").order_by("order").stream()
+            q = db.collection("job_salary").order_by("order").stream()
             rows = []
             for d in q:
                 x = d.to_dict() or {}
@@ -11418,8 +11280,8 @@ if "💼 직업/월급" in tabs:
 
         def _swap_order(a_id, a_order, b_id, b_order):
             batch = db.batch()
-            batch.update(db.table("job_salary").document(a_id), {"order": int(b_order)})
-            batch.update(db.table("job_salary").document(b_id), {"order": int(a_order)})
+            batch.update(db.collection("job_salary").document(a_id), {"order": int(b_order)})
+            batch.update(db.collection("job_salary").document(b_id), {"order": int(a_order)})
             batch.commit()
 
         rows = _list_job_rows()
@@ -11466,7 +11328,7 @@ if "💼 직업/월급" in tabs:
                 else:
                     rid = job_pick_map.get(sel_job_label)
                     if rid:
-                        ref = db.table("job_salary").document(rid)
+                        ref = db.collection("job_salary").document(rid)
                         snap = ref.get()
                         if snap.exists:
                             x = snap.to_dict() or {}
@@ -11521,7 +11383,7 @@ if "💼 직업/월급" in tabs:
                 else:
                     rid = job_pick_map.get(sel_job_label)
                     if rid:
-                        ref = db.table("job_salary").document(rid)
+                        ref = db.collection("job_salary").document(rid)
                         snap = ref.get()
                         if snap.exists:
                             x = snap.to_dict() or {}
@@ -11566,7 +11428,7 @@ if "💼 직업/월급" in tabs:
                         cnt2 = max(0, int(rr.get("student_count", 0) or 0))
                         # 빈 슬롯으로 초기화(정원 유지)
                         empty_ids = [""] * cnt2 if cnt2 > 0 else []
-                        batch.update(db.table("job_salary").document(rid2), {"assigned_ids": empty_ids})
+                        batch.update(db.collection("job_salary").document(rid2), {"assigned_ids": empty_ids})
                     batch.commit()
                     toast("전체 직업 해제 완료!", icon="✅")
                     st.session_state["job_assign_reset_req2"] = True
@@ -11698,8 +11560,8 @@ if "💼 직업/월급" in tabs:
                         a_id, a_order = cur_id, int(cur.get("order", 999999) or 999999)
                         b_id, b_order = prev_id, int(prev.get("order", 999999) or 999999)
 
-                        batch.update(db.table("job_salary").document(a_id), {"order": b_order})
-                        batch.update(db.table("job_salary").document(b_id), {"order": a_order})
+                        batch.update(db.collection("job_salary").document(a_id), {"order": b_order})
+                        batch.update(db.collection("job_salary").document(b_id), {"order": a_order})
 
                         # 로컬 리스트에서도 swap 반영(연쇄 이동 안정)
                         _rows[i], _rows[j] = _rows[j], _rows[i]
@@ -11748,7 +11610,7 @@ if "💼 직업/월급" in tabs:
                         if st.button("예", key="job_bulk_del_yes", use_container_width=True):
                             del_ids = list(st.session_state.get("_job_bulk_delete_ids", []))
                             for rid0 in del_ids:
-                                db.table("job_salary").document(rid0).delete()
+                                db.collection("job_salary").document(rid0).delete()
                                 st.session_state.job_sel.pop(rid0, None)
                             st.session_state.pop("_job_bulk_delete_ids", None)
                             toast("삭제 완료", icon="🗑️")
@@ -11842,7 +11704,7 @@ if "💼 직업/월급" in tabs:
                             if st.button("➖", key=f"job_cnt_minus_{rid}"):
                                 new_cnt = max(0, cnt - 1)
                                 new_assigned = assigned_ids[:new_cnt] if new_cnt > 0 else []
-                                db.table("job_salary").document(rid).update(
+                                db.collection("job_salary").document(rid).update(
                                     {"student_count": new_cnt, "assigned_ids": new_assigned}
                                 )
                                 st.rerun()
@@ -11854,7 +11716,7 @@ if "💼 직업/월급" in tabs:
                             if st.button("➕", key=f"job_cnt_plus_{rid}"):
                                 new_cnt = cnt + 1
                                 new_assigned = assigned_ids + [""]
-                                db.table("job_salary").document(rid).update(
+                                db.collection("job_salary").document(rid).update(
                                     {"student_count": new_cnt, "assigned_ids": new_assigned}
                                 )
                                 st.rerun()
@@ -11937,7 +11799,7 @@ if "💼 직업/월급" in tabs:
                     if len(cur_ids) > int(sc_in):
                         cur_ids = cur_ids[: int(sc_in)]
 
-                    db.table("job_salary").document(rid).update(
+                    db.collection("job_salary").document(rid).update(
                         {
                             "job": job_in,
                             "salary": int(sal_in),
@@ -11952,7 +11814,7 @@ if "💼 직업/월급" in tabs:
                 else:
                     # 신규 추가(order는 입력 순서대로 마지막+1)
                     new_order = _next_order(rows)
-                    db.table("job_salary").document().set(
+                    db.collection("job_salary").document().set(
                         {
                             "order": int(new_order),
                             "job": job_in,
@@ -11983,7 +11845,7 @@ if "💼 직업/월급" in tabs:
             y, n = st.columns(2)
             with y:
                 if st.button("예", use_container_width=True, key="job_del_yes"):
-                    db.table("job_salary").document(st.session_state._job_delete_id).delete()
+                    db.collection("job_salary").document(st.session_state._job_delete_id).delete()
                     st.session_state.pop("_job_delete_id", None)
                     toast("삭제 완료", icon="🗑️")
                     st.rerun()
@@ -12109,12 +11971,12 @@ if "💼 직업/월급" in tabs:
             else:
                 try:
                     if wipe_before:
-                        docs = db.table("job_salary").stream()
+                        docs = db.collection("job_salary").stream()
                         for d in docs:
-                            db.table("job_salary").document(d.id).delete()
+                            db.collection("job_salary").document(d.id).delete()
 
                     for _, r in df2.iterrows():
-                        db.table("job_salary").document().set(
+                        db.collection("job_salary").document().set(
                             {
                                 "order": int(r["순"]),
                                 "job": str(r["직업"]),
@@ -12410,7 +12272,7 @@ if "🏛️ 국세청(국고)" in tabs:
                 else:
                     try:
                         if tre_overwrite:
-                            docs = list(db.table("treasury_templates").stream())
+                            docs = list(db.collection("treasury_templates").stream())
                             if docs:
                                 batch = db.batch()
                                 for d in docs:
@@ -12455,7 +12317,7 @@ if "📊 통계청" in tabs:
         # -------------------------
         # api_list_accounts_cached()는 name/balance/student_id만 주므로,
         # 번호(no)까지 필요해서 students에서 직접 읽어옴.
-        docs_acc2 = _stream_students_active_safe()
+        docs_acc2 = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
         stu_rows = []
         for d in docs_acc2:
             x = d.to_dict() or {}
@@ -13052,7 +12914,7 @@ if "💳 신용등급" in tabs:
         # -------------------------
         # 0) 학생 목록(번호/이름) : 계정정보 탭과 동일(활성 학생)
         # -------------------------
-        docs_acc = _stream_students_active_safe()
+        docs_acc = db.collection("students").where(filter=FieldFilter("is_active", "==", True)).stream()
         stu_rows = []
         for d in docs_acc:
             x = d.to_dict() or {}
@@ -13073,7 +12935,7 @@ if "💳 신용등급" in tabs:
         # 2) 점수 계산 설정(기본값)
         # -------------------------
         def _get_credit_cfg():
-            ref = db.table("config").document("credit_scoring")
+            ref = db.collection("config").document("credit_scoring")
             snap = ref.get()
             if not snap.exists:
                 return {"base": 50, "o": 1, "x": -3, "tri": 0}
@@ -13086,7 +12948,7 @@ if "💳 신용등급" in tabs:
             }
 
         def _save_credit_cfg(cfg: dict):
-            db.table("config").document("credit_scoring").set(
+            db.collection("config").document("credit_scoring").set(
                 {
                     "base": int(cfg.get("base", 50) if cfg.get("base", None) is not None else 50),
                     "o": int(cfg.get("o", 1) if cfg.get("o", None) is not None else 1),
@@ -13490,7 +13352,7 @@ if "🏦 은행(적금)" in tabs:
                 return False
 
         def _get_bank_rate_cfg(force_excel: bool = True):
-            ref = db.table("config").document("bank_rates")
+            ref = db.collection("config").document("bank_rates")
             snap = ref.get()
 
             # ✅ 엑셀 표 만들기
@@ -13538,7 +13400,7 @@ if "🏦 은행(적금)" in tabs:
         #  - credit_scoring 설정 + 통계청 제출물(statuses) 누적
         # -------------------------------------------------
         def _get_credit_cfg():
-            ref = db.table("config").document("credit_scoring")
+            ref = db.collection("config").document("credit_scoring")
             snap = ref.get()
             if not snap.exists:
                 return {"base": 50, "o": 1, "x": -3, "tri": 0}
@@ -13607,7 +13469,7 @@ if "🏦 은행(적금)" in tabs:
             - 원금+이자를 학생 통장에 입금(+)
             """
             now = datetime.now(timezone.utc)
-            q = db.table(SAV_COL).where(filter=FieldFilter("status", "==", "running")).stream()
+            q = db.collection(SAV_COL).where(filter=FieldFilter("status", "==", "running")).stream()
 
             proc_cnt = 0
             for d in q:
@@ -13631,7 +13493,7 @@ if "🏦 은행(적금)" in tabs:
                         recorder_override="관리자",
                     )
                     if res.get("ok"):
-                        db.table(SAV_COL).document(d.id).update(
+                        db.collection(SAV_COL).document(d.id).update(
                             {
                                 "status": "matured",
                                 "payout_amount": payout,
@@ -13649,7 +13511,7 @@ if "🏦 은행(적금)" in tabs:
             - 원금만 학생 통장에 입금(+)
             - status=canceled
             """
-            snap = db.table(SAV_COL).document(doc_id).get()
+            snap = db.collection(SAV_COL).document(doc_id).get()
             if not snap.exists:
                 return {"ok": False, "error": "해당 적금을 찾지 못했어요."}
             x = snap.to_dict() or {}
@@ -13673,7 +13535,7 @@ if "🏦 은행(적금)" in tabs:
                 recorder_override=recorder_override,
             )
             if res.get("ok"):
-                db.table(SAV_COL).document(doc_id).update(
+                db.collection(SAV_COL).document(doc_id).update(
                     {
                         "status": "canceled",
                         "payout_amount": principal,
@@ -13736,11 +13598,11 @@ if "🏦 은행(적금)" in tabs:
                 "payout_amount": None,
                 "created_at": firestore.SERVER_TIMESTAMP,
             }
-            db.table(SAV_COL).document().set(payload)
+            db.collection(SAV_COL).document().set(payload)
             return {"ok": True}
 
         def _load_savings_rows(limit=500):
-            q = db.table(SAV_COL).order_by("start_utc", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+            q = db.collection(SAV_COL).order_by("start_utc", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
             rows = []
             for d in q:
                 x = d.to_dict() or {}
@@ -13914,7 +13776,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                     else:
                         me_no = 999999
                         try:
-                            snap_me = db.table("students").document(my_student_id).get()
+                            snap_me = db.collection("students").document(my_student_id).get()
                             if snap_me.exists:
                                 me_no = int((snap_me.to_dict() or {}).get("no", 999999) or 999999)
                         except Exception:
@@ -13938,7 +13800,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
             st.markdown("### 📒 내 적금 내역")
             my_rows = []
             if my_student_id:
-                q = db.table(SAV_COL).where(filter=FieldFilter("student_id", "==", str(my_student_id))).stream()
+                q = db.collection(SAV_COL).where(filter=FieldFilter("student_id", "==", str(my_student_id))).stream()
                 for d in q:
                     x = d.to_dict() or {}
                     x["_id"] = d.id
@@ -14228,7 +14090,7 @@ def _render_mart_admin_ui():
                     st.error("엑셀 컬럼이 부족합니다. 필요 컬럼: 내역, 금액, 순서")
                 else:
                     if overwrite:
-                        for d in db.table("mart_templates").stream():
+                        for d in db.collection("mart_templates").stream():
                             d.reference.delete()
                     n = 0
                     for _, row in df.iterrows():
@@ -14417,7 +14279,7 @@ if "🏷️ 경매" in tabs:
                 st.info("개시된 경매가 없습니다.")
             else:
                 sid = str(my_student_id or "")
-                me_snap = db.table("students").document(sid).get() if sid else None
+                me_snap = db.collection("students").document(sid).get() if sid else None
                 me = me_snap.to_dict() if (me_snap and me_snap.exists) else {}
                 my_no_v = int((me or {}).get("no", 0) or 0)
                 my_name_v = str((me or {}).get("name", login_name) or login_name)
@@ -14432,7 +14294,7 @@ if "🏷️ 경매" in tabs:
                 st.info("개시된 경매가 없습니다.")
             else:
                 bid_doc_id = f"{str(open_round.get('round_id', '') or '')}_{sid}"
-                prev_bid = db.table("auction_bids").document(bid_doc_id).get() if sid else None
+                prev_bid = db.collection("auction_bids").document(bid_doc_id).get() if sid else None
                 if prev_bid and prev_bid.exists:
                     pb = prev_bid.to_dict() or {}
                     st.success(
@@ -14575,7 +14437,7 @@ if "🍀 복권" in tabs:
             current_round = dict(open_round)
             if not current_round_id:
                 try:
-                    cq = db.table("lottery_rounds").order_by("round_no", direction=firestore.Query.DESCENDING).limit(1).stream()
+                    cq = db.collection("lottery_rounds").order_by("round_no", direction=firestore.Query.DESCENDING).limit(1).stream()
                     for d in cq:
                         current_round = d.to_dict() or {}
                         current_round["round_id"] = d.id
@@ -14668,7 +14530,7 @@ if "🍀 복권" in tabs:
                 submitted_round_id = str(st.session_state.get("lottery_winners_visible_round_id", "") or "")
                 show_winner_result = submitted_round_id == current_round_id_str
                 
-                r_snap = db.table("lottery_rounds").document(current_round_id).get()
+                r_snap = db.collection("lottery_rounds").document(current_round_id).get()
                 r_dat = r_snap.to_dict() if r_snap.exists else {}
                 winners = list((r_dat or {}).get("winners", []) or [])
                 win_nums = _normalize_lottery_numbers((r_dat or {}).get("winning_numbers", []))
@@ -14886,7 +14748,7 @@ if "📊 통계/신용" in tabs and (not is_admin):
         my_no = ""
         my_nm = ""
         try:
-            ss = db.table("students").document(str(my_student_id)).get()
+            ss = db.collection("students").document(str(my_student_id)).get()
             if ss.exists:
                 d0 = ss.to_dict() or {}
                 my_no = str(d0.get("no", "") or "")
@@ -15128,7 +14990,7 @@ if "📊 통계/신용" in tabs and (not is_admin):
 # 10) 🗓️ 일정 (권한별 수정)
 # =========================
 def add_schedule(area: str, d: date, title: str, owner_roles: list[str], created_by: str):
-    db.table("schedule_items").document().set(
+    db.collection("schedule_items").document().set(
         {
             "area": area,
             "date": d.isoformat(),
@@ -15141,7 +15003,7 @@ def add_schedule(area: str, d: date, title: str, owner_roles: list[str], created
     return {"ok": True}
 
 def list_schedule(limit=200):
-    q = db.table("schedule_items").order_by("date", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
+    q = db.collection("schedule_items").order_by("date", direction=firestore.Query.DESCENDING).limit(int(limit)).stream()
     rows = []
     for d in q:
         x = d.to_dict() or {}
@@ -15234,7 +15096,7 @@ if "🎯 목표" in tabs and (not is_admin):
 
         try:
             sdocs = (
-                db.table(SAV_COL)
+                db.collection(SAV_COL)
                 .where(filter=FieldFilter("student_id", "==", sid))
                 .where(filter=FieldFilter("status", "==", "running"))
                 .stream()
