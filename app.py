@@ -1,15 +1,4 @@
 import streamlit as st
-
-from pymongo import MongoClient
-
-mongodb+srv://classpointapp:class7279@class-point-app.gak71ec.mongodb.net/?appName=class-point-app
-
-client = MongoClient(uri)
-
-db = client["mydatabase"]
-
-collection = db["users"]
-
 import streamlit.components.v1 as components
 from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
@@ -19,10 +8,7 @@ import random
 
 from datetime import datetime, timezone, timedelta, date
 
-import firebase_admin
-from firebase_admin import credentials, firestore
-from google.cloud.firestore_v1.base_query import FieldFilter
-from google.api_core.exceptions import FailedPrecondition
+from db import FailedPrecondition, FieldFilter, firestore, init_db
 
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
@@ -654,25 +640,25 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
 st.markdown(f'<div class="app-title"> {APP_TITLE}</div>', unsafe_allow_html=True)
 
 # =========================
-# Firestore init
+# MongoDB init
 # =========================
 @st.cache_resource
-def init_firestore():
-    firebase_dict = dict(st.secrets["firebase"])
-    firebase_dict["private_key"] = firebase_dict["private_key"].replace("\\n", "\n").strip()
-    cred = credentials.Certificate(firebase_dict)
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
+def get_db():
+    cfg = st.secrets.get("mongodb", {})
+    uri = str(cfg.get("uri", "")).strip()
+    db_name = str(cfg.get("db_name", "class_point_app")).strip()
+    if not uri:
+        raise ValueError("`[mongodb] uri`가 secrets.toml에 설정되지 않았습니다.")
+    return init_db(uri=uri, db_name=db_name)
 
 try:
-    db = init_firestore()
+    db = get_db()
 except StreamlitSecretNotFoundError:
-    st.error("Firebase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 firebase 설정을 추가해 주세요.")
-    st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Firestore 연결 초기화 실패입니다.")
+    st.error("MongoDB 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 [mongodb] uri, db_name을 추가해 주세요.")
+    st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 MongoDB 연결 초기화 실패입니다.")
     st.stop()
 except Exception as e:
-    st.error(f"Firestore 초기화 실패: {e}")
+    st.error(f"MongoDB 초기화 실패: {e}")
     st.stop()
 
 # =========================
