@@ -1,4 +1,7 @@
 streamlit
-supabase
 pandas
+firebase-admin
+google-cloud-firestore
+pymupdf
 openpyxl
+streamlit-aggrid
