@@ -1,4 +1,15 @@
 import streamlit as st
+
+from pymongo import MongoClient
+
+mongodb+srv://classpointapp:class7279@class-point-app.gak71ec.mongodb.net/?appName=class-point-app
+
+client = MongoClient(uri)
+
+db = client["mydatabase"]
+
+collection = db["users"]
+
 import streamlit.components.v1 as components
 from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
