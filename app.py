@@ -679,7 +679,7 @@ class _DocRef:
         self.table_name = table_name
         self.doc_id = doc_id
 
-    def get(self):
+    def get(self, *args, **kwargs):
         pk_col = _doc_pk_column(self.table_name)
         return _Doc(self.table_name, db_select_one(self.table_name, pk_col, self.doc_id))
 
@@ -3020,13 +3020,26 @@ TREASURY_UNIT = "드림"   # ✅ 표시 단위만 드림(시스템 숫자는 그
 
 @st.cache_data(ttl=30, show_spinner=False)
 def api_get_treasury_state_cached():
-    ref = db.table("treasury").document("state")
-    snap = ref.get()
-    if not snap.exists:
-        ref.set({"balance": 0, "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    row = _get_treasury_state_row()
+    if not row:
+        db_insert("treasury", {"balance": 0, "updated_at": firestore.SERVER_TIMESTAMP})
         return {"ok": True, "balance": 0}
-    d = snap.to_dict() or {}
+    d = row or {}
     return {"ok": True, "balance": int(d.get("balance", 0) or 0)}
+
+
+def _get_treasury_state_row():
+    rows = db_select_all("treasury") or []
+    return (rows[0] if rows else None)
+
+
+def _set_treasury_balance(new_balance: int):
+    payload = {"balance": int(new_balance), "updated_at": firestore.SERVER_TIMESTAMP}
+    row = _get_treasury_state_row()
+    if row and row.get("id"):
+        db_update("treasury", "id", row.get("id"), payload)
+    else:
+        db_insert("treasury", payload)
 
 def api_add_treasury_tx(
     admin_pin: str,
@@ -3054,7 +3067,6 @@ def api_add_treasury_tx(
     if (income > 0 and expense > 0) or (income == 0 and expense == 0):
         return {"ok": False, "error": "세입/세출 중 하나만 입력하세요."}
 
-    state_ref = db.table("treasury").document("state")
     led_ref = db.table("treasury_ledger").document()
     recorder = _get_admin_action_recorder(recorder_override)
     
@@ -3063,21 +3075,14 @@ def api_add_treasury_tx(
 
     @firestore.transactional
     def _do(transaction):
-        st_snap = state_ref.get(transaction=transaction)
+        st_row = _get_treasury_state_row() or {}
         cur_bal = 0
-        if st_snap.exists:
-            cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+        if st_row:
+            cur_bal = int(st_row.get("balance", 0) or 0)
 
         new_bal = int(cur_bal + amount)
 
-        transaction.set(
-            state_ref,
-            {
-                "balance": int(new_bal),
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
+        _set_treasury_balance(int(new_bal))
 
         transaction.set(
             led_ref,
@@ -3118,7 +3123,6 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
     if signed_amount == 0 or (not memo):
         return
 
-    state_ref = db.table("treasury").document("state")
     led_ref = db.table("treasury_ledger").document()
     recorder = _get_admin_action_recorder(recorder_override)
     
@@ -3131,21 +3135,14 @@ def _treasury_apply_in_transaction(transaction, memo: str, signed_amount: int, a
         income = 0
         expense = int(-signed_amount)
 
-    st_snap = state_ref.get(transaction=transaction)
+    st_row = _get_treasury_state_row() or {}
     cur_bal = 0
-    if st_snap.exists:
-        cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+    if st_row:
+        cur_bal = int(st_row.get("balance", 0) or 0)
 
     new_bal = int(cur_bal + signed_amount)
 
-    transaction.set(
-        state_ref,
-        {
-            "balance": int(new_bal),
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        },
-        merge=True,
-    )
+    _set_treasury_balance(int(new_bal))
     transaction.set(
         led_ref,
         {
@@ -3331,7 +3328,6 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
     if (not memo) or signed_amount == 0:
         return {"ok": True}
 
-    state_ref = db.table("treasury").document("state")
     led_ref = db.table("treasury_ledger").document()
 
     if signed_amount > 0:
@@ -3345,17 +3341,13 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
 
     @firestore.transactional
     def _do(transaction):
-        st_snap = state_ref.get(transaction=transaction)
+        st_row = _get_treasury_state_row() or {}
         cur_bal = 0
-        if st_snap.exists:
-            cur_bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
+        if st_row:
+            cur_bal = int(st_row.get("balance", 0) or 0)
         new_bal = int(cur_bal + signed_amount)
 
-        transaction.set(
-            state_ref,
-            {"balance": int(new_bal), "updated_at": firestore.SERVER_TIMESTAMP},
-            merge=True,
-        )
+        _set_treasury_balance(int(new_bal))
         transaction.set(
             led_ref,
             {
