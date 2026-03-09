@@ -16,6 +16,7 @@ from database import *
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
 import json
+import uuid
 
 # =========================
 # 설정
@@ -687,6 +688,9 @@ class _DocRef:
         return _Doc(self.table_name, db_select_one(self.table_name, "id", self.doc_id))
 
     def set(self, data, merge=False):
+        if not self.doc_id:
+            # Supabase의 id(not null) 제약을 만족하도록 문서 ID 자동 생성
+            self.doc_id = uuid.uuid4().hex
         payload = dict(data or {})
         if merge:
             existing = db_select_one(self.table_name, "id", self.doc_id)
@@ -716,6 +720,8 @@ class _Query:
         self._limit = None
 
     def document(self, doc_id=None):
+        if not doc_id:
+            doc_id = uuid.uuid4().hex
         return _DocRef(self.table_name, doc_id)
 
     def where(self, filter=None):
