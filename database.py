@@ -167,8 +167,13 @@ class QueryRef:
             # Firestore에서는 스키마가 느슨하지만, Supabase/PostgREST는
             # 존재하지 않는 컬럼 필터/정렬에서 즉시 오류를 발생시킨다.
             # 이 경우 전체 조회 후 Python에서 동일 조건을 적용해 호환성을 유지한다.
-            raw_rows = _supabase().table(self.table_name).select("*").execute().data or []
-            rows = self._apply_order_limit_python(self._apply_filters_python(raw_rows))
+            try:
+                raw_rows = _supabase().table(self.table_name).select("*").execute().data or []
+                rows = self._apply_order_limit_python(self._apply_filters_python(raw_rows))
+            except APIError:
+                # RLS/권한 이슈 등으로 전체 조회조차 실패할 수 있다.
+                # 앱 전체 크래시를 막기 위해 빈 결과를 반환한다.
+                rows = []
             
         return [_DocStreamItem(self.table_name, str(r.get("id", "")), r) for r in rows]
 
