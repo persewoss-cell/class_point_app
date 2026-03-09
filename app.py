@@ -794,10 +794,18 @@ def savings_active_total(savings_list: list[dict]) -> int:
 @st.cache_data(ttl=20, show_spinner=False)
 def _list_active_students_full_cached() -> list[dict]:
     """활성 학생 전체를 1회 조회 후 재사용(리렌더/버튼 rerun read 절감)."""
-    docs = db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
-    rows = []
+    rows: list[dict] = []
+    try:
+        docs = db.table("students").where(filter=FieldFilter("is_active", "==", True)).stream()
+    except Exception:
+        # 일부 배포 환경에서 bool 필터가 PostgREST APIError를 일으키는 경우가 있어,
+        # 전체 조회 후 Python에서 활성 상태를 필터링하는 안전 경로로 폴백한다.
+        docs = db.table("students").stream()
+        
     for d in docs:
         x = d.to_dict() or {}
+        if not bool(x.get("is_active", False)):
+            continue
         rows.append({"student_id": d.id, **x})
     return rows
 
