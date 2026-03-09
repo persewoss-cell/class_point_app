@@ -1624,7 +1624,7 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
                 },
             )
 
-        _do(db.transaction())
+        _do()
         count += 1
 
     api_list_accounts_cached.clear()
@@ -1666,7 +1666,7 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
                 },
             )
 
-        _do(db.transaction())
+        _do()
         count += 1
 
     api_list_accounts_cached.clear()
@@ -2117,7 +2117,7 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
         return new_bal
 
     try:
-        new_bal = _do(db.transaction())
+        new_bal = _do()
         return {"ok": True, "balance": int(new_bal)}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2184,7 +2184,7 @@ def api_admin_add_tx_by_student_id(
         return new_bal
 
     try:
-        new_bal = _do(db.transaction())
+        new_bal = _do()
         api_list_accounts_cached.clear()
         return {"ok": True, "balance": int(new_bal)}
     except ValueError as e:
@@ -2259,7 +2259,7 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
             )
             return new_bal
 
-        new_bal = _do(db.transaction())
+        new_bal = _do()
         return {"ok": True, "balance": int(new_bal)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2508,7 +2508,7 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
         return new_bal
 
     try:
-        new_bal = _do(db.transaction())
+        new_bal = _do()
 
         # 캐시 갱신
         try:
@@ -2554,7 +2554,7 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
         return True
 
     try:
-        _do(db.transaction())
+        _do()
         return {"ok": True}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2890,7 +2890,7 @@ def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: i
         return interest, maturity_date
 
     try:
-        interest2, maturity_dt = _do(db.transaction())
+        interest2, maturity_dt = _do()
         return {"ok": True, "interest": int(interest2), "maturity_datetime": maturity_dt}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2947,7 +2947,7 @@ def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
         return principal
 
     try:
-        refunded = _do(db.transaction())
+        refunded = _do()
         return {"ok": True, "refunded": int(refunded)}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -3136,7 +3136,7 @@ def api_add_treasury_tx(
         return new_bal
 
     try:
-        new_bal = _do(db.transaction())
+        new_bal = _do()
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
         return {"ok": True, "balance": int(new_bal)}
@@ -3260,7 +3260,7 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
         return new_bal
 
     try:
-        new_bal = _do(db.transaction())
+        new_bal = _do()
         # 캐시 갱신
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
@@ -3345,7 +3345,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
         return new_bal
 
     try:
-        new_bal = _do(db.transaction())
+        new_bal = _do()
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
         api_list_accounts_cached.clear()
@@ -3400,7 +3400,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
         return new_bal
 
     try:
-        _do(db.transaction())
+        _do()
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
         return {"ok": True}
@@ -3998,7 +3998,7 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
         return next_no, round_ref.id
 
     try:
-        round_no, round_id = _do(db.transaction())
+        round_no, round_id = _do()
         return {"ok": True, "round_no": int(round_no), "round_id": str(round_id)}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -4083,7 +4083,7 @@ def api_submit_auction_bid(name: str, pin: str, amount: int):
         )
 
     try:
-        _do(db.transaction())
+        _do()
         return {"ok": True}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -4465,7 +4465,7 @@ def api_open_lottery(admin_pin: str, cfg: dict):
         return next_no
 
     try:
-        no = int(_do(db.transaction()))
+        no = int(_do())
         _get_lottery_state.clear()
         api_get_open_lottery_round.clear()
         return {"ok": True, "round_no": no}
@@ -4501,7 +4501,7 @@ def api_close_lottery(admin_pin: str):
         return {"round_id": rid, "round_no": int(r.get("round_no", 0) or 0)}
 
     try:
-        out = _do(db.transaction())
+        out = _do()
         _get_lottery_state.clear()
         api_get_open_lottery_round.clear()
         return {"ok": True, **out}
@@ -4682,7 +4682,7 @@ def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
         return new_bal
 
     try:
-        nb = int(_do(db.transaction()))
+        nb = int(_do())
         api_list_lottery_entries.clear()
         api_list_lottery_entries_by_student.clear()
         api_get_open_lottery_round.clear()
@@ -4772,7 +4772,7 @@ def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
         return new_bal
 
     try:
-        nb = int(_do(db.transaction()))
+        nb = int(_do())
         api_list_lottery_entries.clear()
         api_list_lottery_entries_by_student.clear()
         api_get_open_lottery_round.clear()
@@ -4850,7 +4850,7 @@ def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_trea
             )
 
     try:
-        _do(db.transaction())
+        _do()
         api_get_treasury_state_cached.clear()
         api_list_treasury_ledger_cached.clear()
         api_list_lottery_entries.clear()
