@@ -682,15 +682,15 @@ class _Doc:
         return row
 
 
-def _is_missing_column_error(err: Exception, table_name: str, column_name: str) -> bool:
+def _is_missing_column_error(err: Exception, table_name: str, column_name: str | None = None) -> bool:
     if not isinstance(err, APIError):
         return False
     msg = str(getattr(err, "message", "") or err)
-    return (
-        f"'{column_name}' column" in msg
-        and f"'{table_name}'" in msg
-        and "schema cache" in msg
-    )
+    if f"'{table_name}'" not in msg or "schema cache" not in msg:
+        return False
+    if column_name is None:
+        return "column" in msg
+    return f"'{column_name}' column" in msg
 
 
 def _write_config_row(doc_id: str, payload: dict, merge: bool):
@@ -711,7 +711,7 @@ def _write_config_row(doc_id: str, payload: dict, merge: bool):
             return db_update("config", "key", doc_id, flat_payload)
         return db_insert("config", flat_payload)
     except APIError as flat_err:
-        if not _is_missing_column_error(flat_err, "config", "rates"):
+        if not _is_missing_column_error(flat_err, "config"):
             raise
 
     # 2) Fallback to nested value schema.
@@ -723,9 +723,15 @@ def _write_config_row(doc_id: str, payload: dict, merge: bool):
         nested_value = merged_value
 
     nested_payload = {"key": doc_id, "value": nested_value}
-    if row:
-        return db_update("config", "key", doc_id, nested_payload)
-    return db_insert("config", nested_payload)
+    try:
+        if row:
+            return db_update("config", "key", doc_id, nested_payload)
+        return db_insert("config", nested_payload)
+    except APIError as nested_err:
+        # Preserve the original flat-schema error when both styles fail.
+        if _is_missing_column_error(nested_err, "config"):
+            raise flat_err
+        raise
 
 
 class _DocRef:
@@ -746,7 +752,7 @@ class _DocRef:
                 return db_update(self.table_name, pk_col, self.doc_id, payload)
             return db_insert(self.table_name, payload)
         except APIError as e:
-            if self.table_name == "config" and _is_missing_column_error(e, "config", "rates"):
+            if self.table_name == "config" and _is_missing_column_error(e, "config"):
                 payload.pop("key", None)
                 return _write_config_row(self.doc_id, payload, merge=merge)
             raise
@@ -757,7 +763,7 @@ class _DocRef:
         try:
             return db_update(self.table_name, pk_col, self.doc_id, payload)
         except APIError as e:
-            if self.table_name == "config" and _is_missing_column_error(e, "config", "rates"):
+            if self.table_name == "config" and _is_missing_column_error(e, "config"):
                 return _write_config_row(self.doc_id, payload, merge=True)
             raise        
     def delete(self):
