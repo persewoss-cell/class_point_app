@@ -3030,14 +3030,10 @@ def api_get_treasury_state_cached():
 
 def _compute_treasury_balance_from_ledger() -> int:
     """treasury 테이블을 사용할 수 없을 때 ledger 합산으로 잔액 계산."""
-    rows = (
-        db.table("treasury_ledger")
-        .select("amount,income,expense")
-        .order("created_at", desc=False)
-        .execute()
-        .data
-        or []
-    )
+    rows = [
+        (doc.to_dict() if hasattr(doc, "to_dict") else dict(doc or {}))
+        for doc in db.table("treasury_ledger").order_by("created_at", direction="asc").stream()
+    ]
 
     total = 0
     for r in rows:
