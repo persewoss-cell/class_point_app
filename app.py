@@ -657,15 +657,14 @@ class FieldFilter:
 
 
 def _doc_pk_column(table_name):
-    return "key" if table_name == "config" else "id"
+    return "id"
 
 
 class _Doc:
     def __init__(self, table_name, row):
         self._table = table_name
         self._row = row or {}
-        pk_col = _doc_pk_column(table_name)
-        self.id = str((row or {}).get(pk_col, ""))
+        self.id = str((row or {}).get("id", ""))
         
     @property
     def exists(self):
@@ -673,67 +672,10 @@ class _Doc:
 
     def to_dict(self):
         row = dict(self._row or {})
-        if self._table == "config":
-            payload = row.get("value")
-            if isinstance(payload, dict):
-                merged = dict(payload)
-                merged.setdefault("key", row.get("key", self.id))
-                return merged
-        return row
-
-
-def _is_missing_column_error(err: Exception, table_name: str, column_name: str | None = None) -> bool:
-    if not isinstance(err, APIError):
-        return False
-    msg = str(getattr(err, "message", "") or err)
-    if f"'{table_name}'" not in msg or "schema cache" not in msg:
-        return False
-    if column_name is None:
-        return "column" in msg
-    return f"'{column_name}' column" in msg
-
-
-def _write_config_row(doc_id: str, payload: dict, merge: bool):
-    """Persist config rows for both supported schemas.
-
-    - Flat schema: columns like key/weeks/rates/...
-    - Nested schema: columns key/value(JSONB)
-    """
-    row = db_select_one("config", "key", doc_id) or {}
-
-    # 1) Try flat column schema first.
-    flat_payload = dict(payload)
-    flat_payload["key"] = doc_id
-    flat_schema_err = None
-    try:
-        if merge and row:
-            return db_update("config", "key", doc_id, flat_payload)
-        if row:
-            return db_update("config", "key", doc_id, flat_payload)
-        return db_insert("config", flat_payload)
-    except APIError as flat_err:
-        if not _is_missing_column_error(flat_err, "config"):
-            raise
-        flat_schema_err = flat_err
-
-    # 2) Fallback to nested value schema.
-    nested_value = dict(payload)
-    nested_value.pop("key", None)
-    if merge and isinstance(row.get("value"), dict):
-        merged_value = dict(row.get("value") or {})
-        merged_value.update(nested_value)
-        nested_value = merged_value
-
-    nested_payload = {"key": doc_id, "value": nested_value}
-    try:
-        if row:
-            return db_update("config", "key", doc_id, nested_payload)
-        return db_insert("config", nested_payload)
-    except APIError as nested_err:
-        # Preserve the original flat-schema error when both styles fail.
-        if _is_missing_column_error(nested_err, "config"):
-            raise (flat_schema_err or nested_err)
-        raise
+        payload = row.get("data")
+        if isinstance(payload, dict):
+            return payload
+        return {}
 
 
 class _DocRef:
@@ -742,35 +684,26 @@ class _DocRef:
         self.doc_id = doc_id
 
     def get(self, *args, **kwargs):
-        pk_col = _doc_pk_column(self.table_name)
-        return _Doc(self.table_name, db_select_one(self.table_name, pk_col, self.doc_id))
+        return _Doc(self.table_name, db_select_one(self.table_name, "id", self.doc_id))
 
     def set(self, data, merge=False):
-        pk_col = _doc_pk_column(self.table_name)
         payload = dict(data or {})
-        payload.setdefault(pk_col, self.doc_id)
-        try:
-            if merge and db_select_one(self.table_name, pk_col, self.doc_id):
-                return db_update(self.table_name, pk_col, self.doc_id, payload)
-            return db_insert(self.table_name, payload)
-        except APIError as e:
-            if self.table_name == "config" and _is_missing_column_error(e, "config"):
-                payload.pop("key", None)
-                return _write_config_row(self.doc_id, payload, merge=merge)
-            raise
+        if merge:
+            existing = db_select_one(self.table_name, "id", self.doc_id)
+            existing_payload = dict((existing or {}).get("data") or {})
+            existing_payload.update(payload)
+            payload = existing_payload
+        return db_insert(self.table_name, self.doc_id, payload)
 
     def update(self, data):
-        pk_col = _doc_pk_column(self.table_name)
         payload = dict(data or {})
-        try:
-            return db_update(self.table_name, pk_col, self.doc_id, payload)
-        except APIError as e:
-            if self.table_name == "config" and _is_missing_column_error(e, "config"):
-                return _write_config_row(self.doc_id, payload, merge=True)
-            raise        
+        existing = db_select_one(self.table_name, "id", self.doc_id)
+        merged = dict((existing or {}).get("data") or {})
+        merged.update(payload)
+        return db_update(self.table_name, self.doc_id, merged)
+        
     def delete(self):
-        pk_col = _doc_pk_column(self.table_name)
-        return db_delete(self.table_name, pk_col, self.doc_id)
+        return db_delete(self.table_name, self.doc_id)
 
 class _Query:
     DESCENDING = "desc"
@@ -799,14 +732,18 @@ class _Query:
 
     def stream(self):
         rows = db_select_all(self.table_name)
+        docs = []
+        for row in rows:
+            payload = dict(row.get("data") or {})
+            docs.append({"id": row.get("id"), "data": payload, **payload})        
         for f in self._filters:
             if f.op == "==":
-                rows = [r for r in rows if r.get(f.field) == f.value]
+                docs = [r for r in docs if r.get(f.field) == f.value]
         if self._order:
             field, direction = self._order
-            rows = sorted(rows, key=lambda r: r.get(field), reverse=(direction == self.DESCENDING))
+            docs = sorted(docs, key=lambda r: r.get(field), reverse=(direction == self.DESCENDING))
         if self._limit is not None:
-            rows = rows[: self._limit]
+            docs = docs[: self._limit]
         return [_Doc(self.table_name, r) for r in rows]
 
 
@@ -830,7 +767,7 @@ firestore = _Compat()
 try:
     db = _DB()
 except StreamlitSecretNotFoundError:
-    st.error("Supabase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 SUPABASE_URL, SUPABASE_KEY를 추가해 주세요.")
+    st.error("Supabase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY를 추가해 주세요.")
     st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Supabase 연결 초기화 실패입니다.")
     st.stop()
 except Exception as e:
@@ -3134,9 +3071,9 @@ def _set_treasury_balance(new_balance: int):
         if row and row.get("_virtual"):
             return
         if row and row.get("id"):
-            db_update("treasury", "id", row.get("id"), payload)
+            db_update("treasury", row.get("id"), payload)
         else:
-            db_insert("treasury", payload)
+            db_insert("treasury", "treasury_state", payload)
     except APIError as e:
         msg = str(getattr(e, "message", "") or e)
         if "balance" in msg and "treasury" in msg:
