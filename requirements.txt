@@ -1,6 +1,7 @@
 streamlit
 pandas
 pymongo
+dnspython
 pymupdf
 openpyxl
 streamlit-aggrid
