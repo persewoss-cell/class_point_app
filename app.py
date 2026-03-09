@@ -655,12 +655,17 @@ class FieldFilter:
         self.value = value
 
 
+def _doc_pk_column(table_name):
+    return "key" if table_name == "config" else "id"
+
+
 class _Doc:
     def __init__(self, table_name, row):
         self._table = table_name
         self._row = row or {}
-        self.id = str((row or {}).get("id", ""))
-
+        pk_col = _doc_pk_column(table_name)
+        self.id = str((row or {}).get(pk_col, ""))
+        
     @property
     def exists(self):
         return bool(self._row)
@@ -675,21 +680,24 @@ class _DocRef:
         self.doc_id = doc_id
 
     def get(self):
-        return _Doc(self.table_name, db_select_one(self.table_name, "id", self.doc_id))
+        pk_col = _doc_pk_column(self.table_name)
+        return _Doc(self.table_name, db_select_one(self.table_name, pk_col, self.doc_id))
 
     def set(self, data, merge=False):
+        pk_col = _doc_pk_column(self.table_name)
         payload = dict(data or {})
-        payload.setdefault("id", self.doc_id)
-        if merge and db_select_one(self.table_name, "id", self.doc_id):
-            return db_update(self.table_name, "id", self.doc_id, payload)
+        payload.setdefault(pk_col, self.doc_id)
+        if merge and db_select_one(self.table_name, pk_col, self.doc_id):
+            return db_update(self.table_name, pk_col, self.doc_id, payload)
         return db_insert(self.table_name, payload)
 
     def update(self, data):
-        return db_update(self.table_name, "id", self.doc_id, dict(data or {}))
-
+        pk_col = _doc_pk_column(self.table_name)
+        return db_update(self.table_name, pk_col, self.doc_id, dict(data or {}))
+        
     def delete(self):
-        return db_delete(self.table_name, "id", self.doc_id)
-
+        pk_col = _doc_pk_column(self.table_name)
+        return db_delete(self.table_name, pk_col, self.doc_id)
 
 class _Query:
     DESCENDING = "desc"
