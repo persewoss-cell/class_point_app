@@ -1606,7 +1606,6 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
         student_ref = db.table("students").document(student_id)
         tx_ref = db.table("transactions").document()
 
-        @firestore.transactional
         def _do(transaction):
             snap = student_ref.get(transaction=transaction)
             bal = int((snap.to_dict() or {}).get("balance", 0))
@@ -1649,7 +1648,6 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
         student_ref = dbtable("students").document(student_id)
         tx_ref = dbtable("transactions").document()
 
-        @firestore.transactional
         def _do(transaction):
             snap = student_ref.get(transaction=transaction)
             bal = int((snap.to_dict() or {}).get("balance", 0))
@@ -2094,7 +2092,6 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    @firestore.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
@@ -2160,7 +2157,6 @@ def api_admin_add_tx_by_student_id(
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    @firestore.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         if not snap.exists:
@@ -2241,7 +2237,6 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
         student_ref = db.table("students").document(student_id)
         tx_ref = db.table("transactions").document()
 
-        @firestore.transactional
         def _do(transaction):
             snap = student_ref.get(transaction=transaction)
             if not snap.exists:
@@ -2442,7 +2437,6 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
 
     req_ref = db.table(DEP_REQ_COL).document(request_id)
 
-    @firestore.transactional
     def _do(transaction):
         req_snap = req_ref.get(transaction=transaction)
         if not req_snap.exists:
@@ -2544,7 +2538,6 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
 
     req_ref = db.table(DEP_REQ_COL).document(request_id)
 
-    @firestore.transactional
     def _do(transaction):
         req_snap = req_ref.get(transaction=transaction)
         if not req_snap.exists:
@@ -2726,7 +2719,6 @@ def api_admin_rollback_selected(admin_pin: str, student_id: str, tx_ids: list[st
         orig_tre_signed = int(tx.get("treasury_signed", 0) or 0)
         orig_tre_memo = str(tx.get("treasury_memo", "") or "").strip() or _orig_memo
 
-        @firestore.transactional
         def _do_one(transaction):
             st_snap = student_ref.get(transaction=transaction)
             bal = int((st_snap.to_dict() or {}).get("balance", 0))
@@ -2862,7 +2854,6 @@ def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: i
     interest = round(principal * rate)
     maturity_date = datetime.now(timezone.utc) + timedelta(days=weeks * 7)
 
-    @firestore.transactional
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
@@ -2920,7 +2911,6 @@ def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
     student_ref = db.table("students").document(student_doc.id)
     savings_ref = db.table(SAV_COL if "SAV_COL" in globals() else "savings").document(savings_id)
 
-    @firestore.transactional
     def _do(transaction):
         s_snap = savings_ref.get(transaction=transaction)
         if not s_snap.exists:
@@ -3001,7 +2991,6 @@ def api_process_maturities(login_name: str, login_pin: str):
         savings_ref = db.table(SAV_COL if "SAV_COL" in globals() else "savings").document(sid)
         tx_ref = db.table("transactions").document()
 
-        @firestore.transactional
         def _do_one(transaction):
             st_snap = student_ref.get(transaction=transaction)
             bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
@@ -3119,7 +3108,7 @@ def api_add_treasury_tx(
     amount = income if income > 0 else -expense
     tx_type = "income" if income > 0 else "expense"
 
-    @firestore.transactional
+    
     def _do(transaction):
         st_row = _get_treasury_state_row() or {}
         cur_bal = 0
@@ -3234,7 +3223,7 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
     if bool(apply_treasury):
         tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
-    @firestore.transactional
+    
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
@@ -3319,7 +3308,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
     if bool(apply_treasury):
         tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
-    @firestore.transactional
+    
     def _do(transaction):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
@@ -3385,7 +3374,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
         income = 0
         expense = int(-signed_amount)
 
-    @firestore.transactional
+    
     def _do(transaction):
         st_row = _get_treasury_state_row() or {}
         cur_bal = 0
@@ -3968,7 +3957,7 @@ def api_open_auction(admin_pin: str, bid_name: str, affiliation: str):
     state_ref = db.table("config").document(AUC_STATE_DOC)
     round_ref = db.table("auction_rounds").document()
 
-    @firestore.transactional
+    
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_data = st_snap.to_dict() if st_snap.exists else {}
@@ -4046,7 +4035,7 @@ def api_submit_auction_bid(name: str, pin: str, amount: int):
 
     memo = f"[경매 {int(round_row.get('round_no', 0) or 0):02d}회] {str(round_row.get('bid_name', '') or '')} 입찰 제출"
 
-    @firestore.transactional
+    
     def _do(tx):
         b_snap = bid_ref.get(transaction=tx)
         if b_snap.exists:
@@ -4428,7 +4417,7 @@ def api_open_lottery(admin_pin: str, cfg: dict):
     state_ref = db.table("config").document(LOT_STATE_DOC)
     round_ref = db.table("lottery_rounds").document()
 
-    @firestore.transactional
+    
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_row = st_snap.to_dict() if st_snap.exists else {}
@@ -4491,7 +4480,7 @@ def api_close_lottery(admin_pin: str):
 
     state_ref = db.table("config").document(LOT_STATE_DOC)
 
-    @firestore.transactional
+    
     def _do(tx):
         st_snap = state_ref.get(transaction=tx)
         st_row = st_snap.to_dict() if st_snap.exists else {}
@@ -4646,7 +4635,7 @@ def api_submit_lottery_entry(name: str, pin: str, numbers: list[int]):
     entry_ref = db.table("lottery_entries").document()
     tx_ref = db.table("transactions").document()
 
-    @firestore.transactional
+    
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
@@ -4733,7 +4722,7 @@ def api_submit_lottery_entries(name: str, pin: str, games: list[list[int]]):
     round_ref = db.table("lottery_rounds").document(rid)
     tx_ref = db.table("transactions").document()
 
-    @firestore.transactional
+    
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
@@ -4825,7 +4814,7 @@ def api_submit_admin_lottery_entries(admin_pin: str, game_count: int, apply_trea
 
     round_ref = db.table("lottery_rounds").document(rid)
 
-    @firestore.transactional
+    
     def _do(tx):
         r_snap = round_ref.get(transaction=tx)
         if not r_snap.exists:
