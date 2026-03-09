@@ -1,8 +1,6 @@
 streamlit
 pandas
-firebase-admin
-google-cloud-firestore
+pymongo
 pymupdf
 openpyxl
 streamlit-aggrid
-pip install pymongo
