@@ -704,6 +704,7 @@ def _write_config_row(doc_id: str, payload: dict, merge: bool):
     # 1) Try flat column schema first.
     flat_payload = dict(payload)
     flat_payload["key"] = doc_id
+    flat_schema_err = None
     try:
         if merge and row:
             return db_update("config", "key", doc_id, flat_payload)
@@ -713,6 +714,7 @@ def _write_config_row(doc_id: str, payload: dict, merge: bool):
     except APIError as flat_err:
         if not _is_missing_column_error(flat_err, "config"):
             raise
+        flat_schema_err = flat_err
 
     # 2) Fallback to nested value schema.
     nested_value = dict(payload)
@@ -730,7 +732,7 @@ def _write_config_row(doc_id: str, payload: dict, merge: bool):
     except APIError as nested_err:
         # Preserve the original flat-schema error when both styles fail.
         if _is_missing_column_error(nested_err, "config"):
-            raise flat_err
+            raise (flat_schema_err or nested_err)
         raise
 
 
