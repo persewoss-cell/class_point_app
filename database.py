@@ -147,27 +147,27 @@ class QueryRef:
         return out
         
     def stream(self) -> Iterable[_DocStreamItem]:
-        qb = _supabase().table(self.table_name).select("*")
-        for f in self._filters:
-            if f.op == "==":
-                qb = qb.eq(f.field, f.value)
-            elif f.op == ">=":
-                qb = qb.gte(f.field, f.value)
-            elif f.op == "<=":
-                qb = qb.lte(f.field, f.value)
-            elif f.op == ">":
-                qb = qb.gt(f.field, f.value)
-            elif f.op == "<":
-                qb = qb.lt(f.field, f.value)
-            elif f.op == "in":
-                qb = qb.in_(f.field, f.value)
-        if self._order_by:
-            field, direction = self._order_by
-            qb = qb.order(field, desc=(direction == Query.DESCENDING))
-        if self._limit is not None:
-            qb = qb.limit(self._limit)
-            
         try:
+            qb = _supabase().table(self.table_name).select("*")
+            for f in self._filters:
+                if f.op == "==":
+                    qb = qb.eq(f.field, f.value)
+                elif f.op == ">=":
+                    qb = qb.gte(f.field, f.value)
+                elif f.op == "<=":
+                    qb = qb.lte(f.field, f.value)
+                elif f.op == ">":
+                    qb = qb.gt(f.field, f.value)
+                elif f.op == "<":
+                    qb = qb.lt(f.field, f.value)
+                elif f.op == "in":
+                    values = list(f.value or [])
+                    qb = qb.in_(f.field, values)
+            if self._order_by:
+                field, direction = self._order_by
+                qb = qb.order(field, desc=(direction == Query.DESCENDING))
+            if self._limit is not None:
+                qb = qb.limit(self._limit)
             rows = qb.execute().data or []
         except Exception:
             # Firestore에서는 스키마가 느슨하지만, Supabase/PostgREST는
