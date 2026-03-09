@@ -113,8 +113,11 @@ class QueryRef:
         self._limit = int(n)
         return self
 
-    def _apply_filters_python(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        out = rows
+    def _apply_filters_python(self, rows: list[dict[str, Any]] | Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+        try:
+            out = list(rows)
+        except Exception:
+            return []
         for f in self._filters:
             if f.op == "==":
                 out = [r for r in out if r.get(f.field) == f.value]
@@ -132,7 +135,10 @@ class QueryRef:
         return out
 
     def _apply_order_limit_python(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        out = list(rows)
+        try:
+            out = list(rows)
+        except Exception:
+            return []
         if self._order_by:
             field, direction = self._order_by
             out.sort(key=lambda r: (r.get(field) is None, r.get(field)), reverse=(direction == Query.DESCENDING))
@@ -163,14 +169,14 @@ class QueryRef:
             
         try:
             rows = qb.execute().data or []
-        except APIError:
+        except Exception:
             # Firestore에서는 스키마가 느슨하지만, Supabase/PostgREST는
             # 존재하지 않는 컬럼 필터/정렬에서 즉시 오류를 발생시킨다.
             # 이 경우 전체 조회 후 Python에서 동일 조건을 적용해 호환성을 유지한다.
             try:
                 raw_rows = _supabase().table(self.table_name).select("*").execute().data or []
                 rows = self._apply_order_limit_python(self._apply_filters_python(raw_rows))
-            except APIError:
+            except Exception:
                 # RLS/권한 이슈 등으로 전체 조회조차 실패할 수 있다.
                 # 앱 전체 크래시를 막기 위해 빈 결과를 반환한다.
                 rows = []
@@ -236,8 +242,10 @@ def _supabase():
 # helpers requested
 
 def get_students():
-    return _supabase().table("students").select("*").execute().data or []
-
+    try:
+        return _supabase().table("students").select("*").execute().data or []
+    except Exception:
+        return []
 
 def insert_student(data: dict[str, Any]):
     return _supabase().table("students").insert(data).execute()
