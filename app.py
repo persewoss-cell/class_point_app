@@ -672,7 +672,25 @@ class _Doc:
         return bool(self._row)
 
     def to_dict(self):
-        return dict(self._row or {})
+        row = dict(self._row or {})
+        if self._table == "config":
+            payload = row.get("value")
+            if isinstance(payload, dict):
+                merged = dict(payload)
+                merged.setdefault("key", row.get("key", self.id))
+                return merged
+        return row
+
+
+def _is_missing_column_error(err: Exception, table_name: str, column_name: str) -> bool:
+    if not isinstance(err, APIError):
+        return False
+    msg = str(getattr(err, "message", "") or err)
+    return (
+        f"'{column_name}' column" in msg
+        and f"'{table_name}'" in msg
+        and "schema cache" in msg
+    )
 
 
 class _DocRef:
@@ -688,14 +706,43 @@ class _DocRef:
         pk_col = _doc_pk_column(self.table_name)
         payload = dict(data or {})
         payload.setdefault(pk_col, self.doc_id)
-        if merge and db_select_one(self.table_name, pk_col, self.doc_id):
-            return db_update(self.table_name, pk_col, self.doc_id, payload)
-        return db_insert(self.table_name, payload)
+        try:
+            if merge and db_select_one(self.table_name, pk_col, self.doc_id):
+                return db_update(self.table_name, pk_col, self.doc_id, payload)
+            return db_insert(self.table_name, payload)
+        except APIError as e:
+            if self.table_name == "config" and _is_missing_column_error(e, "config", "rates"):
+                fallback_value = dict(payload)
+                fallback_value.pop("key", None)
+                row = db_select_one("config", "key", self.doc_id) or {}
+                if merge and isinstance(row.get("value"), dict):
+                    merged_value = dict(row.get("value") or {})
+                    merged_value.update(fallback_value)
+                    fallback_value = merged_value
+
+                fallback_payload = {"key": self.doc_id, "value": fallback_value}
+                if row:
+                    return db_update("config", "key", self.doc_id, fallback_payload)
+                return db_insert("config", fallback_payload)
+            raise
 
     def update(self, data):
         pk_col = _doc_pk_column(self.table_name)
-        return db_update(self.table_name, pk_col, self.doc_id, dict(data or {}))
-        
+        payload = dict(data or {})
+        try:
+            return db_update(self.table_name, pk_col, self.doc_id, payload)
+        except APIError as e:
+            if self.table_name == "config" and _is_missing_column_error(e, "config", "rates"):
+                row = db_select_one("config", "key", self.doc_id) or {}
+                merged_value = {}
+                if isinstance(row.get("value"), dict):
+                    merged_value.update(row.get("value") or {})
+                merged_value.update(payload)
+                fallback_payload = {"key": self.doc_id, "value": merged_value}
+                if row:
+                    return db_update("config", "key", self.doc_id, fallback_payload)
+                return db_insert("config", fallback_payload)
+            raise        
     def delete(self):
         pk_col = _doc_pk_column(self.table_name)
         return db_delete(self.table_name, pk_col, self.doc_id)
