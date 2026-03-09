@@ -1,11 +1,5 @@
 import streamlit as st
-from supabase import create_client
 import os
-
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 import streamlit.components.v1 as components
 from streamlit.errors import StreamlitSecretNotFoundError
@@ -16,7 +10,7 @@ import random
 
 from datetime import datetime, timezone, timedelta, date
 
-from database import get_db, firestore, FieldFilter, FailedPrecondition
+from database import *
 
 # (학급 확장용) PDF 텍스트 파싱(간단)
 import re
@@ -648,23 +642,112 @@ div[data-testid="stDataEditor"] div[role="gridcell"]:nth-child(2) {
 st.markdown(f'<div class="app-title"> {APP_TITLE}</div>', unsafe_allow_html=True)
 
 # =========================
-# Supabase DB init (Firestore-compatible wrapper)
+# Supabase DB init
 # =========================
-@st.cache_resource
-def init_firestore():
-    return get_db()
+class FailedPrecondition(Exception):
+    pass
+
+
+class FieldFilter:
+    def __init__(self, field, op, value):
+        self.field = field
+        self.op = op
+        self.value = value
+
+
+class _Doc:
+    def __init__(self, table_name, row):
+        self._table = table_name
+        self._row = row or {}
+        self.id = str((row or {}).get("id", ""))
+
+    @property
+    def exists(self):
+        return bool(self._row)
+
+    def to_dict(self):
+        return dict(self._row or {})
+
+
+class _DocRef:
+    def __init__(self, table_name, doc_id):
+        self.table_name = table_name
+        self.doc_id = doc_id
+
+    def get(self):
+        return _Doc(self.table_name, db_select_one(self.table_name, "id", self.doc_id))
+
+    def set(self, data, merge=False):
+        payload = dict(data or {})
+        payload.setdefault("id", self.doc_id)
+        if merge and db_select_one(self.table_name, "id", self.doc_id):
+            return db_update(self.table_name, "id", self.doc_id, payload)
+        return db_insert(self.table_name, payload)
+
+    def update(self, data):
+        return db_update(self.table_name, "id", self.doc_id, dict(data or {}))
+
+    def delete(self):
+        return db_delete(self.table_name, "id", self.doc_id)
+
+
+class _Query:
+    DESCENDING = "desc"
+
+    def __init__(self, table_name):
+        self.table_name = table_name
+        self._filters = []
+        self._order = None
+        self._limit = None
+
+    def document(self, doc_id=None):
+        return _DocRef(self.table_name, doc_id)
+
+    def where(self, filter=None):
+        if filter is not None:
+            self._filters.append(filter)
+        return self
+
+    def order_by(self, field, direction="asc"):
+        self._order = (field, direction)
+        return self
+
+    def limit(self, n):
+        self._limit = int(n)
+        return self
+
+    def stream(self):
+        rows = db_select_all(self.table_name)
+        for f in self._filters:
+            if f.op == "==":
+                rows = [r for r in rows if r.get(f.field) == f.value]
+        if self._order:
+            field, direction = self._order
+            rows = sorted(rows, key=lambda r: r.get(field), reverse=(direction == self.DESCENDING))
+        if self._limit is not None:
+            rows = rows[: self._limit]
+        return [_Doc(self.table_name, r) for r in rows]
+
+
+class _DB:
+    def table(self, name):
+        return _Query(name)
 
 
 def dbtable(name: str):
-    """Firestore `collection` 대체 헬퍼.
+    return db.table(name)    
 
-    기존 코드의 `dbtable("...")` 호출을 유지하면서,
-    내부적으로 Supabase 테이블 핸들을 반환한다.
-    """
-    return db.table(name)
-    
+
+class _Compat:
+    SERVER_TIMESTAMP = datetime.now(timezone.utc).isoformat()
+    Query = _Query
+
+
+firestore = _Compat()
+
+
 try:
-    db = init_firestore()
+    db = _DB()
 except StreamlitSecretNotFoundError:
     st.error("Supabase 설정(secrets.toml)이 없어 앱을 시작할 수 없습니다. `.streamlit/secrets.toml`에 SUPABASE_URL, SUPABASE_KEY를 추가해 주세요.")
     st.info("현재 화면이 비어 보이거나 로딩처럼 보이는 원인은 Supabase 연결 초기화 실패입니다.")
