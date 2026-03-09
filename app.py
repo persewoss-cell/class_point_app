@@ -1606,7 +1606,7 @@ def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
         student_ref = db.table("students").document(student_id)
         tx_ref = db.table("transactions").document()
 
-        def _do(transaction):
+        def _do(transaction=None):
             snap = student_ref.get(transaction=transaction)
             bal = int((snap.to_dict() or {}).get("balance", 0))
             new_bal = bal + amount
@@ -1648,7 +1648,7 @@ def api_admin_bulk_withdraw(admin_pin: str, amount: int, memo: str):
         student_ref = dbtable("students").document(student_id)
         tx_ref = dbtable("transactions").document()
 
-        def _do(transaction):
+        def _do(transaction=None):
             snap = student_ref.get(transaction=transaction)
             bal = int((snap.to_dict() or {}).get("balance", 0))
             new_bal = bal - amount
@@ -2092,7 +2092,7 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    def _do(transaction):
+    def _do(transaction=None):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
 
@@ -2157,7 +2157,7 @@ def api_admin_add_tx_by_student_id(
     amount = deposit if deposit > 0 else -withdraw
     tx_type = "deposit" if deposit > 0 else "withdraw"
 
-    def _do(transaction):
+    def _do(transaction=None):
         snap = student_ref.get(transaction=transaction)
         if not snap.exists:
             raise ValueError("계정을 찾지 못했습니다.")
@@ -2237,7 +2237,7 @@ def api_broker_deposit_by_student_id(actor_student_id: str, student_id: str, mem
         student_ref = db.table("students").document(student_id)
         tx_ref = db.table("transactions").document()
 
-        def _do(transaction):
+        def _do(transaction=None):
             snap = student_ref.get(transaction=transaction)
             if not snap.exists:
                 raise ValueError("대상 학생을 찾지 못했어요.")
@@ -2437,7 +2437,7 @@ def api_admin_approve_deposit_request(admin_pin: str, request_id: str):
 
     req_ref = db.table(DEP_REQ_COL).document(request_id)
 
-    def _do(transaction):
+    def _do(transaction=None):
         req_snap = req_ref.get(transaction=transaction)
         if not req_snap.exists:
             raise ValueError("신청서를 찾지 못했습니다.")
@@ -2538,7 +2538,7 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
 
     req_ref = db.table(DEP_REQ_COL).document(request_id)
 
-    def _do(transaction):
+    def _do(transaction=None):
         req_snap = req_ref.get(transaction=transaction)
         if not req_snap.exists:
             raise ValueError("신청서를 찾지 못했습니다.")
@@ -2854,7 +2854,7 @@ def api_savings_create(login_name: str, login_pin: str, principal: int, weeks: i
     interest = round(principal * rate)
     maturity_date = datetime.now(timezone.utc) + timedelta(days=weeks * 7)
 
-    def _do(transaction):
+    def _do(transaction=None):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
         if principal > bal:
@@ -2911,7 +2911,7 @@ def api_savings_cancel(login_name: str, login_pin: str, savings_id: str):
     student_ref = db.table("students").document(student_doc.id)
     savings_ref = db.table(SAV_COL if "SAV_COL" in globals() else "savings").document(savings_id)
 
-    def _do(transaction):
+    def _do(transaction=None):
         s_snap = savings_ref.get(transaction=transaction)
         if not s_snap.exists:
             raise ValueError("해당 적금을 찾지 못했습니다.")
@@ -3109,7 +3109,7 @@ def api_add_treasury_tx(
     tx_type = "income" if income > 0 else "expense"
 
     
-    def _do(transaction):
+    def _do(transaction=None):
         st_row = _get_treasury_state_row() or {}
         cur_bal = 0
         if st_row:
@@ -3224,7 +3224,7 @@ def api_add_tx_with_treasury(name, pin, memo, deposit, withdraw, apply_treasury:
         tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
     
-    def _do(transaction):
+    def _do(transaction=None):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
 
@@ -3309,7 +3309,7 @@ def api_admin_add_tx_by_student_id_with_treasury(
         tre_signed = int(withdraw) if tx_type == "withdraw" else -int(deposit)
 
     
-    def _do(transaction):
+    def _do(transaction=None):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
 
@@ -3375,7 +3375,7 @@ def api_treasury_auto_bulk_adjust(memo: str, signed_amount: int, actor: str = "a
         expense = int(-signed_amount)
 
     
-    def _do(transaction):
+    def _do(transaction=None):
         st_row = _get_treasury_state_row() or {}
         cur_bal = 0
         if st_row:
