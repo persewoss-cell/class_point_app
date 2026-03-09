@@ -10077,15 +10077,22 @@ if "🔎 개별조회" in tabs:
         # =========================
         # ✅ students에서 번호(no) 포함해서 다시 로드(번호순 정렬)
         # =========================
-        docs = (
-            db.table("students")
-            .where(filter=FieldFilter("is_active", "==", True))
-            .stream()
-        )
+        try:
+            docs = (
+                db.table("students")
+                .where(filter=FieldFilter("is_active", "==", True))
+                .stream()
+            )
+        except Exception:
+            # 일부 배포 환경에서는 students 테이블에 is_active 컬럼이 없어
+            # PostgREST 질의가 실패할 수 있으므로 전체 조회로 안전하게 폴백.
+            docs = db.table("students").stream()
 
         acc_rows = []
         for d in docs:
             x = d.to_dict() or {}
+            if x.get("is_active") is False:
+                continue
             nm = str(x.get("name", "") or "").strip()
             if not nm:
                 continue
