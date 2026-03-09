@@ -7,6 +7,7 @@ import pandas as pd
 import altair as alt
 from io import BytesIO
 import random
+from postgrest.exceptions import APIError
 
 from datetime import datetime, timezone, timedelta, date
 
@@ -3022,24 +3023,57 @@ TREASURY_UNIT = "드림"   # ✅ 표시 단위만 드림(시스템 숫자는 그
 def api_get_treasury_state_cached():
     row = _get_treasury_state_row()
     if not row:
-        db_insert("treasury", {"balance": 0, "updated_at": firestore.SERVER_TIMESTAMP})
-        return {"ok": True, "balance": 0}
+        return {"ok": True, "balance": int(_compute_treasury_balance_from_ledger())}
     d = row or {}
     return {"ok": True, "balance": int(d.get("balance", 0) or 0)}
 
 
+def _compute_treasury_balance_from_ledger() -> int:
+    """treasury 테이블을 사용할 수 없을 때 ledger 합산으로 잔액 계산."""
+    rows = (
+        db.table("treasury_ledger")
+        .select("amount,income,expense")
+        .order("created_at", desc=False)
+        .execute()
+        .data
+        or []
+    )
+
+    total = 0
+    for r in rows:
+        if r.get("amount") is not None:
+            total += int(r.get("amount") or 0)
+        else:
+            total += int(r.get("income", 0) or 0) - int(r.get("expense", 0) or 0)
+    return int(total)
+
+
 def _get_treasury_state_row():
-    rows = db_select_all("treasury") or []
-    return (rows[0] if rows else None)
+    try:
+        rows = db_select_all("treasury") or []
+        return (rows[0] if rows else None)
+    except APIError as e:
+        msg = str(getattr(e, "message", "") or e)
+        if "balance" in msg and "treasury" in msg:
+            return {"balance": int(_compute_treasury_balance_from_ledger()), "_virtual": True}
+        raise
 
 
 def _set_treasury_balance(new_balance: int):
     payload = {"balance": int(new_balance), "updated_at": firestore.SERVER_TIMESTAMP}
-    row = _get_treasury_state_row()
-    if row and row.get("id"):
-        db_update("treasury", "id", row.get("id"), payload)
-    else:
-        db_insert("treasury", payload)
+    try:
+        row = _get_treasury_state_row()
+        if row and row.get("_virtual"):
+            return
+        if row and row.get("id"):
+            db_update("treasury", "id", row.get("id"), payload)
+        else:
+            db_insert("treasury", payload)
+    except APIError as e:
+        msg = str(getattr(e, "message", "") or e)
+        if "balance" in msg and "treasury" in msg:
+            return
+        raise
 
 def api_add_treasury_tx(
     admin_pin: str,
