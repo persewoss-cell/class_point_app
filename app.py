@@ -11328,7 +11328,6 @@ if "💼 직업/월급" in tabs:
                 admin_repay_pin = st.text_input(
                     "관리자 비밀번호(PIN)",
                     type="password",
-                    key="payroll_manual_repay_admin_pin",
                     help="이미 지급된 달에 재지급하려면 관리자 PIN 확인이 필요합니다.",
                 )                
                 y1, n1 = st.columns(2)
@@ -11339,13 +11338,11 @@ if "💼 직업/월급" in tabs:
                             st.stop()                        
                         st.session_state["payroll_manual_confirm"] = False
                         st.session_state["payroll_manual_do"] = True
-                        st.session_state["payroll_manual_repay_admin_pin"] = ""
                         st.rerun()
                 with n1:
                     if st.button("아니오", use_container_width=True, key="payroll_manual_no"):
                         st.session_state["payroll_manual_confirm"] = False
                         st.session_state["payroll_manual_do"] = False
-                        st.session_state["payroll_manual_repay_admin_pin"] = ""
                         toast("수동지급 취소", icon="🛑")
                         st.rerun()
 
