@@ -1470,6 +1470,18 @@ def _compose_template_label(base_label: str, category: str):
     return base_label
 
 
+def _template_category_for_excel(template_row: dict) -> str:
+    """현재 템플릿 엑셀 다운로드 시 구분 값을 안전하게 보정."""
+    allowed = {"없음", "보상", "구입", "벌금"}
+
+    raw_category = str((template_row.get("category") or "")).strip()
+    parsed_category, _ = _parse_template_label(str(template_row.get("label", "") or ""))
+    category = raw_category or str(parsed_category or "").strip()
+
+    if category in allowed:
+        return category
+    return "없음"
+
 def api_admin_bulk_deposit(admin_pin: str, amount: int, memo: str):
     """✅ 전체 일괄 지급"""
     if not is_admin_pin(admin_pin):
@@ -7048,7 +7060,7 @@ if "🏦 내 통장" in tabs:
                     [
                         {
                             "내역이름": str((t.get("base_label") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[1],
-                            "구분": str((t.get("category") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[0] or "없음",
+                            "구분": _template_category_for_excel(t),
                             "종류": "입금" if str(t.get("kind", "deposit")) == "deposit" else "출금",
                             "금액": int(t.get("amount", 0) or 0),
                             "순서": int(t.get("order", 999999) or 999999),
@@ -7824,7 +7836,7 @@ if "admin::🏦 내 통장" in tabs:
                     [
                         {
                             "내역이름": str((t.get("base_label") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[1],
-                            "구분": str((t.get("category") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[0] or "없음",
+                            "구분": _template_category_for_excel(t),
                             "종류": "입금" if str(t.get("kind", "deposit")) == "deposit" else "출금",
                             "금액": int(t.get("amount", 0) or 0),
                             "순서": int(t.get("order", 999999) or 999999),
