@@ -7047,9 +7047,9 @@ if "🏦 내 통장" in tabs:
                 current_tpl_df = pd.DataFrame(
                     [
                         {
-                            "내역이름": str((t.get("base_label") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[0],
-                            "구분": str((t.get("category") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[1] or "없음",
-                            "종류": "입금" if str(t.get("kind", "income")) == "income" else "출금",
+                            "내역이름": str((t.get("base_label") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[1],
+                            "구분": str((t.get("category") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[0] or "없음",
+                            "종류": "입금" if str(t.get("kind", "deposit")) == "deposit" else "출금",
                             "금액": int(t.get("amount", 0) or 0),
                             "순서": int(t.get("order", 999999) or 999999),
                         }
@@ -7823,9 +7823,9 @@ if "admin::🏦 내 통장" in tabs:
                 current_tpl_df = pd.DataFrame(
                     [
                         {
-                            "내역이름": str((t.get("base_label") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[0],
-                            "구분": str((t.get("category") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[1] or "없음",
-                            "종류": "입금" if str(t.get("kind", "income")) == "income" else "출금",
+                            "내역이름": str((t.get("base_label") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[1],
+                            "구분": str((t.get("category") or "")).strip() or _parse_template_label(str(t.get("label", "") or ""))[0] or "없음",
+                            "종류": "입금" if str(t.get("kind", "deposit")) == "deposit" else "출금",
                             "금액": int(t.get("amount", 0) or 0),
                             "순서": int(t.get("order", 999999) or 999999),
                         }
