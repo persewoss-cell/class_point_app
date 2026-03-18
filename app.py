@@ -6946,7 +6946,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
     rows.sort(key=lambda r: r.get("_sort_dt") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     rows = rows[: int(max_rows)]
     for r in rows:
-                r["분류"] = _category_to_korean(r.get("분류", ""))
+        r["분류"] = _category_to_korean(r.get("분류", ""))
         r.pop("_sort_dt", None)
     return rows
 
