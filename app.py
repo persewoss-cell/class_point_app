@@ -738,6 +738,13 @@ def format_kr_datetime(val) -> str:
     return f"{dt.year}년 {dt.month:02d}월 {dt.day:02d}일({dow}) {ampm} {hour12:02d}시 {dt.minute:02d}분"
 
 
+def format_kr_datetime_no_year(val) -> str:
+    formatted = format_kr_datetime(val)
+    if not formatted:
+        return ""
+    return re.sub(r"^\d{4}년\s*", "", formatted)
+
+
 def _to_utc_datetime(ts):
     if ts is None or ts == "":
         return None
@@ -6587,8 +6594,11 @@ def _category_to_korean(category: str) -> str:
         "withdraw": "출금",
         "maturity": "적금 만기",
         "revert": "되돌리기",
+        "rollback": "되돌리기",
         "payroll": "월급",
         "manual": "수동지급",
+        "income": "세입",
+        "expense": "세출",
         "auto": "자동처리",
         "stat_submission": "통계 제출",
         "schedule": "일정",
@@ -6629,7 +6639,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         dt_utc = _to_utc_datetime(x.get("created_at"))
         rows.append(
             {
-                "시간": format_kr_datetime(dt_utc.astimezone(KST)) if dt_utc else "",
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
                 "탭": "💰입금/출금",
                 "내역": str(x.get("memo", "") or ""),
                 "입금": int(amt if amt > 0 else 0),
@@ -6648,7 +6658,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         dt_utc = _to_utc_datetime(x.get("created_at"))
         rows.append(
             {
-                "시간": format_kr_datetime(dt_utc.astimezone(KST)) if dt_utc else "",
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
                 "탭": "🏛️ 국세청(국고)",
                 "내역": str(x.get("memo", "") or ""),
                 "입금": _to_int_safe(x.get("income", 0), 0),
@@ -6667,7 +6677,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         dt_utc = _to_utc_datetime(x.get("approved_at"))
         rows.append(
             {
-                "시간": format_kr_datetime(dt_utc.astimezone(KST)) if dt_utc else "",
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
                 "탭": "🛒마트",
                 "내역": f"마트 구매 승인: {str(x.get('item', '') or '')}",
                 "입금": 0,
@@ -6688,7 +6698,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         dt_utc = _to_utc_datetime(x.get("paid_at"))
         rows.append(
             {
-                "시간": format_kr_datetime(dt_utc.astimezone(KST)) if dt_utc else "",
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
                 "탭": "💼 직업/월급",
                 "내역": f"월급 지급 ({str(x.get('job', '') or '-')})",
                 "입금": _to_int_safe(x.get("amount", 0), 0),
@@ -6707,7 +6717,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         dt_utc = _to_utc_datetime(x.get("created_at"))
         rows.append(
             {
-                "시간": format_kr_datetime(dt_utc.astimezone(KST)) if dt_utc else "",
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
                 "탭": "📊 통계청",
                 "내역": f"제출물 생성/수정: {str(x.get('label', '') or '')}",
                 "입금": 0,
@@ -6726,7 +6736,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         dt_utc = _to_utc_datetime(x.get("created_at"))
         rows.append(
             {
-                "시간": format_kr_datetime(dt_utc.astimezone(KST)) if dt_utc else "",
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
                 "탭": "🏷️ 경매",
                 "내역": f"경매 { _to_int_safe(x.get('round_no', 0), 0) }회 장부 반영",
                 "입금": _to_int_safe(x.get("total_amount", 0), 0),
@@ -6744,7 +6754,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         dt_utc = _to_utc_datetime(x.get("created_at"))
         rows.append(
             {
-                "시간": format_kr_datetime(dt_utc.astimezone(KST)) if dt_utc else "",
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
                 "탭": "🍀 복권",
                 "내역": f"복권 { _to_int_safe(x.get('round_no', 0), 0) }회 장부 반영",
                 "입금": _to_int_safe(x.get("national_amount", 0), 0),
@@ -6762,7 +6772,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         dt_utc = _to_utc_datetime(x.get("created_at"))
         rows.append(
             {
-                "시간": format_kr_datetime(dt_utc.astimezone(KST)) if dt_utc else "",
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
                 "탭": "🗓️ 일정",
                 "내역": f"일정 등록/수정: {str(x.get('title', '') or '')}",
                 "입금": 0,
@@ -6788,7 +6798,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
 
         rows.append(
             {
-                "시간": format_kr_datetime(created_dt.astimezone(KST)) if created_dt else "",
+                "시간": format_kr_datetime_no_year(created_dt.astimezone(KST)) if created_dt else "",
                 "탭": "✅ 입금 승인",
                 "내역": f"입금 신청: {memo}",
                 "입금": int(amount),
@@ -6803,7 +6813,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         if processed_dt:
             rows.append(
                 {
-                    "시간": format_kr_datetime(processed_dt.astimezone(KST)) if processed_dt else "",
+                    "시간": format_kr_datetime_no_year(processed_dt.astimezone(KST)) if processed_dt else "",
                     "탭": "✅ 입금 승인",
                     "내역": f"입금 신청 처리({status}): {memo}",
                     "입금": int(amount if status == "approved" else 0),
@@ -6828,7 +6838,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         maturity_dt = _to_utc_datetime(x.get("maturity_date") or x.get("maturity_utc"))
         rows.append(
             {
-                "시간": format_kr_datetime(start_dt.astimezone(KST)) if start_dt else "",
+                "시간": format_kr_datetime_no_year(start_dt.astimezone(KST)) if start_dt else "",
                 "탭": "🏦 은행(적금)",
                 "내역": f"적금 가입({weeks}주)",
                 "입금": 0,
@@ -6843,7 +6853,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         if maturity_dt and status == "matured":
             rows.append(
                 {
-                    "시간": format_kr_datetime(maturity_dt.astimezone(KST)) if maturity_dt else "",
+                    "시간": format_kr_datetime_no_year(maturity_dt.astimezone(KST)) if maturity_dt else "",
                     "탭": "🏦 은행(적금)",
                     "내역": f"적금 만기 처리({weeks}주)",
                     "입금": int(principal + _to_int_safe(x.get('interest', 0), 0)),
@@ -6859,7 +6869,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
             cancel_dt = _to_utc_datetime(x.get("processed_at") or x.get("updated_at") or x.get("canceled_at"))
             rows.append(
                 {
-                    "시간": format_kr_datetime(cancel_dt.astimezone(KST)) if cancel_dt else "",
+                    "시간": format_kr_datetime_no_year(cancel_dt.astimezone(KST)) if cancel_dt else "",
                     "탭": "🏦 은행(적금)",
                     "내역": f"적금 중도해지({weeks}주)",
                     "입금": int(principal),
@@ -6890,7 +6900,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
             p_type = "tab_permission" if p.startswith("tab::") else ("admin_permission" if p.startswith("admin::") else "updated")
             rows.append(
                 {
-                    "시간": format_kr_datetime(upd_dt.astimezone(KST)) if upd_dt else "",
+                    "시간": format_kr_datetime_no_year(upd_dt.astimezone(KST)) if upd_dt else "",
                     "탭": "⭐ 권한부여",
                     "내역": f"권한 보유 상태: {p}",
                     "입금": 0,
@@ -6914,7 +6924,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
         price = _to_int_safe(x.get("price", 0), 0)
         rows.append(
             {
-                "시간": format_kr_datetime(created_dt.astimezone(KST)) if created_dt else "",
+                "시간": format_kr_datetime_no_year(created_dt.astimezone(KST)) if created_dt else "",
                 "탭": "🛒마트",
                 "내역": f"구매 요청: {item}",
                 "입금": 0,
@@ -6930,7 +6940,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
             rej_dt = _to_utc_datetime(x.get("rejected_at"))
             rows.append(
                 {
-                    "시간": format_kr_datetime(rej_dt.astimezone(KST)) if rej_dt else "",
+                    "시간": format_kr_datetime_no_year(rej_dt.astimezone(KST)) if rej_dt else "",
                     "탭": "🛒마트",
                     "내역": f"구매 요청 거절: {item}",
                     "입금": 0,
