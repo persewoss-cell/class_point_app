@@ -6619,6 +6619,13 @@ def _category_to_korean(category: str) -> str:
     }
     return mapping.get(key, str(category or ""))
 
+def _actor_to_korean(actor: str) -> str:
+    key = str(actor or "").strip().lower()
+    mapping = {
+        "system_salary": "시스템(월급)",
+    }
+    return mapping.get(key, str(actor or ""))
+
 def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
     student_map = {}
     for d in db.collection("students").stream():
@@ -6664,7 +6671,7 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
                 "입금": _to_int_safe(x.get("income", 0), 0),
                 "출금": _to_int_safe(x.get("expense", 0), 0),
                 "기록자": str(x.get("recorder", "") or "-"),
-                "대상": str(x.get("actor", "") or "국고"),
+                "대상": _actor_to_korean(str(x.get("actor", "") or "국고")),
                 "분류": str(x.get("type", "") or ""),
                 "변경후잔액": _to_int_safe(x.get("balance_after", 0), 0),
                 "_sort_dt": dt_utc or datetime.min.replace(tzinfo=timezone.utc),
@@ -15127,12 +15134,12 @@ if "🧾 로그기록" in tabs:
                         [
                             "번호",
                             "시간",
+                            "대상",
                             "탭",
                             "내역",
                             "입금",
                             "출금",
                             "기록자",
-                            "대상",
                             "분류",
                             "변경후잔액",
                         ]
