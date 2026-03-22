@@ -8527,6 +8527,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     # -------------------------
     # 주가 변동 내역 로드 (표용)
     # -------------------------
+    @st.cache_data(ttl=20, show_spinner=False)
     def _get_history(product_id: str, limit=120):
         pid = str(product_id)
         out = []
@@ -8579,6 +8580,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     # -------------------------
     # 종목 로드
     # -------------------------
+    @st.cache_data(ttl=20, show_spinner=False)    
     def _get_products(active_only=True):
         try:
             q = db.collection(INV_PROD_COL)
@@ -8735,6 +8737,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     {"current_price": _as_price1(new_price), "updated_at": datetime.utcnow()},
                                     merge=True,
                                 )
+                                _get_history.clear()
+                                _get_products.clear()
                                 toast("주가가 반영되었습니다.", icon="✅")
                                 st.session_state[inv_reset_key] = True
                                 st.rerun()
@@ -9467,11 +9471,31 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         elif not products:
             st.info("투자 종목이 아직 없어요. 관리자에게 종목 추가를 요청해 주세요.")
         else:
-            prod_labels = [f"{p['name']} (현재 {p['current_price']:.1f})" for p in products]
-            by_label = {lab: p for lab, p in zip(prod_labels, products)}
-    
-            sel_lab = st.selectbox("투자 종목 선택", prod_labels, key="inv_user_sel_prod")
-            sel_prod = by_label.get(sel_lab)
+            prod_choices = [(str(p["product_id"]), f"{p['name']} (현재 {p['current_price']:.1f})") for p in products]
+            product_by_id = {str(p["product_id"]): p for p in products}
+            labels = [lab for _, lab in prod_choices]
+            pid_by_label = {lab: pid for pid, lab in prod_choices}
+
+            def _on_inv_user_product_change():
+                selected_label = st.session_state.get("inv_user_sel_prod_ui")
+                st.session_state["inv_user_selected_product_id"] = pid_by_label.get(selected_label)
+
+            default_pid = st.session_state.get("inv_user_selected_product_id")
+            if default_pid not in product_by_id:
+                default_pid = prod_choices[0][0]
+                st.session_state["inv_user_selected_product_id"] = default_pid
+
+            default_label = next((lab for pid, lab in prod_choices if pid == default_pid), labels[0])
+            if st.session_state.get("inv_user_sel_prod_ui") not in labels:
+                st.session_state["inv_user_sel_prod_ui"] = default_label
+
+            st.selectbox(
+                "투자 종목 선택",
+                labels,
+                key="inv_user_sel_prod_ui",
+                on_change=_on_inv_user_product_change,
+            )
+            sel_prod = product_by_id.get(st.session_state.get("inv_user_selected_product_id"), products[0])
     
             amt = st.number_input("투자 금액", min_value=0, step=10, value=0, key="inv_user_amt")
             if st.button("투자하기 (다음 확인창에서 ‘예’를 눌러야 완료, 신중하게 결정하기)", use_container_width=True, key="inv_user_btn"):
@@ -9606,6 +9630,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     },
                                     merge=True,
                                 )
+                                _get_products.clear()
                                 toast("삭제된 종목을 복구했습니다.", icon="♻️")
                                 st.rerun()
                             except Exception as e:
@@ -9628,6 +9653,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     "updated_at": datetime.utcnow(),
                                 }
                             )
+                            _get_products.clear()
                             toast("종목이 추가되었습니다.", icon="✅")
                         else:
                             db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
@@ -9639,6 +9665,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 },
                                 merge=True,
                             )
+                            _get_products.clear()
                             toast("종목이 수정되었습니다.", icon="✅")
                         st.rerun()
                     except Exception as e:
@@ -9652,6 +9679,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         {"is_active": False, "updated_at": datetime.utcnow()},
                         merge=True,
                     )
+                    _get_products.clear()
                     toast("삭제(비활성화) 완료", icon="🗑️")
                     st.rerun()
                 except Exception as e:
