@@ -3446,45 +3446,56 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
         st.session_state[f"{prefix}_skip_once"] = False
         st.session_state[reset_flag_key] = False    
 
-    # 템플릿 선택
-    tpl_labels = ["(직접 입력)"] + [treasury_template_display(t) for t in templates_list]
-    sel = st.selectbox("국고 템플릿", tpl_labels, key=tpl_key)
+    _frag = getattr(st, "fragment", None)
+    use_fragment = callable(_frag)
+    
+    def _draw_ui():
+        # 템플릿 선택
+        tpl_labels = ["(직접 입력)"] + [treasury_template_display(t) for t in templates_list]
+        sel = st.selectbox("국고 템플릿", tpl_labels, key=tpl_key)
 
-    # 템플릿 바뀌면 내역/금액 자동채움
-    if sel != st.session_state.get(tpl_prev_key):
-        st.session_state[tpl_prev_key] = sel
+        # 템플릿 바뀌면 내역/금액 자동채움
+        if sel != st.session_state.get(tpl_prev_key):
+            st.session_state[tpl_prev_key] = sel
 
-        if sel != "(직접 입력)":
-            t = template_by_display.get(sel)
-            if t:
-                st.session_state[memo_key] = str(t.get("label", "") or "")
-                amt = int(t.get("amount", 0) or 0)
-                if str(t.get("kind")) == "income":
-                    st.session_state[inc_key] = amt
-                    st.session_state[exp_key] = 0
-                else:
-                    st.session_state[inc_key] = 0
-                    st.session_state[exp_key] = amt
+            if sel != "(직접 입력)":
+                t = template_by_display.get(sel)
+                if t:
+                    st.session_state[memo_key] = str(t.get("label", "") or "")
+                    amt = int(t.get("amount", 0) or 0)
+                    if str(t.get("kind")) == "income":
+                        st.session_state[inc_key] = amt
+                        st.session_state[exp_key] = 0
+                    else:
+                        st.session_state[inc_key] = 0
+                        st.session_state[exp_key] = amt    
 
-        st.rerun()
+        
+        # 내역 입력
+        st.text_input("내역", key=memo_key)
 
-    # 내역 입력
-    st.text_input("내역", key=memo_key)
+        # ✅ 원형 숫자 버튼(빠른 금액) — 국고 전용 prefix를 그대로 사용
+        render_round_amount_picker(
+            prefix=prefix,                # ✅ 여기 중요: "treasury_trade" 그대로 연동됨
+            plus_label="세입(+)",
+            minus_label="세출(-)",
+            amounts=[0, 10, 20, 50, 100, 200, 500, 1000],
+        )
 
-    # ✅ 원형 숫자 버튼(빠른 금액) — 국고 전용 prefix를 그대로 사용
-    render_round_amount_picker(
-        prefix=prefix,                # ✅ 여기 중요: "treasury_trade" 그대로 연동됨
-        plus_label="세입(+)",
-        minus_label="세출(-)",
-        amounts=[0, 10, 20, 50, 100, 200, 500, 1000],
-    )
+        # 숫자 입력(세입/세출)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.number_input("세입", min_value=0, step=1, key=inc_key)
+        with c2:
+            st.number_input("세출", min_value=0, step=1, key=exp_key)
 
-    # 숫자 입력(세입/세출)
-    c1, c2 = st.columns(2)
-    with c1:
-        st.number_input("세입", min_value=0, step=1, key=inc_key)
-    with c2:
-        st.number_input("세출", min_value=0, step=1, key=exp_key)
+    if use_fragment:
+        @_frag
+        def _frag_draw():
+            _draw_ui()
+        _frag_draw()
+    else:
+        _draw_ui()
 
     # ✅ 함수 안에서 return (return outside function 방지)
     memo = str(st.session_state.get(memo_key, "") or "").strip()
@@ -3595,8 +3606,6 @@ def render_admin_trade_ui(prefix: str, templates_list: list, template_by_display
 
                     st.session_state[f"{prefix}_quick_skip_once"] = True
 
-            if not use_fragment:
-                st.rerun()
 
         st.text_input("내역", key=memo_key)
 
@@ -6993,6 +7002,13 @@ def render_tx_table(df_tx: pd.DataFrame):
         hide_index=True,
     )
 
+def fragment_if_available(fn):
+    """Streamlit fragment 지원 시 해당 렌더 함수만 부분 rerun."""
+    _frag = getattr(st, "fragment", None)
+    if callable(_frag):
+        return _frag(fn)
+    return fn
+
 def refresh_account_data_light(name: str, pin: str, force: bool = False):
     now = datetime.now(KST)
     slot = st.session_state.data.get(name, {})
@@ -8401,9 +8417,7 @@ if "admin::🏦 내 통장" in tabs:
 # =========================
 # 📈 투자 (공용 렌더: 관리자 탭과 투자(관리자) 탭을 동일 코드로 처리)
 # =========================
-# =========================
-# 📈 투자 (공용 렌더: 관리자 탭과 투자(관리자) 탭을 동일 코드로 처리)
-# =========================
+@fragment_if_available
 def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, my_student_id, login_name, login_pin):
     """관리자 투자 화면을 동일하게 렌더링(권한 학생의 투자(관리자) 탭에서도 동일 UI/기능)."""
     # ✅ 이 함수 내부에서는 is_admin 값을 force_is_admin으로 "가상" 설정해서
@@ -9531,12 +9545,22 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     cur_obj = p
                     break
     
-        name_default = "" if cur_obj is None else cur_obj["name"]
-        price_default = 0.0 if cur_obj is None else float(cur_obj["current_price"])
+        st.session_state.setdefault("inv_admin_edit_prev", "(신규 추가)")
+        st.session_state.setdefault("inv_admin_name", "")
+        st.session_state.setdefault("inv_admin_price", 0.0)
+
+        if st.session_state.get("inv_admin_edit_prev") != sel:
+            if cur_obj is None:
+                st.session_state["inv_admin_name"] = ""
+                st.session_state["inv_admin_price"] = 0.0
+            else:
+                st.session_state["inv_admin_name"] = str(cur_obj.get("name", "") or "")
+                st.session_state["inv_admin_price"] = float(cur_obj.get("current_price", 0.0) or 0.0)
+            st.session_state["inv_admin_edit_prev"] = sel
     
         c1, c2 = st.columns([2.2, 1.2], gap="small")
         with c1:
-            new_name = st.text_input("투자 종목명", value=name_default, key="inv_admin_name")
+            new_name = st.text_input("투자 종목명", key="inv_admin_name")
         with c2:
             new_price = st.number_input(
                 "초기/현재 주가",
@@ -9544,7 +9568,6 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 max_value=999.9,
                 step=0.1,
                 format="%.1f",
-                value=float(price_default),
                 key="inv_admin_price",
             )
     
@@ -12246,19 +12269,14 @@ if "🏛️ 국세청(국고)" in tabs:
 
         f1, f2, f3, f4 = st.columns([2.2, 1.2, 1.2, 1.0])
         with f1:
-            lab_in = st.text_input("라벨(내역)", value=(edit_tpl.get("label") if edit_tpl else ""), key="tre_tpl_label").strip()
+            lab_in = st.text_input("라벨(내역)", key="tre_tpl_label").strip()
         with f2:
             # ✅ 화면에는 한글(세입/세출)로, 저장은 income/expense 그대로
             kind_map = {"세입": "income", "세출": "expense"}
-            kind_rev = {v: k for k, v in kind_map.items()}
-
-            cur_kind = (edit_tpl.get("kind") if edit_tpl else "income")
-            cur_kind_kr = kind_rev.get(str(cur_kind), "세입")
 
             kind_kr = st.selectbox(
                 "종류",
                 ["세입", "세출"],
-                index=(0 if cur_kind_kr == "세입" else 1),
                 key="tre_tpl_kind_kr",
                 help="세입=income, 세출=expense (저장은 자동으로 처리됩니다)",
             )
@@ -12266,9 +12284,9 @@ if "🏛️ 국세청(국고)" in tabs:
             # ✅ 아래 저장 버튼에서 kind_in을 그대로 쓰도록, 변수명 kind_in 유지
             kind_in = kind_map.get(kind_kr, "income")
         with f3:
-            amt_in = st.number_input("금액", min_value=0, step=1, value=int(edit_tpl.get("amount", 0)) if edit_tpl else 0, key="tre_tpl_amount")
+            amt_in = st.number_input("금액", min_value=0, step=1, key="tre_tpl_amount")
         with f4:
-            ord_in = st.number_input("순서", min_value=1, step=1, value=int(edit_tpl.get("order", 1)) if edit_tpl else 1, key="tre_tpl_order")
+            ord_in = st.number_input("순서", min_value=1, step=1, key="tre_tpl_order")
 
         b1, b2, b3 = st.columns(3)
         with b1:
@@ -12525,7 +12543,6 @@ if "📊 통계청" in tabs:
             st.session_state["stat_add_tpl_prev"] = stat_pick
             if stat_pick != "(직접 입력)":
                 st.session_state["stat_add_label"] = stat_pick
-            st.rerun()
 
         add_c1, add_c2 = st.columns([3.0, 1.0])
         with add_c1:
@@ -13169,9 +13186,9 @@ div[data-testid="stElementContainer"]:has(.stat_bulk_text){
 
         t1, t2 = st.columns([3.0, 1.0])
         with t1:
-            tpl_label_in = st.text_input("템플릿 내역", value=(edit_tpl.get("label") if edit_tpl else ""), key="stat_tpl_label").strip()
+            tpl_label_in = st.text_input("템플릿 내역", key="stat_tpl_label").strip()
         with t2:
-            tpl_order_in = st.number_input("순서", min_value=1, step=1, value=int(edit_tpl.get("order", 1)) if edit_tpl else 1, key="stat_tpl_order")
+            tpl_order_in = st.number_input("순서", min_value=1, step=1, key="stat_tpl_order")
 
         bb1, bb2, bb3 = st.columns(3)
         with bb1:
@@ -14294,6 +14311,7 @@ def _render_mart_user_ui(login_name: str, login_pin: str, my_student_id: str):
             st.error(res.get("error", "저장 실패"))
 
 
+@fragment_if_available
 def _render_mart_admin_ui():
     st.markdown("#### 🚦 구입 제한 설정")
     cfg = api_get_mart_config()
