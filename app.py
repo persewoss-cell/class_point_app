@@ -9433,6 +9433,9 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     st.markdown("### 🧾 투자 상품 관리 장부")
     
     ledger_rows = _load_ledger(None if is_admin else my_student_id)
+
+    # ✅ 사용자 모드(학생 로그인)는 장부/지급 계산 기준을 "환산주가"로 고정
+    use_norm_price_in_user_mode = (not is_admin)
     
     view_rows = []
     for x in ledger_rows:
@@ -9449,6 +9452,13 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         redeem_amount_val = int(
             x.get("redeem_amount", x.get("redeemed_amount", 0)) or 0
         )
+
+        buy_price_norm = _as_price1(x.get("buy_price", 0.0))
+        buy_price_real = _as_price1(x.get("buy_real_price", buy_price_norm))
+        sell_price_norm = _as_price1(sell_price)
+        sell_price_real = _as_price1(x.get("sell_real_price", sell_price_norm))
+        diff_norm = _as_price1(diff_val)
+        diff_real = _as_price1(x.get("real_diff", diff_norm))
         
         view_rows.append(
             {
@@ -9456,12 +9466,12 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 "이름": str(x.get("name", "") or ""),
                 "종목": str(x.get("product_name", "") or ""),
                 "매입일자": str(x.get("buy_date_label", "") or ""),
-                "매입 주가": f"{_as_price1(x.get('buy_real_price', x.get('buy_price', 0.0))):.2f}",
+                "매입 주가": f"{(buy_price_norm if use_norm_price_in_user_mode else buy_price_real):.2f}",
                 "투자 금액": int(x.get("invest_amount", 0) or 0),
                 "지급완료": "✅" if redeemed else "",
                 "매수일자": sell_date_label,
-                "매수 주가": f"{_as_price1(x.get('sell_real_price', sell_price)):.2f}" if redeemed else "",
-                "주가차이": f"{_as_price1(x.get('real_diff', diff_val)):.2f}" if redeemed else "",
+                "매수 주가": f"{(sell_price_norm if use_norm_price_in_user_mode else sell_price_real):.2f}" if redeemed else "",
+                "주가차이": f"{(diff_norm if use_norm_price_in_user_mode else diff_real):.2f}" if redeemed else "",
                 "수익/손실금": int(round(profit_val)) if redeemed else "",
                 "찾을 금액": redeem_amount_val if redeemed else "",
                 "_doc_id": x.get("_doc_id"),
@@ -9512,7 +9522,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             break
 
                     diff, profit, redeem_amt = _calc_redeem_amount(
-                        invest_amt, buy_price, cur_price, buy_real_price, cur_real_price
+                        invest_amt, buy_price, cur_price
                     )
                     
                     c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
@@ -9522,7 +9532,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         st.markdown(f"{x.get('이름','')}")
                         st.caption(prod_name)
                     with c3:
-                        st.caption(f"매입 {buy_real_price:.2f} → 현재 {cur_real_price:.2f} (차이 {diff:.2f})")
+                        st.caption(f"매입 {buy_price:.2f} → 현재 {cur_price:.2f} (차이 {diff:.2f})")
                         st.caption(f"수익/손실 {int(round(profit))} | 찾을 금액 {int(round(redeem_amt))}")
                     with c4:
                         st.markdown("<div style='text-align:center; opacity:0.65; padding-top:8px;'>지급대기</div>", unsafe_allow_html=True)
@@ -9551,9 +9561,14 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             cur_real_price = _as_price1(p.get("real_price", cur_price))
                             break
 
-                    diff, profit, redeem_amt = _calc_redeem_amount(
-                        invest_amt, buy_price, cur_price, buy_real_price, cur_real_price
-                    )
+                    if use_norm_price_in_user_mode:
+                        diff, profit, redeem_amt = _calc_redeem_amount(
+                            invest_amt, buy_price, cur_price
+                        )
+                    else:
+                        diff, profit, redeem_amt = _calc_redeem_amount(
+                            invest_amt, buy_price, cur_price, buy_real_price, cur_real_price
+                        )
                     
                     c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
                     with c1:
