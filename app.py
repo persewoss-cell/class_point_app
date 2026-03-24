@@ -8689,7 +8689,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     {
                         "product_id": d.id,
                         "name": nm,
-                        min_price": _as_price1(x.get("min_price", 0.0)),
+                        "min_price": _as_price1(x.get("min_price", 0.0)),
                         "max_price": _as_price1(x.get("max_price", 100.0)),
                         "real_price": _as_price1(x.get("real_price", x.get("current_price", 0.0))),
                         "current_price": _as_price1(x.get("current_price", 0.0)),
