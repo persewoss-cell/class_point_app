@@ -13948,6 +13948,43 @@ if "💳 신용등급" in tabs:
                         )
 
                 st.markdown("<div class='credit-ledger-divider'></div>", unsafe_allow_html=True)
+
+            # ---- 평균 행(학생 마지막 행 아래) ----
+            if stu_rows:
+                avg_cols = st.columns([0.37, 0.7] + [1.2] * len(sub_rows_view))
+                with avg_cols[0]:
+                    st.markdown("<div class='credit-ledger-cell'></div>", unsafe_allow_html=True)
+                with avg_cols[1]:
+                    st.markdown("<div class='credit-ledger-cell'><b>평균</b></div>", unsafe_allow_html=True)
+
+                for j, sub in enumerate(sub_rows_view):
+                    sub_id = str(sub.get("submission_id") or "")
+                    score_sum = 0
+                    score_cnt = 0
+
+                    for stx in stu_rows:
+                        stid = str(stx["student_id"])
+                        if sub_id and sub_id in scores_by_sub:
+                            sc = int(scores_by_sub[sub_id].get(stid, base))
+                        else:
+                            sc = int(base)
+                        sc = int(sc + manual_delta_map.get(stid, 0))
+                        if sc > 100:
+                            sc = 100
+                        if sc < 0:
+                            sc = 0
+                        score_sum += sc
+                        score_cnt += 1
+
+                    avg_score = round((score_sum / score_cnt), 2) if score_cnt else 0.0
+
+                    with avg_cols[j + 2]:
+                        st.markdown(
+                            f"<div class='credit-ledger-score'>{avg_score:.2f}점</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                st.markdown("<div class='credit-ledger-divider'></div>", unsafe_allow_html=True)
     
             # -------------------------
             # 1) 점수/등급 규칙표(1~10등급)
