@@ -689,6 +689,11 @@ def toast(msg: str, icon: str = "✅"):
     else:
         st.success(msg)
 
+
+def render_template_section_divider():
+    st.markdown("<div style='height:3em'></div>", unsafe_allow_html=True)
+    st.markdown("<hr style='border:none; border-top:1px solid #bfbfbf; margin:0.2rem 0 1.2rem 0;'>", unsafe_allow_html=True)
+
 def is_admin_login(name: str, pin: str) -> bool:
     return (str(name or "").strip() == ADMIN_NAME) and (str(pin or "").strip() == ADMIN_PIN)
 
@@ -7390,6 +7395,7 @@ if "🏦 내 통장" in tabs:
                 # -------------------------------------------------
                 # 3) 템플릿 추가/수정/삭제
                 # -------------------------------------------------
+                 render_template_section_divider()
                 st.markdown("### 🧩 템플릿 추가/수정/삭제")
 
                 KIND_TO_KR = {"deposit": "입금", "withdraw": "출금"}
@@ -8166,6 +8172,7 @@ if "admin::🏦 내 통장" in tabs:
                 # -------------------------------------------------
                 # 3) 템플릿 추가/수정/삭제
                 # -------------------------------------------------
+                render_template_section_divider()
                 st.markdown("### 🧩 템플릿 추가/수정/삭제")
 
                 KIND_TO_KR = {"deposit": "입금", "withdraw": "출금"}
@@ -12326,6 +12333,7 @@ if "🏛️ 국세청(국고)" in tabs:
 
 
         # 4) 국고 템플릿 추가/수정/삭제 (국고 전용)
+        render_template_section_divider()        
         st.markdown("### 🧩 국고 템플릿 추가/수정/삭제")
 
         tpls = api_list_treasury_templates_cached().get("templates", [])
@@ -13250,6 +13258,7 @@ div[data-testid="stElementContainer"]:has(.stat_bulk_text){
         # -------------------------
         # (하단) 통계표 템플릿 추가/수정/삭제
         # -------------------------
+        render_template_section_divider()
         st.markdown("### 🧩 통계표 템플릿 추가/수정/삭제")
 
         tpl_items = api_list_stat_templates_cached().get("templates", [])
@@ -13428,89 +13437,6 @@ if "💳 신용등급" in tabs:
                 )
             return out
 
-        if bool(is_admin):
-            st.markdown("### ✍️ 신용점수 수동 조정")
-            if not stu_rows:
-                st.info("활성 학생이 없어 신용점수 수동 조정을 할 수 없습니다.")
-            else:
-                aa1, aa2, aa3, aa4 = st.columns([1.8, 1, 1, 1.1])
-                with aa1:
-                    pick_names = [f"{int(s['no'])}번 {s['name']}" for s in stu_rows]
-                    pick_idx = st.selectbox(
-                        "학생 선택",
-                        options=list(range(len(stu_rows))),
-                        format_func=lambda i: pick_names[i],
-                        key="credit_adj_student_idx",
-                    )
-                with aa2:
-                    sign = st.selectbox("점수 +/-", options=["+", "-"], key="credit_adj_sign")
-                with aa3:
-                    pts = st.number_input("점수", min_value=1, max_value=100, value=1, step=1, key="credit_adj_pts")
-                with aa4:
-                    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-                    save_adj = st.button(
-                        "저장",
-                        key="credit_adj_save_btn",
-                        use_container_width=True,
-                    )
-                if save_adj:
-                    target = stu_rows[int(pick_idx)]
-                    stid = str(target["student_id"])
-                    signed_delta = int(pts if sign == "+" else -pts)
-                    before_score, _ = _calc_credit_score_for_student(stid)
-                    after_score = int(before_score + signed_delta)
-                    if after_score > 100:
-                        after_score = 100
-                    if after_score < 0:
-                        after_score = 0
-                    after_grade = _score_to_grade(after_score)
-
-                    db.collection("credit_adjustments").document().set(
-                        {
-                            "student_id": stid,
-                            "student_no": int(target["no"]),
-                            "student_name": str(target["name"]),
-                            "delta": int(signed_delta),
-                            "score_before": int(before_score),
-                            "score_after": int(after_score),
-                            "grade_after": int(after_grade),
-                            "recorder": "관리자",
-                            "created_at": datetime.utcnow(),
-                        }
-                    )
-                    db.collection("students").document(stid).set(
-                        {
-                            "credit_score": int(after_score),
-                            "credit_grade": int(after_grade),
-                            "updated_at": datetime.utcnow(),
-                        },
-                        merge=True,
-                    )
-                    toast(f"신용점수 조정 저장 완료 ({signed_delta:+d}점)", icon="✅")
-                    st.rerun()
-
-            st.markdown("### 📒 신용점수 조정 장부")
-            adj_rows = _list_credit_adjustments(limit=300)
-            if not adj_rows:
-                st.info("아직 수동 조정 장부가 없습니다.")
-            else:
-                led_view = []
-                for r in adj_rows:
-                    dt_utc = _to_utc_datetime(r.get("created_at"))
-                    dt_disp = format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else ""
-                    led_view.append(
-                        {
-                            "일시": dt_disp,
-                            "대상": f"{int(r.get('student_no', 0))}번 {str(r.get('student_name', '') or '')}",
-                            "점수기록": f"{int(r.get('delta', 0)):+d}점 (결과: {int(r.get('score_after', 0))}점/{int(r.get('grade_after', 0))}등급)",
-                            "기록자": str(r.get("recorder", "") or "관리자"),
-                        }
-                    )
-                st.dataframe(
-                    pd.DataFrame(led_view),
-                    use_container_width=True,
-                    hide_index=True,
-                )        
 
         # -------------------------
         # 3) 통계청 제출물(열) 로드 → 누적 점수 계산
@@ -13816,6 +13742,94 @@ if "💳 신용등급" in tabs:
                     return f"{dt.month}월 {dt.day}일({wd})"
                 except Exception:
                     return ""
+                    
+
+        # -------------------------
+        # (관리자) 신용점수 수동 조정/조정 장부 - 탭 최하단 배치
+        # -------------------------
+        if bool(is_admin):
+            st.markdown("### ✍️ 신용점수 수동 조정")
+            if not stu_rows:
+                st.info("활성 학생이 없어 신용점수 수동 조정을 할 수 없습니다.")
+            else:
+                aa1, aa2, aa3, aa4 = st.columns([1.8, 1, 1, 1.1])
+                with aa1:
+                    pick_names = [f"{int(s['no'])}번 {s['name']}" for s in stu_rows]
+                    pick_idx = st.selectbox(
+                        "학생 선택",
+                        options=list(range(len(stu_rows))),
+                        format_func=lambda i: pick_names[i],
+                        key="credit_adj_student_idx",
+                    )
+                with aa2:
+                    sign = st.selectbox("점수 +/-", options=["+", "-"], key="credit_adj_sign")
+                with aa3:
+                    pts = st.number_input("점수", min_value=1, max_value=100, value=1, step=1, key="credit_adj_pts")
+                with aa4:
+                    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                    save_adj = st.button(
+                        "저장",
+                        key="credit_adj_save_btn",
+                        use_container_width=True,
+                    )
+                if save_adj:
+                    target = stu_rows[int(pick_idx)]
+                    stid = str(target["student_id"])
+                    signed_delta = int(pts if sign == "+" else -pts)
+                    before_score, _ = _calc_credit_score_for_student(stid)
+                    after_score = int(before_score + signed_delta)
+                    if after_score > 100:
+                        after_score = 100
+                    if after_score < 0:
+                        after_score = 0
+                    after_grade = _score_to_grade(after_score)
+
+                    db.collection("credit_adjustments").document().set(
+                        {
+                            "student_id": stid,
+                            "student_no": int(target["no"]),
+                            "student_name": str(target["name"]),
+                            "delta": int(signed_delta),
+                            "score_before": int(before_score),
+                            "score_after": int(after_score),
+                            "grade_after": int(after_grade),
+                            "recorder": "관리자",
+                            "created_at": datetime.utcnow(),
+                        }
+                    )
+                    db.collection("students").document(stid).set(
+                        {
+                            "credit_score": int(after_score),
+                            "credit_grade": int(after_grade),
+                            "updated_at": datetime.utcnow(),
+                        },
+                        merge=True,
+                    )
+                    toast(f"신용점수 조정 저장 완료 ({signed_delta:+d}점)", icon="✅")
+                    st.rerun()
+
+            st.markdown("### 📒 신용점수 조정 장부")
+            adj_rows = _list_credit_adjustments(limit=300)
+            if not adj_rows:
+                st.info("아직 수동 조정 장부가 없습니다.")
+            else:
+                led_view = []
+                for r in adj_rows:
+                    dt_utc = _to_utc_datetime(r.get("created_at"))
+                    dt_disp = format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else ""
+                    led_view.append(
+                        {
+                            "일시": dt_disp,
+                            "대상": f"{int(r.get('student_no', 0))}번 {str(r.get('student_name', '') or '')}",
+                            "점수기록": f"{int(r.get('delta', 0)):+d}점 (결과: {int(r.get('score_after', 0))}점/{int(r.get('grade_after', 0))}등급)",
+                            "기록자": str(r.get("recorder", "") or "관리자"),
+                        }
+                    )
+                st.dataframe(
+                    pd.DataFrame(led_view),
+                    use_container_width=True,
+                    hide_index=True,
+                )        
 
 
 # =========================
