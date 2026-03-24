@@ -8935,7 +8935,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     with c2:
                         new_real_price = st.number_input(
                             "실제주가",
-                            min_value=0.0,
+                            min_value=-9999999.99,
                             max_value=9999999.99,
                             step=0.01,
                             format="%.2f",
@@ -9884,7 +9884,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         with c2:
             new_min_price = st.number_input(
                 "최하값",
-                min_value=0.0,
+                min_value=-9999999.99,
                 max_value=9999999.99,
                 step=0.01,
                 format="%.2f",
@@ -9893,7 +9893,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         with c3:
             new_max_price = st.number_input(
                 "최대값",
-                min_value=0.0,
+                min_value=-9999999.99,
                 max_value=9999999.99,
                 step=0.01,
                 format="%.2f",
@@ -9902,7 +9902,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         with c4:
             new_real_price = st.number_input(
                 "초기/현재 실제주가",
-                min_value=0.0,
+                min_value=-9999999.99,
                 max_value=9999999.99,
                 step=0.01,
                 format="%.2f",
