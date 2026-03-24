@@ -1104,6 +1104,21 @@ def _norm_status(v) -> str:
         return "△"
     return "X"
 
+def _sum_manual_credit_delta(student_id: str) -> int:
+    total = 0
+    try:
+        q = (
+            db.collection("credit_adjustments")
+            .where(filter=build_filter("student_id", "==", str(student_id)))
+            .stream()
+        )
+        for d in q:
+            x = d.to_dict() or {}
+            total += int(x.get("delta", 0) or 0)
+    except Exception:
+        return 0
+    return int(total)
+
 def _calc_credit_score_for_student(student_id: str):
     credit_cfg = _get_credit_cfg()
     base = int(credit_cfg.get("base", 50) if credit_cfg.get("base", None) is not None else 50)
@@ -1132,6 +1147,11 @@ def _calc_credit_score_for_student(student_id: str):
             score = 100
         if score < 0:
             score = 0
+    score = int(score + _sum_manual_credit_delta(student_id))
+    if score > 100:
+        score = 100
+    if score < 0:
+        score = 0            
 
     grade = _score_to_grade(score)
     return score, grade
@@ -6547,6 +6567,21 @@ def _norm_status(v) -> str:
         return "△"
     return "X"
 
+def _sum_manual_credit_delta(student_id: str) -> int:
+    total = 0
+    try:
+        q = (
+            db.collection("credit_adjustments")
+            .where(filter=build_filter("student_id", "==", str(student_id)))
+            .stream()
+        )
+        for d in q:
+            x = d.to_dict() or {}
+            total += int(x.get("delta", 0) or 0)
+    except Exception:
+        return 0
+    return int(total)
+
 def _calc_credit_score_for_student(student_id: str):
     credit_cfg = _get_credit_cfg()
     base = int(credit_cfg.get("base", 50) if credit_cfg.get("base", None) is not None else 50)
@@ -6575,7 +6610,12 @@ def _calc_credit_score_for_student(student_id: str):
             score = 100
         if score < 0:
             score = 0
-
+    score = int(score + _sum_manual_credit_delta(student_id))
+    if score > 100:
+        score = 100
+    if score < 0:
+        score = 0
+        
     grade = _score_to_grade(score)
     return score, grade
 
@@ -6625,6 +6665,7 @@ def _category_to_korean(category: str) -> str:
         "matured": "만기",
         "tab_permission": "탭 권한",
         "admin_permission": "관리자기능 권한",
+        "credit_adjust": "신용점수 수동조정",
     }
     return mapping.get(key, str(category or ""))
 
@@ -6968,6 +7009,30 @@ def _build_activity_log_rows(limit_per_source: int = 300, max_rows: int = 1200):
                     "_sort_dt": rej_dt or created_dt or datetime.min.replace(tzinfo=timezone.utc),
                 }
             )
+
+        # 12) 신용점수 수동 조정 장부
+    for d in _safe_stream_recent("credit_adjustments", "created_at", limit_per_source):
+        x = d.to_dict() or {}
+        sid = str(x.get("student_id", "") or "")
+        stu = student_map.get(sid, {})
+        dt_utc = _to_utc_datetime(x.get("created_at"))
+        delta = _to_int_safe(x.get("delta", 0), 0)
+        score_after = _to_int_safe(x.get("score_after", 0), 0)
+        grade_after = _to_int_safe(x.get("grade_after", 0), 0)
+        rows.append(
+            {
+                "시간": format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else "",
+                "탭": "💳 신용등급",
+                "내역": f"신용점수 수동 조정 ({delta:+d}점, 조정후 {score_after}점/{grade_after}등급)",
+                "입금": 0,
+                "출금": 0,
+                "기록자": str(x.get("recorder", "") or "관리자"),
+                "대상": f"{_to_int_safe(stu.get('no', 0), 0)}번 {str(stu.get('name', '') or sid)}",
+                "분류": "credit_adjust",
+                "변경후잔액": "",
+                "_sort_dt": dt_utc or datetime.min.replace(tzinfo=timezone.utc),
+            }
+        )
             
     rows.sort(key=lambda r: r.get("_sort_dt") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     rows = rows[: int(max_rows)]
@@ -13336,6 +13401,118 @@ if "💳 신용등급" in tabs:
                     st.rerun()
 
         # -------------------------
+        # 2-1) 관리자 개별 신용점수 조정(+/-)
+        # -------------------------
+        def _list_credit_adjustments(limit: int = 300):
+            out = []
+            q = (
+                db.collection("credit_adjustments")
+                .order_by("created_at", direction=mongo.Query.DESCENDING)
+                .limit(int(limit))
+                .stream()
+            )
+            for d in q:
+                x = d.to_dict() or {}
+                out.append(
+                    {
+                        "adjustment_id": d.id,
+                        "created_at": x.get("created_at"),
+                        "student_id": str(x.get("student_id", "") or ""),
+                        "student_no": int(x.get("student_no", 0) or 0),
+                        "student_name": str(x.get("student_name", "") or ""),
+                        "delta": int(x.get("delta", 0) or 0),
+                        "score_after": int(x.get("score_after", 0) or 0),
+                        "grade_after": int(x.get("grade_after", 0) or 0),
+                        "recorder": str(x.get("recorder", "") or "관리자"),
+                    }
+                )
+            return out
+
+        if bool(is_admin):
+            st.markdown("### ✍️ 신용점수 수동 조정")
+            if not stu_rows:
+                st.info("활성 학생이 없어 신용점수 수동 조정을 할 수 없습니다.")
+            else:
+                aa1, aa2, aa3, aa4 = st.columns([1.8, 1, 1, 1.1])
+                with aa1:
+                    pick_names = [f"{int(s['no'])}번 {s['name']}" for s in stu_rows]
+                    pick_idx = st.selectbox(
+                        "학생 선택",
+                        options=list(range(len(stu_rows))),
+                        format_func=lambda i: pick_names[i],
+                        key="credit_adj_student_idx",
+                    )
+                with aa2:
+                    sign = st.selectbox("점수 +/-", options=["+", "-"], key="credit_adj_sign")
+                with aa3:
+                    pts = st.number_input("점수", min_value=1, max_value=100, value=1, step=1, key="credit_adj_pts")
+                with aa4:
+                    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                    save_adj = st.button(
+                        "저장",
+                        key="credit_adj_save_btn",
+                        use_container_width=True,
+                    )
+                if save_adj:
+                    target = stu_rows[int(pick_idx)]
+                    stid = str(target["student_id"])
+                    signed_delta = int(pts if sign == "+" else -pts)
+                    before_score, _ = _calc_credit_score_for_student(stid)
+                    after_score = int(before_score + signed_delta)
+                    if after_score > 100:
+                        after_score = 100
+                    if after_score < 0:
+                        after_score = 0
+                    after_grade = _score_to_grade(after_score)
+
+                    db.collection("credit_adjustments").document().set(
+                        {
+                            "student_id": stid,
+                            "student_no": int(target["no"]),
+                            "student_name": str(target["name"]),
+                            "delta": int(signed_delta),
+                            "score_before": int(before_score),
+                            "score_after": int(after_score),
+                            "grade_after": int(after_grade),
+                            "recorder": "관리자",
+                            "created_at": datetime.utcnow(),
+                        }
+                    )
+                    db.collection("students").document(stid).set(
+                        {
+                            "credit_score": int(after_score),
+                            "credit_grade": int(after_grade),
+                            "updated_at": datetime.utcnow(),
+                        },
+                        merge=True,
+                    )
+                    toast(f"신용점수 조정 저장 완료 ({signed_delta:+d}점)", icon="✅")
+                    st.rerun()
+
+            st.markdown("### 📒 신용점수 조정 장부")
+            adj_rows = _list_credit_adjustments(limit=300)
+            if not adj_rows:
+                st.info("아직 수동 조정 장부가 없습니다.")
+            else:
+                led_view = []
+                for r in adj_rows:
+                    dt_utc = _to_utc_datetime(r.get("created_at"))
+                    dt_disp = format_kr_datetime_no_year(dt_utc.astimezone(KST)) if dt_utc else ""
+                    led_view.append(
+                        {
+                            "일시": dt_disp,
+                            "대상": f"{int(r.get('student_no', 0))}번 {str(r.get('student_name', '') or '')}",
+                            "점수기록": f"{int(r.get('delta', 0)):+d}점 (결과: {int(r.get('score_after', 0))}점/{int(r.get('grade_after', 0))}등급)",
+                            "기록자": str(r.get("recorder", "") or "관리자"),
+                        }
+                    )
+                st.dataframe(
+                    pd.DataFrame(led_view),
+                    use_container_width=True,
+                    hide_index=True,
+                )        
+
+        # -------------------------
         # 3) 통계청 제출물(열) 로드 → 누적 점수 계산
         # -------------------------
         sub_res = api_list_stat_submissions_cached(limit_cols=60)
@@ -13396,6 +13573,11 @@ if "💳 신용등급" in tabs:
                     snap_map[stid] = nxt
     
                 scores_by_sub[sub_id] = snap_map
+
+            manual_delta_map = {}
+            for stx in stu_rows:
+                stid = str(stx["student_id"])
+                manual_delta_map[stid] = _sum_manual_credit_delta(stid)            
     
             # -------------------------
             # (PATCH) 가로 페이징 (통계청과 동일 로직)
@@ -13558,7 +13740,12 @@ if "💳 신용등급" in tabs:
                         sc = int(scores_by_sub[sub_id].get(stid, base))
                     else:
                         sc = int(base)
-    
+                    sc = int(sc + manual_delta_map.get(stid, 0))
+                    if sc > 100:
+                        sc = 100
+                    if sc < 0:
+                        sc = 0
+                    
                     gr = _score_to_grade(sc)
     
                     with row_cols[j + 2]:
