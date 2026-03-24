@@ -221,7 +221,10 @@ st.markdown(
         overflow-y: auto;
         overflow-x: auto;
     }    
-
+    .inv_hist_compact {
+        margin-top: -28px;
+    }
+    
 /* ✅ stat_cellpick_ 전용: 선택 색상(순서 기반) */
 
 /* (중요) 기본 선택 배경 리셋은 "stat_cellpick_"에만 적용 */
@@ -8823,7 +8826,11 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             nm = p["name"]
             cur = p["current_price"]
             real_cur = float(p.get("real_price", cur) or 0.0)
-            st.markdown(f"- **{nm}** (실제주가 **{real_cur:.2f}**, 환산주가 **{cur:.2f}**)")
+            min_p = float(p.get("min_price", 0.0) or 0.0)
+            max_p = float(p.get("max_price", 100.0) or 100.0)
+            st.markdown(
+                f"- **{nm}** [실제주가: **{real_cur:.2f}**(범위 **{min_p:.2f}~{max_p:.2f}**), 환산주가: **{cur:.2f}**]"
+            )
             
             if inv_admin_ok:
                 inv_reset_key = f"inv_reset_req_{p['product_id']}"
@@ -8931,6 +8938,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         df = pd.DataFrame(rows)
     
                         # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
+                        st.markdown("<div class='inv_hist_compact'>", unsafe_allow_html=True)
                         left, right = st.columns([1.7, 2.2], gap="large", vertical_alignment="top")
     
                         with left:
@@ -9149,6 +9157,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
+                        st.markdown("</div>", unsafe_allow_html=True)
     
                     else:
                         st.caption("아직 주가 변동 기록이 없습니다.")
@@ -9201,6 +9210,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         df = pd.DataFrame(rows)
     
                         # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
+                        st.markdown("<div class='inv_hist_compact'>", unsafe_allow_html=True)
                         left, right = st.columns([1.7,2.2], gap="large", vertical_alignment="top")
     
                         with left:
@@ -9419,6 +9429,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
+                        st.markdown("</div>", unsafe_allow_html=True)
     
                     else:
                         st.caption("아직 주가 변동 기록이 없습니다.")
