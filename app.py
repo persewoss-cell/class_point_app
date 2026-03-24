@@ -8844,7 +8844,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             min_p = float(p.get("min_price", 0.0) or 0.0)
             max_p = float(p.get("max_price", 100.0) or 100.0)
             st.markdown(
-                f"- **{nm}** [실제주가: **{real_cur:.2f}**(범위 **{min_p:.2f}~{max_p:.2f}**), 환산주가: **{cur:.2f}**, 주가1당 손익 **{float(p.get('point_profit_pct', DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT):.2f}%**]"
+                f"- **{nm}** [실제주가: **{real_cur:.2f}**(범위 **{min_p:.2f}~{max_p:.2f}**), 환산주가: **{cur:.2f}**, 주가 1당 손익 **{float(p.get('point_profit_pct', DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT):.2f}%**]"
             )
             
             if inv_admin_ok:
@@ -9483,7 +9483,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 "종목": str(x.get("product_name", "") or ""),
                 "매입일자": str(x.get("buy_date_label", "") or ""),
                 "매입 주가": f"{(buy_price_norm if use_norm_price_for_ledger_and_redeem else buy_price_real):.2f}",
-                "주가1당 손익%": f"{point_profit_pct:.2f}%",
+                "주가 1당 손익%": f"{point_profit_pct:.2f}%",
                 "투자 금액": int(x.get("invest_amount", 0) or 0),
                 "지급완료": "✅" if redeemed else "",
                 "매수일자": sell_date_label,
@@ -9563,7 +9563,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         st.markdown(f"{x.get('이름','')}")
                         st.caption(prod_name)
                     with c3:
-                        st.caption(f"매입 {buy_price:.2f} → 현재 {cur_price:.2f} (차이 {diff:.2f}, 주가1당 손익 {point_profit_pct:.2f}%)")
+                        st.caption(f"매입 {buy_price:.2f} → 현재 {cur_price:.2f} (차이 {diff:.2f}, 주가 1당 손익 {point_profit_pct:.2f}%)")
                         st.caption(f"수익/손실 {int(round(profit))} | 찾을 금액 {int(round(redeem_amt))}")
                     with c4:
                         st.markdown("<div style='text-align:center; opacity:0.65; padding-top:8px;'>지급대기</div>", unsafe_allow_html=True)
@@ -9603,7 +9603,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         st.markdown(f"{x.get('이름','')}")
                         st.caption(prod_name)
                     with c3:
-                        st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f}, 주가1당 손익 {point_profit_pct:.2f}%)")
+                        st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f}, 주가 1당 손익 {point_profit_pct:.2f}%)")
                         st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
                     with c4:
                         if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
@@ -9830,7 +9830,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             )
         with c5:
             new_point_profit_pct = st.number_input(
-                "주가1당 손익 %",
+                "주가 1당 손익 %",
                 min_value=0.0,
                 max_value=1000.0,
                 step=0.01,
