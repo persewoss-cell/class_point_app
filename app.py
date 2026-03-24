@@ -1009,7 +1009,7 @@ def _calc_invest_redeem_projection(
 ):
     """
     투자 회수(지급)와 동일한 기준으로 현재 평가/예상 회수금 계산.
-    return: (등락폭, 수익/손실, 회수예상금[int])
+    return: (등락폭, 수익/손실[소수 둘째자리], 회수예상금[소수 둘째자리])
     """
     def _as_price2_local(v):
         try:
@@ -1036,7 +1036,10 @@ def _calc_invest_redeem_projection(
         if redeem_amt < 0:
             redeem_amt = 0
 
-    return diff, int(round(profit)), int(round(redeem_amt))
+    # 계산은 소수 둘째자리까지 유지하고, 화면/지급 시점에서 반올림해 표시한다.
+    profit = _as_price2_local(profit)
+    redeem_amt = _as_price2_local(redeem_amt)
+    return diff, profit, redeem_amt
     
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -9683,8 +9686,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         st.markdown(f"{x.get('이름','')}")
                         st.caption(prod_name)
                     with c3:
-                        st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f}, 주가 1당 손익 {point_profit_pct:.2f}%)")
-                        st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
+                        st.caption(f"매입 {buy_price:.2f} → 현재 {cur_price:.2f} (차이 {diff:.2f}, 주가 1당 손익 {point_profit_pct:.2f}%)")
+                        st.caption(f"수익/손실 {int(round(profit))} | 찾을 금액 {int(round(redeem_amt))}")
                     with c4:
                         if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
 
@@ -9697,7 +9700,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     admin_pin=ADMIN_PIN,
                                     student_id=sid,
                                     memo=memo,
-                                    deposit=int(redeem_amt),
+                                    deposit=int(round(redeem_amt)),
                                     withdraw=0,
                                 )
                             else:
@@ -9705,7 +9708,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     actor_student_id=my_student_id,
                                     student_id=sid,
                                     memo=memo,
-                                    deposit=int(redeem_amt),
+                                    deposit=int(round(redeem_amt)),
                                     withdraw=0,
                                 )
 
