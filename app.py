@@ -30,6 +30,9 @@ ADMIN_NAME = "관리자"
 DEFAULT_CREDIT_SCORE = 50
 DEFAULT_CREDIT_GRADE = 5
 
+# 투자: 주가 1포인트당 손익 반영 기본값(%)
+DEFAULT_POINT_PROFIT_PCT = 10.0
+
 # =========================
 # 모바일 UI CSS + 템플릿 정렬(촘촘) CSS
 # (너가 준 CSS 그대로)
@@ -827,7 +830,7 @@ def _list_active_students_full_cached() -> list[dict]:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _get_invest_products_map_cached() -> dict[str, tuple[str, float]]:
+def _get_invest_products_map_cached() -> dict[str, tuple[str, float, float]]:
     """invest_products 전체 스냅샷 캐시(학생별 요약 계산 시 중복 stream 방지)."""
     prod_map = {}
     for d in db.collection(INV_PROD_COL).stream():
@@ -841,7 +844,8 @@ def _get_invest_products_map_cached() -> dict[str, tuple[str, float]]:
             or pid
         )
         cur_price = float(x.get("current_price", 0.0) or 0.0)
-        prod_map[pid] = (pname, cur_price)
+        point_profit_pct = float(x.get("point_profit_pct", DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT)
+        prod_map[pid] = (pname, cur_price, point_profit_pct)
     return prod_map
 
 
@@ -962,10 +966,13 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
             buy_price = float(x.get("buy_price", 0.0) or 0.0)
             invest_amount = int(x.get("invest_amount", 0) or 0)
 
-            pname, cur_price = prod_map.get(pid, (pid, 0.0))
+            pname, cur_price, point_profit_pct = prod_map.get(pid, (pid, 0.0, DEFAULT_POINT_PROFIT_PCT))
+            point_profit_pct = float(x.get("point_profit_pct", point_profit_pct) or point_profit_pct)
 
             # 현재 평가금은 투자 회수(지급) 계산과 동일 규칙 사용
-            _, _, cur_val = _calc_invest_redeem_projection(invest_amount, buy_price, cur_price)
+            _, _, cur_val = _calc_invest_redeem_projection(
+                invest_amount, buy_price, cur_price, point_profit_pct=point_profit_pct
+            )
 
             per_prod_val[pid] = per_prod_val.get(pid, 0) + cur_val
 
@@ -978,11 +985,11 @@ def _get_invest_summary_by_student_id(student_id: str) -> tuple[str, int]:
         # 표시: 종목명 오름차순, 개수 제한 없이 모두 표시
         items = sorted(
             per_prod_val.items(),
-            key=lambda kv: str(prod_map.get(kv[0], (kv[0], 0.0))[0] or kv[0]),
+            key=lambda kv: str(prod_map.get(kv[0], (kv[0], 0.0, DEFAULT_POINT_PROFIT_PCT))[0] or kv[0]),
         )
         shown = []
         for pid, v in items:
-            pname = prod_map.get(pid, (pid, 0.0))[0]
+            pname = prod_map.get(pid, (pid, 0.0, DEFAULT_POINT_PROFIT_PCT))[0]
             shown.append(f"{pname} {int(round(v))}드림")
         text = ", ".join(shown)
 
@@ -997,6 +1004,7 @@ def _calc_invest_redeem_projection(
     sell_price: float,
     buy_real_price: float | None = None,
     sell_real_price: float | None = None,
+    point_profit_pct: float = DEFAULT_POINT_PROFIT_PCT,
 ):
     """
     투자 회수(지급)와 동일한 기준으로 현재 평가/예상 회수금 계산.
@@ -1012,6 +1020,7 @@ def _calc_invest_redeem_projection(
     sell_price = _as_price2_local(sell_price)
     buy_real_price = _as_price2_local(buy_real_price) if buy_real_price is not None else 0.0
     sell_real_price = _as_price2_local(sell_real_price) if sell_real_price is not None else 0.0
+    point_profit_pct = float(point_profit_pct if point_profit_pct is not None else DEFAULT_POINT_PROFIT_PCT)
 
     use_real_price = buy_real_price > 0 and sell_real_price > 0
     diff = _as_price2_local((sell_real_price - buy_real_price) if use_real_price else (sell_price - buy_price))
@@ -1021,7 +1030,7 @@ def _calc_invest_redeem_projection(
         profit = -invest_amount
         redeem_amt = 0
     else:
-        profit = invest_amount * float(diff) / 10.0
+        profit = invest_amount * float(diff) * (point_profit_pct / 100.0)
         redeem_amt = invest_amount + profit
         if redeem_amt < 0:
             redeem_amt = 0
@@ -8711,6 +8720,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         "max_price": _as_price1(x.get("max_price", 100.0)),
                         "real_price": _as_price1(x.get("real_price", x.get("current_price", 0.0))),
                         "current_price": _as_price1(x.get("current_price", 0.0)),
+                        "point_profit_pct": float(x.get("point_profit_pct", DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT),
                         "is_active": bool(x.get("is_active", True)),
                     }
                 )
@@ -8739,9 +8749,10 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         sell_price: float,
         buy_real_price: float | None = None,
         sell_real_price: float | None = None,
+        point_profit_pct: float = DEFAULT_POINT_PROFIT_PCT,
     ):
         return _calc_invest_redeem_projection(
-            invest_amount, buy_price, sell_price, buy_real_price, sell_real_price
+            invest_amount, buy_price, sell_price, buy_real_price, sell_real_price, point_profit_pct
         )
     
     # -------------------------------------------------
@@ -8781,6 +8792,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         try:
             prods_now = _get_products(active_only=True)
             price_by_id = {str(p["product_id"]): float(p.get("current_price", 0.0) or 0.0) for p in prods_now}
+            pct_by_id = {str(p["product_id"]): float(p.get("point_profit_pct", DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT) for p in prods_now}
             name_by_id = {str(p["product_id"]): str(p.get("name", "") or "") for p in prods_now}
 
             my_rows = _load_ledger(my_student_id)
@@ -8802,9 +8814,12 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
 
                 buy_price = float(r.get("buy_price", 0.0) or 0.0)
                 cur_price = float(price_by_id.get(pid, 0.0) or 0.0)
+                point_profit_pct = float(r.get("point_profit_pct", pct_by_id.get(pid, DEFAULT_POINT_PROFIT_PCT)) or DEFAULT_POINT_PROFIT_PCT)
 
                 # ✅ 현재 평가는 투자 회수(지급) 계산과 동일 규칙 적용
-                _, _, cur_val = _calc_invest_redeem_projection(amt, buy_price, cur_price)
+                _, _, cur_val = _calc_invest_redeem_projection(
+                    amt, buy_price, cur_price, point_profit_pct=point_profit_pct
+                )
 
                 _add_sum(principal_by_name, nm, amt)
                 _add_sum(eval_by_name, nm, int(round(cur_val)))
@@ -8829,7 +8844,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             min_p = float(p.get("min_price", 0.0) or 0.0)
             max_p = float(p.get("max_price", 100.0) or 100.0)
             st.markdown(
-                f"- **{nm}** [실제주가: **{real_cur:.2f}**(범위 **{min_p:.2f}~{max_p:.2f}**), 환산주가: **{cur:.2f}**]"
+                f"- **{nm}** [실제주가: **{real_cur:.2f}**(범위 **{min_p:.2f}~{max_p:.2f}**), 환산주가: **{cur:.2f}**, 주가1당 손익 **{float(p.get('point_profit_pct', DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT):.2f}%**]"
             )
             
             if inv_admin_ok:
@@ -9459,6 +9474,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         sell_price_real = _as_price1(x.get("sell_real_price", sell_price_norm))
         diff_norm = _as_price1(diff_val)
         diff_real = _as_price1(x.get("real_diff", diff_norm))
+        point_profit_pct = float(x.get("point_profit_pct", DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT)
         
         view_rows.append(
             {
@@ -9467,6 +9483,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 "종목": str(x.get("product_name", "") or ""),
                 "매입일자": str(x.get("buy_date_label", "") or ""),
                 "매입 주가": f"{(buy_price_norm if use_norm_price_for_ledger_and_redeem else buy_price_real):.2f}",
+                "주가1당 손익%": f"{point_profit_pct:.2f}%",
                 "투자 금액": int(x.get("invest_amount", 0) or 0),
                 "지급완료": "✅" if redeemed else "",
                 "매수일자": sell_date_label,
@@ -9479,6 +9496,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 "_product_id": x.get("product_id"),
                 "_buy_price": x.get("buy_price"),
                 "_invest_amount": x.get("invest_amount"),
+                "_point_profit_pct": point_profit_pct,
             }
         )
     
@@ -9508,6 +9526,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     pid = str(x.get("_product_id", "") or "")
                     buy_price = _as_price1(x.get("_buy_price", 0.0))
                     invest_amt = int(x.get("_invest_amount", 0) or 0)
+                    point_profit_pct = float(x.get("_point_profit_pct", DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT)
                     prod_name = str(x.get("종목", "") or "")
 
                     # 현재 주가 찾기
@@ -9520,7 +9539,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             break
 
                     diff, profit, redeem_amt = _calc_redeem_amount(
-                        invest_amt, buy_price, cur_price
+                        invest_amt, buy_price, cur_price, point_profit_pct=point_profit_pct
                     )
                     
                     c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
@@ -9530,7 +9549,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         st.markdown(f"{x.get('이름','')}")
                         st.caption(prod_name)
                     with c3:
-                        st.caption(f"매입 {buy_price:.2f} → 현재 {cur_price:.2f} (차이 {diff:.2f})")
+                        st.caption(f"매입 {buy_price:.2f} → 현재 {cur_price:.2f} (차이 {diff:.2f}, 주가1당 손익 {point_profit_pct:.2f}%)")
                         st.caption(f"수익/손실 {int(round(profit))} | 찾을 금액 {int(round(redeem_amt))}")
                     with c4:
                         st.markdown("<div style='text-align:center; opacity:0.65; padding-top:8px;'>지급대기</div>", unsafe_allow_html=True)
@@ -9547,6 +9566,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     pid = str(x.get("_product_id", "") or "")
                     buy_price = _as_price1(x.get("_buy_price", 0.0))
                     invest_amt = int(x.get("_invest_amount", 0) or 0)
+                    point_profit_pct = float(x.get("_point_profit_pct", DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT)
                     prod_name = str(x.get("종목", "") or "")
 
                     # 현재 주가 찾기
@@ -9559,7 +9579,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             break
 
                     diff, profit, redeem_amt = _calc_redeem_amount(
-                        invest_amt, buy_price, cur_price
+                        invest_amt, buy_price, cur_price, point_profit_pct=point_profit_pct
                     )
                     
                     c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
@@ -9569,7 +9589,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         st.markdown(f"{x.get('이름','')}")
                         st.caption(prod_name)
                     with c3:
-                        st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f})")
+                        st.caption(f"매입 {buy_price:.1f} → 현재 {cur_price:.1f} (차이 {diff:.1f}, 주가1당 손익 {point_profit_pct:.2f}%)")
                         st.caption(f"수익/손실 {profit:.1f} | 찾을 금액 {redeem_amt}")
                     with c4:
                         if st.button("지급", use_container_width=True, key=f"inv_pay_{doc_id}"):
@@ -9704,6 +9724,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         "buy_date_label": buy_label,
                                         "buy_price": _as_price1(sel_prod["current_price"]),
                                         "buy_real_price": _as_price1(sel_prod.get("real_price", sel_prod["current_price"])),
+                                        "point_profit_pct": float(sel_prod.get("point_profit_pct", DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT),
                                         "invest_amount": int(amt),
                                         "redeemed": False,
                                     }
@@ -9746,6 +9767,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         st.session_state.setdefault("inv_admin_real_price", 0.0)
         st.session_state.setdefault("inv_admin_min_price", 0.0)
         st.session_state.setdefault("inv_admin_max_price", 100.0)
+        st.session_state.setdefault("inv_admin_point_profit_pct", DEFAULT_POINT_PROFIT_PCT)
         
         if st.session_state.get("inv_admin_edit_prev") != sel:
             if cur_obj is None:
@@ -9753,14 +9775,16 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 st.session_state["inv_admin_real_price"] = 0.0
                 st.session_state["inv_admin_min_price"] = 0.0
                 st.session_state["inv_admin_max_price"] = 100.0
+                st.session_state["inv_admin_point_profit_pct"] = DEFAULT_POINT_PROFIT_PCT
             else:
                 st.session_state["inv_admin_name"] = str(cur_obj.get("name", "") or "")
                 st.session_state["inv_admin_real_price"] = float(cur_obj.get("real_price", cur_obj.get("current_price", 0.0)) or 0.0)
                 st.session_state["inv_admin_min_price"] = float(cur_obj.get("min_price", 0.0) or 0.0)
                 st.session_state["inv_admin_max_price"] = float(cur_obj.get("max_price", 100.0) or 100.0)
+                st.session_state["inv_admin_point_profit_pct"] = float(cur_obj.get("point_profit_pct", DEFAULT_POINT_PROFIT_PCT) or DEFAULT_POINT_PROFIT_PCT)
             st.session_state["inv_admin_edit_prev"] = sel
     
-        c1, c2, c3, c4 = st.columns([2.0, 1.1, 1.1, 1.3], gap="small")
+        c1, c2, c3, c4, c5 = st.columns([1.8, 1.0, 1.0, 1.2, 1.2], gap="small")
         with c1:
             new_name = st.text_input("투자 종목명", key="inv_admin_name")
         with c2:
@@ -9789,6 +9813,15 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 step=0.01,
                 format="%.2f",
                 key="inv_admin_real_price",
+            )
+        with c5:
+            new_point_profit_pct = st.number_input(
+                "주가1당 손익 %",
+                min_value=0.0,
+                max_value=1000.0,
+                step=0.01,
+                format="%.2f",
+                key="inv_admin_point_profit_pct",
             )
         new_norm_price = _normalize_to_100(new_real_price, new_min_price, new_max_price)
         st.caption(f"환산주가(자동): {new_norm_price:.2f} / 100")
@@ -9828,6 +9861,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         "max_price": _as_price1(new_max_price),
                                         "real_price": _as_price1(new_real_price),
                                         "current_price": _as_price1(new_norm_price),
+                                        "point_profit_pct": float(new_point_profit_pct),
                                         "is_active": True,
                                         "updated_at": datetime.utcnow(),
                                     },
@@ -9854,6 +9888,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     "max_price": _as_price1(new_max_price),
                                     "real_price": _as_price1(new_real_price),
                                     "current_price": _as_price1(new_norm_price),
+                                    "point_profit_pct": float(new_point_profit_pct),
                                     "is_active": True,
                                     "created_at": datetime.utcnow(),
                                     "updated_at": datetime.utcnow(),
@@ -9869,6 +9904,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     "max_price": _as_price1(new_max_price),
                                     "real_price": _as_price1(new_real_price),
                                     "current_price": _as_price1(new_norm_price),
+                                    "point_profit_pct": float(new_point_profit_pct),
                                     "is_active": True,
                                     "updated_at": datetime.utcnow(),
                                 },
