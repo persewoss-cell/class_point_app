@@ -691,8 +691,8 @@ def toast(msg: str, icon: str = "✅"):
 
 
 def render_template_section_divider():
-    st.markdown("<div style='height:3em'></div>", unsafe_allow_html=True)
-    st.markdown("<hr style='border:none; border-top:1px solid #bfbfbf; margin:0.2rem 0 1.2rem 0;'>", unsafe_allow_html=True)
+    st.markdown("<div style='height:4em'></div>", unsafe_allow_html=True)
+    st.markdown("<hr style='border:none; border-top:2px solid #8a8a8a; margin:0.4rem 0 1.8rem 0;'>", unsafe_allow_html=True)
 
 def is_admin_login(name: str, pin: str) -> bool:
     return (str(name or "").strip() == ADMIN_NAME) and (str(pin or "").strip() == ADMIN_PIN)
