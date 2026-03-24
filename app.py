@@ -7395,7 +7395,7 @@ if "🏦 내 통장" in tabs:
                 # -------------------------------------------------
                 # 3) 템플릿 추가/수정/삭제
                 # -------------------------------------------------
-                 render_template_section_divider()
+                render_template_section_divider()
                 st.markdown("### 🧩 템플릿 추가/수정/삭제")
 
                 KIND_TO_KR = {"deposit": "입금", "withdraw": "출금"}
