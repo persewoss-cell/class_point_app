@@ -9501,8 +9501,22 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         )
     
     if view_rows:
-        st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_buy_real_price","_invest_amount"], errors="ignore"),
-                     use_container_width=True, hide_index=True)
+        st.dataframe(
+            pd.DataFrame(view_rows).drop(
+                columns=[
+                    "_doc_id",
+                    "_student_id",
+                    "_product_id",
+                    "_buy_price",
+                    "_buy_real_price",
+                    "_invest_amount",
+                    "_point_profit_pct",
+                ],
+                errors="ignore",
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
     else:
         st.caption("투자 내역이 없습니다.")
     
