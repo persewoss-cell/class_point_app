@@ -5,6 +5,7 @@ import pandas as pd
 import altair as alt
 from io import BytesIO
 import random
+import math
 
 from datetime import datetime, timezone, timedelta, date
 
@@ -8555,6 +8556,79 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             return 0.0
         pct = ((rp - mn) / (mx - mn)) * 100.0
         return _as_price1(_clamp(pct, 0.0, 100.0))
+
+    def _nice_step(raw_step: float) -> float:
+        rs = float(raw_step or 0.0)
+        if rs <= 0:
+            return 1.0
+        exponent = math.floor(math.log10(rs))
+        base = 10 ** exponent
+        fraction = rs / base
+        if fraction <= 1:
+            nice_fraction = 1
+        elif fraction <= 2:
+            nice_fraction = 2
+        elif fraction <= 5:
+            nice_fraction = 5
+        else:
+            nice_fraction = 10
+        return float(nice_fraction * base)
+
+    def _next_nice_step(step: float) -> float:
+        s = float(step or 1.0)
+        exponent = math.floor(math.log10(s))
+        base = 10 ** exponent
+        fraction = s / base
+        if fraction <= 1:
+            return float(2 * base)
+        if fraction <= 2:
+            return float(5 * base)
+        if fraction <= 5:
+            return float(10 * base)
+        return float(20 * base)
+
+    def _calc_nice_y_axis(values: list[float], target_ticks: int = 6):
+        nums = []
+        for v in values or []:
+            try:
+                nums.append(float(v))
+            except Exception:
+                continue
+        if not nums:
+            return 0.0, 100.0, [0, 20, 40, 60, 80, 100]
+
+        vmin = min(nums)
+        vmax = max(nums)
+        vrange = vmax - vmin
+
+        if vrange <= 0:
+            base_step = _nice_step(max(abs(vmax), 1.0) / max(target_ticks - 1, 1))
+            y_min = math.floor(vmin / base_step) * base_step
+            y_max = math.ceil(vmax / base_step) * base_step
+            if y_max <= y_min:
+                y_max = y_min + base_step
+            ticks = [round(y_min + (base_step * i), 10) for i in range(target_ticks)]
+            return float(y_min), float(y_max), ticks
+
+        raw_step = vrange / max(target_ticks - 1, 1)
+        step = _nice_step(raw_step)
+
+        y_min = math.floor(vmin / step) * step
+        y_max = math.ceil(vmax / step) * step
+        if y_max <= y_min:
+            y_max = y_min + step
+
+        tick_count = int(round((y_max - y_min) / step)) + 1
+        while tick_count > 6:
+            step = _next_nice_step(step)
+            y_min = math.floor(vmin / step) * step
+            y_max = math.ceil(vmax / step) * step
+            if y_max <= y_min:
+                y_max = y_min + step
+            tick_count = int(round((y_max - y_min) / step)) + 1
+
+        ticks = [round(y_min + (step * i), 10) for i in range(tick_count)]
+        return float(y_min), float(y_max), ticks
     
     def _ts_to_dt(v):
         if v is None:
@@ -8989,6 +9063,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 order = cdf["변동사유"].tolist()
     
                                 chart_df = cdf.copy().reset_index(drop=True)
+                                y_min, y_max, y_ticks = _calc_nice_y_axis(chart_df["변동 후"].tolist(), target_ticks=6)
 
 
     
@@ -9089,8 +9164,9 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         title=None,
 
     
-                                        scale=alt.Scale(domain=[0, 100]),
-
+                                        scale=alt.Scale(domain=[y_min, y_max]),
+                                        axis=alt.Axis(labelAngle=0, values=y_ticks),
+                                        
     
                                     ),
 
@@ -9150,8 +9226,9 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         title=None,
 
     
-                                        scale=alt.Scale(domain=[0, 100]),
-
+                                        scale=alt.Scale(domain=[y_min, y_max]),
+                                        axis=alt.Axis(labelAngle=0, values=y_ticks),
+                                        
     
                                     ),
 
@@ -9257,7 +9334,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 order = cdf["변동사유"].tolist()
     
                                 chart_df = cdf.copy().reset_index(drop=True)
-
+                                y_min, y_max, y_ticks = _calc_nice_y_axis(chart_df["변동 후"].tolist(), target_ticks=6)
+                                
 
     
                                 # ✅ (PATCH) 구간별 상승/하락/보합 색상 + 점(회색) 표시
@@ -9357,8 +9435,9 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         title=None,
 
     
-                                        scale=alt.Scale(domain=[0, 100]),
-
+                                        scale=alt.Scale(domain=[y_min, y_max]),
+                                        axis=alt.Axis(labelAngle=0, values=y_ticks),
+                                        
     
                                     ),
 
@@ -9418,8 +9497,9 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         title=None,
 
     
-                                        scale=alt.Scale(domain=[0, 100]),
-
+                                        scale=alt.Scale(domain=[y_min, y_max]),
+                                        axis=alt.Axis(labelAngle=0, values=y_ticks),
+                                        
     
                                     ),
 
