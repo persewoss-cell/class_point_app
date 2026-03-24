@@ -9644,7 +9644,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         st.markdown(f"**{x.get('번호','')}**")
                     with c2:
                         st.markdown(f"{x.get('이름','')}")
-                        st.caption(prod_name)
+                        st.caption(f"{prod_name}(투자 원금:{invest_amt}드림)")
                     with c3:
                         st.caption(f"매입 {buy_price:.2f} → 현재 {cur_price:.2f} (차이 {diff:.2f}, 주가 1당 손익 {point_profit_pct:.2f}%)")
                         st.caption(f"수익/손실 {int(round(profit))} | 찾을 금액 {int(round(redeem_amt))}")
@@ -9684,7 +9684,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         st.markdown(f"**{x.get('번호','')}**")
                     with c2:
                         st.markdown(f"{x.get('이름','')}")
-                        st.caption(prod_name)
+                        st.caption(f"{prod_name}(투자 원금:{invest_amt}드림)")
                     with c3:
                         st.caption(f"매입 {buy_price:.2f} → 현재 {cur_price:.2f} (차이 {diff:.2f}, 주가 1당 손익 {point_profit_pct:.2f}%)")
                         st.caption(f"수익/손실 {int(round(profit))} | 찾을 금액 {int(round(redeem_amt))}")
