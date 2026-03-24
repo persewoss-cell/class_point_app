@@ -9434,8 +9434,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     
     ledger_rows = _load_ledger(None if is_admin else my_student_id)
 
-    # ✅ 사용자 모드(학생 로그인)는 장부/지급 계산 기준을 "환산주가"로 고정
-    use_norm_price_in_user_mode = (not is_admin)
+    # ✅ 장부/지급 계산 기준을 "환산주가"로 고정 (관리자/학생 공통)
+    use_norm_price_for_ledger_and_redeem = True
     
     view_rows = []
     for x in ledger_rows:
@@ -9466,25 +9466,24 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 "이름": str(x.get("name", "") or ""),
                 "종목": str(x.get("product_name", "") or ""),
                 "매입일자": str(x.get("buy_date_label", "") or ""),
-                "매입 주가": f"{(buy_price_norm if use_norm_price_in_user_mode else buy_price_real):.2f}",
+                "매입 주가": f"{(buy_price_norm if use_norm_price_for_ledger_and_redeem else buy_price_real):.2f}",
                 "투자 금액": int(x.get("invest_amount", 0) or 0),
                 "지급완료": "✅" if redeemed else "",
                 "매수일자": sell_date_label,
-                "매수 주가": f"{(sell_price_norm if use_norm_price_in_user_mode else sell_price_real):.2f}" if redeemed else "",
-                "주가차이": f"{(diff_norm if use_norm_price_in_user_mode else diff_real):.2f}" if redeemed else "",
+                "매수 주가": f"{(sell_price_norm if use_norm_price_for_ledger_and_redeem else sell_price_real):.2f}" if redeemed else "",
+                "주가차이": f"{(diff_norm if use_norm_price_for_ledger_and_redeem else diff_real):.2f}" if redeemed else "",
                 "수익/손실금": int(round(profit_val)) if redeemed else "",
                 "찾을 금액": redeem_amount_val if redeemed else "",
                 "_doc_id": x.get("_doc_id"),
                 "_student_id": x.get("student_id"),
                 "_product_id": x.get("product_id"),
                 "_buy_price": x.get("buy_price"),
-                "_buy_real_price": x.get("buy_real_price"),
                 "_invest_amount": x.get("invest_amount"),
             }
         )
     
     if view_rows:
-        st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_invest_amount"], errors="ignore"),
+        st.dataframe(pd.DataFrame(view_rows).drop(columns=["_doc_id","_student_id","_product_id","_buy_price","_buy_real_price","_invest_amount"], errors="ignore"),
                      use_container_width=True, hide_index=True)
     else:
         st.caption("투자 내역이 없습니다.")
@@ -9509,12 +9508,11 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     pid = str(x.get("_product_id", "") or "")
                     buy_price = _as_price1(x.get("_buy_price", 0.0))
                     invest_amt = int(x.get("_invest_amount", 0) or 0)
-                    buy_real_price = _as_price1(x.get("_buy_real_price", buy_price))
                     prod_name = str(x.get("종목", "") or "")
 
                     # 현재 주가 찾기
                     cur_price = buy_price
-                    cur_real_price = buy_real_price
+                    cur_real_price = buy_price
                     for p in products:
                         if str(p["product_id"]) == pid:
                             cur_price = _as_price1(p["current_price"])
@@ -9548,27 +9546,21 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     sid = str(x.get("_student_id", "") or "")
                     pid = str(x.get("_product_id", "") or "")
                     buy_price = _as_price1(x.get("_buy_price", 0.0))
-                    buy_real_price = _as_price1(x.get("_buy_real_price", buy_price))
                     invest_amt = int(x.get("_invest_amount", 0) or 0)
                     prod_name = str(x.get("종목", "") or "")
 
                     # 현재 주가 찾기
                     cur_price = buy_price
-                    cur_real_price = buy_real_price
+                    cur_real_price = buy_price
                     for p in products:
                         if str(p["product_id"]) == pid:
                             cur_price = _as_price1(p["current_price"])
                             cur_real_price = _as_price1(p.get("real_price", cur_price))
                             break
 
-                    if use_norm_price_in_user_mode:
-                        diff, profit, redeem_amt = _calc_redeem_amount(
-                            invest_amt, buy_price, cur_price
-                        )
-                    else:
-                        diff, profit, redeem_amt = _calc_redeem_amount(
-                            invest_amt, buy_price, cur_price, buy_real_price, cur_real_price
-                        )
+                    diff, profit, redeem_amt = _calc_redeem_amount(
+                        invest_amt, buy_price, cur_price
+                    )
                     
                     c1, c2, c3, c4 = st.columns([1.2, 2.2, 2.8, 1.2], gap="small")
                     with c1:
@@ -9614,7 +9606,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                             "sell_price": _as_price1(cur_price),
                                             "sell_real_price": _as_price1(cur_real_price),
                                             "diff": _as_price1(diff),
-                                            "real_diff": _as_price1(cur_real_price - buy_real_price),
+                                            "real_diff": _as_price1(diff),
                                             "profit": int(round(profit)),
                                             "redeem_amount": int(redeem_amt),
 
