@@ -8800,7 +8800,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             nm = p["name"]
             cur = p["current_price"]
             real_cur = float(p.get("real_price", cur) or 0.0)
-            st.markdown(f"- **{nm}** (실제주가 **{real_cur:.1f}**,{f'(범위 {min_p:.1f}~{max_p:.1f})'}, 환산주가 **{cur:.1f}**)")
+            st.markdown(f"- **{nm}** (실제주가 **{real_cur:.1f}**, [범위 {min_p:.1f}~{max_p:.1f}], 환산주가 **{cur:.1f}**)")
             
             if inv_admin_ok:
                 inv_reset_key = f"inv_reset_req_{p['product_id']}"
