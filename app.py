@@ -9496,6 +9496,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 "_product_id": x.get("product_id"),
                 "_buy_price": x.get("buy_price"),
                 "_invest_amount": x.get("invest_amount"),
+                "_point_profit_pct": point_profit_pct,
             }
         )
     
