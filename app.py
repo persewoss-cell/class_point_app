@@ -8938,16 +8938,13 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         df = pd.DataFrame(rows)
     
                         # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                        st.markdown("<div class='inv_hist_compact'>", unsafe_allow_html=True)
                         left, right = st.columns([1.7, 2.2], gap="large", vertical_alignment="top")
     
                         with left:
-                            st.markdown("<div class='inv_hist_table_wrap'>", unsafe_allow_html=True)
                             st.markdown(
-                                df.to_html(escape=False, index=False, classes="inv_hist_table"),
+                                f"<div class='inv_hist_table_wrap'>{df.to_html(escape=False, index=False, classes='inv_hist_table')}</div>",
                                 unsafe_allow_html=True,
                             )
-                            st.markdown("</div>", unsafe_allow_html=True)
     
                         with right:
                             # 가로: 변동사유 / 세로: 변동 후(주가)
@@ -9157,7 +9154,6 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
-                        st.markdown("</div>", unsafe_allow_html=True)
     
                     else:
                         st.caption("아직 주가 변동 기록이 없습니다.")
@@ -9210,16 +9206,13 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         df = pd.DataFrame(rows)
     
                         # ✅ 표(왼쪽) + 꺾은선 그래프(오른쪽)
-                        st.markdown("<div class='inv_hist_compact'>", unsafe_allow_html=True)
                         left, right = st.columns([1.7,2.2], gap="large", vertical_alignment="top")
     
                         with left:
-                            st.markdown("<div class='inv_hist_table_wrap'>", unsafe_allow_html=True)
                             st.markdown(
-                                df.to_html(escape=False, index=False, classes="inv_hist_table"),
+                                f"<div class='inv_hist_table_wrap'>{df.to_html(escape=False, index=False, classes='inv_hist_table')}</div>",
                                 unsafe_allow_html=True,
                             )
-                            st.markdown("</div>", unsafe_allow_html=True)
     
                         with right:
                             # 가로: 변동사유 / 세로: 변동 후(주가)
@@ -9429,7 +9422,6 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 st.altair_chart(chart, use_container_width=True)
                             else:
                                 st.caption("그래프 데이터가 없습니다.")
-                        st.markdown("</div>", unsafe_allow_html=True)
     
                     else:
                         st.caption("아직 주가 변동 기록이 없습니다.")
