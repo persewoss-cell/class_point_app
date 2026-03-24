@@ -8826,7 +8826,6 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         min_p = float(p.get("min_price", 0.0) or 0.0)
                         max_p = float(p.get("max_price", 100.0) or 100.0)
                         norm_preview = _normalize_to_100(new_real_price, min_p, max_p)
-                        st.caption(f"환산주가: {norm_preview:.1f} (범위 {min_p:.1f}~{max_p:.1f})")                        
                     with c3:
                         save_btn = st.button("저장", use_container_width=True, key=f"inv_save_{p['product_id']}")
     
