@@ -8512,6 +8512,22 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             return float(f"{float(v):.1f}")
         except Exception:
             return 0.0
+
+    def _clamp(v, lo, hi):
+        try:
+            vv = float(v)
+        except Exception:
+            vv = float(lo)
+        return max(float(lo), min(float(hi), vv))
+
+    def _normalize_to_100(real_price: float, min_price: float, max_price: float):
+        mn = _as_price1(min_price)
+        mx = _as_price1(max_price)
+        rp = _as_price1(real_price)
+        if mx <= mn:
+            return 0.0
+        pct = ((rp - mn) / (mx - mn)) * 100.0
+        return _as_price1(_clamp(pct, 0.0, 100.0))
     
     def _ts_to_dt(v):
         if v is None:
@@ -8620,6 +8636,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         "reason": str(x.get("reason", "") or "").strip(),
                         "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
                         "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
+                        "real_price_before": _as_price1(x.get("real_price_before", x.get("price_before", x.get("price", 0.0)))),
+                        "real_price_after": _as_price1(x.get("real_price_after", x.get("price_after", x.get("price", 0.0)))),
                     }
                 )
             return out
@@ -8642,6 +8660,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         "reason": str(x.get("reason", "") or "").strip(),
                         "price_before": _as_price1(x.get("price_before", x.get("price", 0.0))),
                         "price_after": _as_price1(x.get("price_after", x.get("price", 0.0))),
+                        "real_price_before": _as_price1(x.get("real_price_before", x.get("price_before", x.get("price", 0.0)))),
+                        "real_price_after": _as_price1(x.get("real_price_after", x.get("price_after", x.get("price", 0.0)))),
                     }
                 )
             out.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
@@ -8669,10 +8689,24 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     {
                         "product_id": d.id,
                         "name": nm,
+                        min_price": _as_price1(x.get("min_price", 0.0)),
+                        "max_price": _as_price1(x.get("max_price", 100.0)),
+                        "real_price": _as_price1(x.get("real_price", x.get("current_price", 0.0))),
                         "current_price": _as_price1(x.get("current_price", 0.0)),
                         "is_active": bool(x.get("is_active", True)),
                     }
                 )
+            for r in out:
+                mn = float(r.get("min_price", 0.0) or 0.0)
+                mx = float(r.get("max_price", 100.0) or 100.0)
+                rp = float(r.get("real_price", r.get("current_price", 0.0)) or 0.0)
+                if mx <= mn:
+                    mx = mn + 1.0
+                r["min_price"] = _as_price1(mn)
+                r["max_price"] = _as_price1(mx)
+                r["real_price"] = _as_price1(rp)
+                # 레거시 데이터가 current_price만 있는 경우에도 환산값으로 일관되게 노출
+                r["current_price"] = _normalize_to_100(r["real_price"], r["min_price"], r["max_price"])                
             out.sort(key=lambda r: r["name"])
             return out
         except Exception:
@@ -8765,8 +8799,9 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         for p in products:
             nm = p["name"]
             cur = p["current_price"]
-            st.markdown(f"- **{nm}** (현재주가 **{cur:.1f}**)")
-    
+            real_cur = float(p.get("real_price", cur) or 0.0)
+            st.markdown(f"- **{nm}** (실제주가 **{real_cur:.1f}**, 환산주가 **{cur:.1f}**)")
+            
             if inv_admin_ok:
                 inv_reset_key = f"inv_reset_req_{p['product_id']}"
                 if st.session_state.get(inv_reset_key, False):
@@ -8779,15 +8814,19 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                     with c1:
                         reason = st.text_input("변동 사유", key=f"inv_reason_{p['product_id']}")
                     with c2:
-                        new_price = st.number_input(
-                            "주가",
+                        new_real_price = st.number_input(
+                            "실제주가",
                             min_value=0.0,
-                            max_value=999.9,
+                            max_value=9999999.9,
                             step=0.1,
                             format="%.1f",
-                            value=float(cur),
+                            value=float(real_cur),
                             key=f"inv_price_{p['product_id']}",
                         )
+                        min_p = float(p.get("min_price", 0.0) or 0.0)
+                        max_p = float(p.get("max_price", 100.0) or 100.0)
+                        norm_preview = _normalize_to_100(new_real_price, min_p, max_p)
+                        st.caption(f"환산주가: {norm_preview:.1f} (범위 {min_p:.1f}~{max_p:.1f})")                        
                     with c3:
                         save_btn = st.button("저장", use_container_width=True, key=f"inv_save_{p['product_id']}")
     
@@ -8801,12 +8840,18 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     "product_id": p["product_id"],
                                     "reason": reason2,
                                     "price_before": _as_price1(cur),
-                                    "price_after": _as_price1(new_price),
+                                    "price_after": _as_price1(norm_preview),
+                                    "real_price_before": _as_price1(real_cur),
+                                    "real_price_after": _as_price1(new_real_price),
                                     "created_at": datetime.utcnow(),
                                 }
                                 db.collection(INV_HIST_COL).document().set(payload)
                                 db.collection(INV_PROD_COL).document(p["product_id"]).set(
-                                    {"current_price": _as_price1(new_price), "updated_at": datetime.utcnow()},
+                                    {
+                                        "real_price": _as_price1(new_real_price),
+                                        "current_price": _as_price1(norm_preview),
+                                        "updated_at": datetime.utcnow(),
+                                    },
                                     merge=True,
                                 )
                                 _get_history.clear()
@@ -8823,8 +8868,10 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         rows = []
                         for h in hist:
                             dt = _ts_to_dt(h.get("created_at"))
-                            pb = float(h.get("price_before", 0.0) or 0.0)
-                            pa = float(h.get("price_after", 0.0) or 0.0)
+                            pb = float(h.get("price_before", 0.0) or 0.0)  # 환산주가
+                            pa = float(h.get("price_after", 0.0) or 0.0)   # 환산주가
+                            rpb = float(h.get("real_price_before", pb) or 0.0)
+                            rpa = float(h.get("real_price_after", pa) or 0.0)
                             diff = round(pa - pb, 1)
     
                             # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
@@ -8853,7 +8900,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 {
                                     "변동일시": _fmt_kor_datetime(dt),
                                     "변동사유": h.get("reason", "") or "",
-                                    "주가": f"{pa:.1f}",          # ✅ '변동 후' → '주가'
+                                    "실제주가": f"{rpa:.1f}",
+                                    "환산주가": f"{pa:.1f}",
                                     "주가 등락": diff_view,
                                 }
                             )
@@ -8883,8 +8931,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             if init_price is None:
                                 init_price = float(p.get("current_price", 0.0) or 0.0)
     
-                            chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
-    
+                            chart_rows.append({"변동사유": "시작환산주가", "변동 후": round(init_price, 1)})
+                            
                             # ✅ 이후 변동(오래된→최신)
                             for h2 in reversed(hist):
                                 reason2 = str(h2.get("reason", "") or "").strip() or "-"
@@ -8997,7 +9045,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         title=None,
 
     
-                                        scale=alt.Scale(domain=[50, 100]),
+                                        scale=alt.Scale(domain=[0, 100]),
 
     
                                     ),
@@ -9058,7 +9106,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         title=None,
 
     
-                                        scale=alt.Scale(domain=[50, 100]),
+                                        scale=alt.Scale(domain=[0, 100]),
 
     
                                     ),
@@ -9089,8 +9137,9 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         rows = []
                         for h in hist:
                             dt = _ts_to_dt(h.get("created_at"))
-                            pb = float(h.get("price_before", 0.0) or 0.0)
-                            pa = float(h.get("price_after", 0.0) or 0.0)
+                            pb = float(h.get("price_before", 0.0) or 0.0)  # 환산주가
+                            pa = float(h.get("price_after", 0.0) or 0.0)   # 환산주가
+                            rpa = float(h.get("real_price_after", pa) or 0.0)
                             diff = round(pa - pb, 1)
     
                             # 변동일시: 0월 0일(요일) 오전/오후 00시 00분
@@ -9119,7 +9168,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 {
                                     "변동일시": _fmt_kor_datetime(dt),
                                     "변동사유": h.get("reason", "") or "",
-                                    "주가": f"{pa:.1f}",          # ✅ '변동 후' → '주가'
+                                    "실제주가": f"{rpa:.1f}",
+                                    "환산주가": f"{pa:.1f}",
                                     "주가 등락": diff_view,
                                 }
                             )
@@ -9149,8 +9199,8 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             if init_price is None:
                                 init_price = float(p.get("current_price", 0.0) or 0.0)
     
-                            chart_rows.append({"변동사유": "시작주가", "변동 후": round(init_price, 1)})
-    
+                            chart_rows.append({"변동사유": "시작환산주가", "변동 후": round(init_price, 1)})
+                            
                             # ✅ 이후 변동(오래된→최신)
                             for h2 in reversed(hist):
                                 reason2 = str(h2.get("reason", "") or "").strip() or "-"
@@ -9263,7 +9313,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         title=None,
 
     
-                                        scale=alt.Scale(domain=[50, 100]),
+                                        scale=alt.Scale(domain=[0, 100]),
 
     
                                     ),
@@ -9324,7 +9374,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         title=None,
 
     
-                                        scale=alt.Scale(domain=[50, 100]),
+                                        scale=alt.Scale(domain=[0, 100]),
 
     
                                     ),
@@ -9643,36 +9693,64 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
     
         st.session_state.setdefault("inv_admin_edit_prev", "(신규 추가)")
         st.session_state.setdefault("inv_admin_name", "")
-        st.session_state.setdefault("inv_admin_price", 0.0)
-
+        st.session_state.setdefault("inv_admin_real_price", 0.0)
+        st.session_state.setdefault("inv_admin_min_price", 0.0)
+        st.session_state.setdefault("inv_admin_max_price", 100.0)
+        
         if st.session_state.get("inv_admin_edit_prev") != sel:
             if cur_obj is None:
                 st.session_state["inv_admin_name"] = ""
-                st.session_state["inv_admin_price"] = 0.0
+                st.session_state["inv_admin_real_price"] = 0.0
+                st.session_state["inv_admin_min_price"] = 0.0
+                st.session_state["inv_admin_max_price"] = 100.0
             else:
                 st.session_state["inv_admin_name"] = str(cur_obj.get("name", "") or "")
-                st.session_state["inv_admin_price"] = float(cur_obj.get("current_price", 0.0) or 0.0)
+                st.session_state["inv_admin_real_price"] = float(cur_obj.get("real_price", cur_obj.get("current_price", 0.0)) or 0.0)
+                st.session_state["inv_admin_min_price"] = float(cur_obj.get("min_price", 0.0) or 0.0)
+                st.session_state["inv_admin_max_price"] = float(cur_obj.get("max_price", 100.0) or 100.0)
             st.session_state["inv_admin_edit_prev"] = sel
     
-        c1, c2 = st.columns([2.2, 1.2], gap="small")
+        c1, c2, c3, c4 = st.columns([2.0, 1.1, 1.1, 1.3], gap="small")
         with c1:
             new_name = st.text_input("투자 종목명", key="inv_admin_name")
         with c2:
-            new_price = st.number_input(
-                "초기/현재 주가",
+            new_min_price = st.number_input(
+                "최하값",
                 min_value=0.0,
-                max_value=999.9,
+                max_value=9999999.9,
                 step=0.1,
                 format="%.1f",
-                key="inv_admin_price",
+                key="inv_admin_min_price",
             )
-    
+        with c3:
+            new_max_price = st.number_input(
+                "최대값",
+                min_value=0.0,
+                max_value=9999999.9,
+                step=0.1,
+                format="%.1f",
+                key="inv_admin_max_price",
+            )
+        with c4:
+            new_real_price = st.number_input(
+                "초기/현재 실제주가",
+                min_value=0.0,
+                max_value=9999999.9,
+                step=0.1,
+                format="%.1f",
+                key="inv_admin_real_price",
+            )
+        new_norm_price = _normalize_to_100(new_real_price, new_min_price, new_max_price)
+        st.caption(f"환산주가(자동): {new_norm_price:.1f} / 100")
+
         b1, b2 = st.columns(2)
         with b1:
             if st.button("저장", use_container_width=True, key="inv_admin_save"):
                 nm = str(new_name or "").strip()
                 if not nm:
                     st.warning("종목명을 입력해 주세요.")
+                elif float(new_max_price) <= float(new_min_price):
+                    st.warning("최대값은 최하값보다 크게 입력해 주세요.")
                 else:
                     # ✅ 중복 종목명 방지(공백/대소문자 무시)
                     nm_key = nm.replace(" ", "").lower()
@@ -9696,7 +9774,10 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 db.collection(INV_PROD_COL).document(dup["product_id"]).set(
                                     {
                                         "name": nm,
-                                        "current_price": _as_price1(new_price),
+                                        "min_price": _as_price1(new_min_price),
+                                        "max_price": _as_price1(new_max_price),
+                                        "real_price": _as_price1(new_real_price),
+                                        "current_price": _as_price1(new_norm_price),
                                         "is_active": True,
                                         "updated_at": datetime.utcnow(),
                                     },
@@ -9719,7 +9800,10 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             db.collection(INV_PROD_COL).document().set(
                                 {
                                     "name": nm,
-                                    "current_price": _as_price1(new_price),
+                                    "min_price": _as_price1(new_min_price),
+                                    "max_price": _as_price1(new_max_price),
+                                    "real_price": _as_price1(new_real_price),
+                                    "current_price": _as_price1(new_norm_price),
                                     "is_active": True,
                                     "created_at": datetime.utcnow(),
                                     "updated_at": datetime.utcnow(),
@@ -9731,7 +9815,10 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                             db.collection(INV_PROD_COL).document(cur_obj["product_id"]).set(
                                 {
                                     "name": nm,
-                                    "current_price": _as_price1(new_price),
+                                    "min_price": _as_price1(new_min_price),
+                                    "max_price": _as_price1(new_max_price),
+                                    "real_price": _as_price1(new_real_price),
+                                    "current_price": _as_price1(new_norm_price),
                                     "is_active": True,
                                     "updated_at": datetime.utcnow(),
                                 },
