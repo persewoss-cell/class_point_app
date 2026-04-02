@@ -178,7 +178,7 @@ st.markdown(
         white-space: normal;
         word-break: keep-all;
     }
-    @media (max-width: 768px) {
+    @media (max-768px) {
         .app-title { font-size: clamp(2.05rem, 7.9vw, 3.3rem); }
     }
 
@@ -190,7 +190,7 @@ st.markdown(
     .tpl-head { font-weight: 800; padding: 6px 6px; border-bottom: 2px solid #ddd; margin-bottom: 4px; }
     .tpl-cell { padding: 4px 6px; border-bottom: 1px solid #eee; line-height: 1.15; font-size: 0.95rem; }
     .tpl-label { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    @media (max-width: 768px){
+    @media (max-768px){
         .tpl-cell { padding: 6px 6px; font-size: 1.02rem; line-height: 1.18; }
         .tpl-label{
             white-space: normal;
@@ -224,7 +224,7 @@ st.markdown(
         height: 260px;
         overflow-y: auto;
         overflow-x: auto;
-    }
+    }    
     .inv_hist_compact {
         margin-top: -28px;
     }
@@ -2073,9 +2073,7 @@ def api_add_tx(name, pin, memo, deposit, withdraw):
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
 
-        # 출금은 잔액 부족이면 불가
-        if tx_type == "withdraw" and bal < withdraw:
-            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+        # ✅ 관리자 출금은 잔액 부족이어도 허용(벌금 등 음수 잔액 반영)
 
         new_bal = int(bal + amount)
         transaction.update(student_ref, {"balance": int(new_bal)})
@@ -2141,9 +2139,7 @@ def api_admin_add_tx_by_student_id(
             raise ValueError("계정을 찾지 못했습니다.")
         bal = int((snap.to_dict() or {}).get("balance", 0) or 0)
 
-        # 출금은 잔액 부족이면 불가
-        if tx_type == "withdraw" and bal < withdraw:
-            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+        # ✅ 관리자 출금은 잔액 부족이어도 허용(벌금 등 음수 잔액 반영)
 
         new_bal = int(bal + amount)
         transaction.update(student_ref, {"balance": int(new_bal)})
@@ -3272,9 +3268,8 @@ def api_admin_add_tx_by_student_id_with_treasury(
         snap = student_ref.get(transaction=transaction)
         bal = int((snap.to_dict() or {}).get("balance", 0))
 
-        # 일반 출금은 잔액 부족이면 불가
-        if tx_type == "withdraw" and bal < withdraw:
-            raise ValueError("잔액보다 큰 출금은 불가합니다.")
+        # ✅ 관리자 모드(💰입금/출금): 출금 시 잔액 부족이어도 허용
+        #    (벌금 등으로 통장 음수 반영이 필요)
 
         # ✅ 국고 반영(같은 트랜잭션) - 먼저 처리(READ 먼저, WRITE는 나중)
         if tre_signed != 0:
@@ -7301,6 +7296,7 @@ if "🏦 내 통장" in tabs:
             with sub_tab_personal:
                 st.markdown("### 👥 대상 학생 선택")
                 accounts_now = api_list_accounts_cached().get("accounts", [])
+                import re
 
                 def _student_no(acc):
                     no = int(acc.get("no", 0) or 0)
@@ -7351,7 +7347,7 @@ if "🏦 내 통장" in tabs:
                                         selected_ids.append(sid)
                                         selected_names.append(nm)
                                 else:
-                                    pass
+                                    st.write("")
 
                     if selected_names:
                         st.caption("선택됨: " + " · ".join(selected_names))
@@ -7558,6 +7554,8 @@ if "🏦 내 통장" in tabs:
 
                 st.markdown("### 📥 템플릿 엑셀로 일괄 추가")
 
+                import io
+
                 # -------------------------
                 # 1) 샘플 엑셀 다운로드
                 # -------------------------
@@ -7571,7 +7569,7 @@ if "🏦 내 통장" in tabs:
                     columns=["내역이름", "구분", "종류", "금액", "순서"],
                 )
 
-                bio = BytesIO()
+                bio = io.BytesIO()
                 with pd.ExcelWriter(bio, engine="openpyxl") as writer:
                     sample_df.to_excel(writer, index=False, sheet_name="templates")
                 bio.seek(0)
@@ -7601,7 +7599,7 @@ if "🏦 내 통장" in tabs:
                         key="bank_tpl_sample_xlsx_download",
                     )
 
-                current_bio = BytesIO()
+                current_bio = io.BytesIO()
                 with pd.ExcelWriter(current_bio, engine="openpyxl") as writer:
                     current_tpl_df.to_excel(writer, index=False, sheet_name="templates")
                 current_bio.seek(0)
@@ -8126,7 +8124,7 @@ if "admin::🏦 내 통장" in tabs:
                                         selected_ids.append(sid)
                                         selected_names.append(nm)
                                 else:
-                                    pass
+                                    st.write("")
 
                     if selected_names:
                         st.caption("선택됨: " + " · ".join(selected_names))
@@ -8333,6 +8331,8 @@ if "admin::🏦 내 통장" in tabs:
 
                 st.markdown("### 📥 템플릿 엑셀로 일괄 추가")
 
+                import io
+
                 # -------------------------
                 # 1) 샘플 엑셀 다운로드
                 # -------------------------
@@ -8346,7 +8346,7 @@ if "admin::🏦 내 통장" in tabs:
                     columns=["내역이름", "구분", "종류", "금액", "순서"],
                 )
 
-                bio = BytesIO()
+                bio = io.BytesIO()
                 with pd.ExcelWriter(bio, engine="openpyxl") as writer:
                     sample_df.to_excel(writer, index=False, sheet_name="templates")
                 bio.seek(0)
@@ -8376,7 +8376,7 @@ if "admin::🏦 내 통장" in tabs:
                         key="bank_tpl_sample_xlsx_download",
                     )
 
-                current_bio = BytesIO()
+                current_bio = io.BytesIO()
                 with pd.ExcelWriter(current_bio, engine="openpyxl") as writer:
                     current_tpl_df.to_excel(writer, index=False, sheet_name="templates")
                 current_bio.seek(0)
@@ -10573,7 +10573,7 @@ if "🔎 개별조회" in tabs:
                                 selected_ids.append(sid)
                                 selected_names.append(label)
                         else:
-                            pass
+                            st.write("")
 
             if selected_names:
                 st.caption("선택됨: " + " · ".join(selected_names))
@@ -11095,13 +11095,14 @@ if "👥 계정 정보" in tabs:
         st.caption("엑셀을 올리면 아래 리스트(계정/비번 관리 표)에 바로 반영됩니다.")
 
         # ✅ 샘플 다운로드
+        import io
         sample_df = pd.DataFrame(
             [
                 {"번호": 1, "이름": "홍길동", "비밀번호": "12a#"},
                 {"번호": 2, "이름": "김철수", "비밀번호": "ab@9"},
             ]
         )
-        bio = BytesIO()
+        bio = io.BytesIO()
         with pd.ExcelWriter(bio, engine="openpyxl") as writer:
             sample_df.to_excel(writer, index=False, sheet_name="accounts")
         current_accounts_df = pd.DataFrame(
@@ -11118,7 +11119,7 @@ if "👥 계정 정보" in tabs:
         if not current_accounts_df.empty:
             current_accounts_df = current_accounts_df.sort_values(["번호", "이름"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
 
-        current_bio = BytesIO()
+        current_bio = io.BytesIO()
         with pd.ExcelWriter(current_bio, engine="openpyxl") as writer:
             current_accounts_df.to_excel(writer, index=False, sheet_name="accounts")
         current_bio.seek(0)
@@ -12322,7 +12323,7 @@ if "💼 직업/월급" in tabs:
 
         # ✅ 입력 초기화 버튼 삭제 (자리만 빈 칸으로 유지)
         with b2:
-            pass
+            st.write("")
 
         with b3:
             if st.button("🗑️ 삭제", use_container_width=True, key="job_delete_btn", disabled=(edit_row is None)):
@@ -12350,6 +12351,8 @@ if "💼 직업/월급" in tabs:
         st.markdown("### 📥 직업 엑셀 일괄 업로드")
         st.caption("엑셀 업로드 후 미리보기 확인 → '저장(반영)'을 눌러야 실제 반영됩니다.")
 
+        import io
+
         # ✅ 샘플 엑셀 다운로드  (※ 실수령은 자동 계산이므로 컬럼에서 제거)
         sample_df = pd.DataFrame(
             [
@@ -12358,7 +12361,7 @@ if "💼 직업/월급" in tabs:
             ],
             columns=["순", "직업", "월급", "배정 수"],
         )
-        bio = BytesIO()
+        bio = io.BytesIO()
         with pd.ExcelWriter(bio, engine="openpyxl") as writer:
             sample_df.to_excel(writer, index=False, sheet_name="jobs")
         bio.seek(0)
@@ -12387,7 +12390,7 @@ if "💼 직업/월급" in tabs:
                 key="job_sample_down",
             )
 
-        current_job_bio = BytesIO()
+        current_job_bio = io.BytesIO()
         with pd.ExcelWriter(current_job_bio, engine="openpyxl") as writer:
             current_job_df.to_excel(writer, index=False, sheet_name="jobs")
         current_job_bio.seek(0)
@@ -12698,6 +12701,8 @@ if "🏛️ 국세청(국고)" in tabs:
 
         st.markdown("### 📥 국고 템플릿 엑셀로 일괄 추가")
 
+        import io
+
         tre_sample_df = pd.DataFrame(
             [
                 {"라벨(내역)": "행사 지원금", "종류": "세입", "금액": 1000, "순서": 1},
@@ -12707,7 +12712,7 @@ if "🏛️ 국세청(국고)" in tabs:
             columns=["라벨(내역)", "종류", "금액", "순서"],
         )
 
-        tre_bio = BytesIO()
+        tre_bio = io.BytesIO()
         with pd.ExcelWriter(tre_bio, engine="openpyxl") as writer:
             tre_sample_df.to_excel(writer, index=False, sheet_name="treasury_templates")
         tre_bio.seek(0)
@@ -12736,7 +12741,7 @@ if "🏛️ 국세청(국고)" in tabs:
                 key="tre_tpl_sample_xlsx_download",
             )
 
-        tre_current_bio = BytesIO()
+        tre_current_bio = io.BytesIO()
         with pd.ExcelWriter(tre_current_bio, engine="openpyxl") as writer:
             tre_current_df.to_excel(writer, index=False, sheet_name="treasury_templates")
         tre_current_bio.seek(0)
@@ -12944,6 +12949,8 @@ if "📊 통계청" in tabs:
         # - 한 화면 7개(VISIBLE_COLS)
         # - 숫자 버튼은 작게, "/전체페이지 N"은 텍스트(클릭 불가)
         # -------------------------
+        import math
+
         VISIBLE_COLS = 7
         total_cols = len(sub_rows_all)
 
@@ -13767,6 +13774,8 @@ if "💳 신용등급" in tabs:
             # (PATCH) 가로 페이징 (통계청과 동일 로직)
             # 기준: credit_page_idx (0 = 최신 페이지)
             # -------------------------
+            import math
+    
             VISIBLE_COLS = 7
             total_cols = len(sub_rows_desc)
             total_pages = max(1, int(math.ceil(total_cols / VISIBLE_COLS)))
@@ -14842,7 +14851,7 @@ def _render_mart_admin_ui():
     with c1:
         new_limit = st.number_input("주간 구입 가능 개수", min_value=0, step=1, value=cur, key="mart_weekly_limit")
     with c2:
-        pass
+        st.write("")
         if st.button("저장", key="mart_limit_save", use_container_width=True):
             out = api_set_mart_weekly_limit(ADMIN_PIN, int(new_limit))
             if out.get("ok"):
@@ -15283,10 +15292,10 @@ if "🍀 복권" in tabs:
                 with ap1:
                     admin_lot_count = st.number_input("복권 참여 수", min_value=1, step=1, value=1, key="lot_admin_join_count")
                 with ap2:
-                    pass
+                    st.write("")
                     lot_apply_treasury = st.checkbox("국고반영", value=True, key="lot_admin_join_apply_treasury")
                 with ap3:
-                    pass
+                    st.write("")
                     if st.button("복권 참여", key="lot_admin_join_btn", use_container_width=True):
                         ares = api_submit_admin_lottery_entries(
                             ADMIN_PIN,
@@ -15722,6 +15731,8 @@ if "📊 통계/신용" in tabs and (not is_admin):
         if not sub_rows_all_u:
             st.info("아직 제출물 내역이 없어요.")
         else:
+            import math
+
             VISIBLE_COLS = 7
             total_cols = len(sub_rows_all_u)
             total_pages = max(1, int(math.ceil(total_cols / VISIBLE_COLS)))
@@ -15828,6 +15839,8 @@ if "📊 통계/신용" in tabs and (not is_admin):
         if not sub_rows_all_c:
             st.info("표시할 기록이 없어요.")
         else:
+            import math
+
             cfg = _get_credit_cfg()
             base = int(cfg.get("base", 50) or 50)
 
