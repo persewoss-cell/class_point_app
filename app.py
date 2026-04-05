@@ -7888,10 +7888,9 @@ if "🏦 내 통장" in tabs:
                                 treasury_memo=tre_memo,
                             )
                             if res.get("ok"):
-                                toast("입금 신청 완료! (관리자 승인 후 반영됩니다)", icon="🧾")
+                                toast_and_rerun("입금 요청 완료!", icon="📨")
                                 pfx = f"bank_trade_{login_name}"
                                 st.session_state[f"{pfx}_reset_request"] = True
-                                st.rerun()
                             else:
                                 st.error(res.get("error", "입금 신청 실패"))
 
