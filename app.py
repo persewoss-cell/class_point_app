@@ -701,6 +701,25 @@ def toast(msg: str, icon: str = "✅"):
     else:
         st.success(msg)
 
+def toast_and_rerun(msg: str, icon: str = "✅"):
+    """rerun 직전에도 알림이 누락되지 않도록 다음 실행에서 한 번 더 보여준다."""
+    queue_key = "_pending_toasts_after_rerun"
+    q = list(st.session_state.get(queue_key, []) or [])
+    q.append({"msg": str(msg), "icon": str(icon or "✅")})
+    st.session_state[queue_key] = q
+    st.rerun()
+
+def flush_pending_toasts():
+    queue_key = "_pending_toasts_after_rerun"
+    q = list(st.session_state.get(queue_key, []) or [])
+    if not q:
+        return
+    st.session_state[queue_key] = []
+    for item in q:
+        toast(str(item.get("msg", "")), icon=str(item.get("icon", "✅")))
+
+flush_pending_toasts()
+
 
 def render_template_section_divider():
     st.markdown("<div style='height:4em'></div>", unsafe_allow_html=True)
@@ -2598,16 +2617,14 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
             if st.button("승인", key=f"{prefix}_ok_{rid}", use_container_width=True):
                 out = api_admin_approve_deposit_request(admin_pin, rid)
                 if out.get("ok"):
-                    toast("승인 완료! (통장에 반영됨)", icon="✅")
-                    st.rerun()
+                    toast_and_rerun("승인 완료! (통장에 반영됨)", icon="✅")
                 else:
                     st.error(out.get("error", "승인 실패"))
         with b2:
             if st.button("거절", key=f"{prefix}_no_{rid}", use_container_width=True):
                 out = api_admin_reject_deposit_request(admin_pin, rid)
                 if out.get("ok"):
-                    toast("거절 처리 완료!", icon="🧾")
-                    st.rerun()
+                    toast_and_rerun("거절 처리 완료!", icon="🧾")
                 else:
                     st.error(out.get("error", "거절 실패"))
 
@@ -6355,8 +6372,7 @@ if not st.session_state.logged_in:
             st.session_state["login_student_ctx"] = {}
             _set_auth_query_params(ADMIN_NAME, ADMIN_PIN, is_admin_user=True)
             _persist_login_inputs(login_name, login_pin)
-            toast("관리자 모드 ON", icon="🔓")
-            st.rerun()
+            toast_and_rerun("관리자 모드 ON", icon="🔓")
         elif not pin_ok(login_pin):
             st.error("학생 비밀번호는 4자리여야 해요.")
         else:
@@ -6371,8 +6387,7 @@ if not st.session_state.logged_in:
                 _set_login_student_context_from_doc(doc)
                 _set_auth_query_params(login_name, login_pin, is_admin_user=False)
                 _persist_login_inputs(login_name, login_pin)
-                toast("로그인 완료!", icon="✅")
-                st.rerun()
+                toast_and_rerun("로그인 완료!", icon="✅")
 
 else:
     # ✅ 로그인 직후 rerun 이후에도 쿠키가 확실히 저장되도록 1회 더 동기화
@@ -9781,8 +9796,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 except Exception:
                                     pass
 
-                                toast("지급 완료!", icon="✅")
-                                st.rerun()
+                                toast_and_rerun("지급 완료!", icon="✅")
                             else:
                                 st.error(res.get("error", "지급 실패"))
     
@@ -9872,8 +9886,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                         "redeemed": False,
                                     }
                                 )
-                                toast("투자 완료! (장부에 반영됨)", icon="✅")
-                                st.rerun()
+                                toast_and_rerun("투자 완료! (장부에 반영됨)", icon="✅")
                             except Exception as e:
                                 st.error(f"장부 저장 실패: {e}")
                         else:
@@ -10011,8 +10024,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                     merge=True,
                                 )
                                 _get_products.clear()
-                                toast("삭제된 종목을 복구했습니다.", icon="♻️")
-                                st.rerun()
+                                toast_and_rerun("삭제된 종목을 복구했습니다.", icon="♻️")
                             except Exception as e:
                                 st.error(f"복구 실패: {e}")
                                 st.stop()
@@ -10054,8 +10066,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                                 merge=True,
                             )
                             _get_products.clear()
-                            toast("종목이 수정되었습니다.", icon="✅")
-                        st.rerun()
+                            toast_and_rerun("종목이 수정되었습니다.", icon="✅")
                     except Exception as e:
                         st.error(f"저장 실패: {e}")
         with b2:
@@ -10068,8 +10079,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                         merge=True,
                     )
                     _get_products.clear()
-                    toast("삭제(비활성화) 완료", icon="🗑️")
-                    st.rerun()
+                    toast_and_rerun("삭제(비활성화) 완료", icon="🗑️")
                 except Exception as e:
                     st.error(f"삭제 실패: {e}")
     
@@ -10552,8 +10562,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                             doc_id = str(label_to_id.get(pick))
                             res = _cancel_savings(doc_id)
                             if res.get("ok"):
-                                toast("중도해지 처리 완료", icon="✅")
-                                st.rerun()
+                                toast_and_rerun("중도해지 처리 완료", icon="✅")
                             else:
                                 st.error(res.get("error", "중도해지 실패"))
 
@@ -11282,8 +11291,7 @@ if "👥 계정 정보" in tabs:
 
                     api_list_accounts_cached.clear()
                     _list_active_students_full_cached.clear()
-                    toast(f"엑셀 등록 완료 (신규 {created} / 수정 {updated} / 제외 {skipped})", icon="📥")
-                    st.rerun()
+                    toast_and_rerun(f"엑셀 등록 완료 (신규 {created} / 수정 {updated} / 제외 {skipped})", icon="📥")
 
                 except Exception as e:
                     st.error(f"엑셀 처리 실패: {e}")
@@ -11520,8 +11528,7 @@ if "💼 직업/월급" in tabs:
                             "health_fee": health_fee,
                         }
                     )
-                    toast("공제 설정 저장 완료!", icon="✅")
-                    st.rerun()
+                    toast_and_rerun("공제 설정 저장 완료!", icon="✅")
 
                 # -------------------------------------------------
         # ✅ 월급 지급 설정(자동/수동)
@@ -11703,8 +11710,7 @@ if "💼 직업/월급" in tabs:
             with cc3:
                 if st.button("✅ 지급 설정 저장", use_container_width=True, key="payroll_save_cfg"):
                     _save_payroll_cfg({"pay_day": int(pay_day_in), "auto_enabled": bool(auto_on)})
-                    toast("월급 지급 설정 저장 완료!", icon="✅")
-                    st.rerun()
+                    toast_and_rerun("월급 지급 설정 저장 완료!", icon="✅")
 
             st.caption("• 수동지급: 이번 달(현재 월)에 즉시 지급합니다. 이미 지급한 기록이 있으면 확인 후 재지급합니다.")
 
@@ -11762,8 +11768,7 @@ if "💼 직업/월급" in tabs:
                     if st.button("아니오", use_container_width=True, key="payroll_manual_no"):
                         st.session_state["payroll_manual_confirm"] = False
                         st.session_state["payroll_manual_do"] = False
-                        toast("수동지급 취소", icon="🛑")
-                        st.rerun()
+                        toast_and_rerun("수동지급 취소", icon="🛑")
 
             # 실제 수동지급 실행(1회)
             if st.session_state.get("payroll_manual_do", False):
@@ -12163,8 +12168,7 @@ if "💼 직업/월급" in tabs:
                                 db.collection("job_salary").document(rid0).delete()
                                 st.session_state.job_sel.pop(rid0, None)
                             st.session_state.pop("_job_bulk_delete_ids", None)
-                            toast("삭제 완료", icon="🗑️")
-                            st.rerun()
+                            toast_and_rerun("삭제 완료", icon="🗑️")
                     with n:
                         if st.button("아니오", key="job_bulk_del_no", use_container_width=True):
                             st.session_state.pop("_job_bulk_delete_ids", None)
@@ -12397,8 +12401,7 @@ if "💼 직업/월급" in tabs:
                 if st.button("예", use_container_width=True, key="job_del_yes"):
                     db.collection("job_salary").document(st.session_state._job_delete_id).delete()
                     st.session_state.pop("_job_delete_id", None)
-                    toast("삭제 완료", icon="🗑️")
-                    st.rerun()
+                    toast_and_rerun("삭제 완료", icon="🗑️")
             with n:
                 if st.button("아니오", use_container_width=True, key="job_del_no"):
                     st.session_state.pop("_job_delete_id", None)
@@ -12572,8 +12575,7 @@ if "💼 직업/월급" in tabs:
                     st.session_state["job_bulk_sig"] = None
                     st.session_state.pop("job_bulk_upl", None)
 
-                    toast("직업 엑셀 저장(반영) 완료!", icon="📥")
-                    st.rerun()
+                    toast_and_rerun("직업 엑셀 저장(반영) 완료!", icon="📥")
 
                 except Exception as e:
                     st.error(f"직업 엑셀 저장 실패: {e}")
@@ -12752,8 +12754,7 @@ if "🏛️ 국세청(국고)" in tabs:
                 else:
                     res = api_delete_treasury_template(ADMIN_PIN, str(edit_tpl.get("template_id")))
                     if res.get("ok"):
-                        toast("국고 템플릿 삭제 완료!", icon="🗑️")
-                        st.rerun()
+                        toast_and_rerun("국고 템플릿 삭제 완료!", icon="🗑️")
                     else:
                         st.error(res.get("error", "삭제 실패"))
 
@@ -12901,8 +12902,7 @@ if "🏛️ 국세청(국고)" in tabs:
                         api_list_treasury_templates_cached.clear()
                         st.session_state["tre_tpl_bulk_df"] = None
                         st.session_state["tre_tpl_reset_req"] = True
-                        toast("국고 템플릿 엑셀 저장(반영) 완료!", icon="📥")
-                        st.rerun()
+                        toast_and_rerun("국고 템플릿 엑셀 저장(반영) 완료!", icon="📥")
                     except Exception as e:
                         st.error(f"국고 템플릿 엑셀 저장 실패: {e}")
 
@@ -13729,8 +13729,7 @@ if "💳 신용등급" in tabs:
             with c5:
                 if st.button("✅ 설정 저장", use_container_width=True, key="cred_cfg_save"):
                     _save_credit_cfg({"base": base_in, "o": o_in, "x": x_in, "tri": tri_in})
-                    toast("설정 저장 완료!", icon="✅")
-                    st.rerun()
+                    toast_and_rerun("설정 저장 완료!", icon="✅")
 
         # -------------------------
         # 2-1) 관리자 개별 신용점수 조정(+/-)
@@ -14165,8 +14164,7 @@ if "💳 신용등급" in tabs:
                         },
                         merge=True,
                     )
-                    toast(f"신용점수 조정 저장 완료 ({signed_delta:+d}점)", icon="✅")
-                    st.rerun()
+                    toast_and_rerun(f"신용점수 조정 저장 완료 ({signed_delta:+d}점)", icon="✅")
 
             st.markdown("### 📒 신용점수 조정 장부")
             adj_rows = _list_credit_adjustments(limit=300)
@@ -14655,8 +14653,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                             doc_id = str(label_to_id.get(pick))
                             res = _cancel_savings(doc_id)
                             if res.get("ok"):
-                                toast("중도해지 처리 완료", icon="✅")
-                                st.rerun()
+                                toast_and_rerun("중도해지 처리 완료", icon="✅")
                             else:
                                 st.error(res.get("error", "중도해지 실패"))
         
@@ -14820,8 +14817,7 @@ div[data-testid="stDataFrame"] * { font-size: 0.80rem !important; }
                             rid = str(lab_to_id.get(pick2))
                             res = _cancel_savings(rid, as_admin_action=False)
                             if res.get("ok"):
-                                toast("중도해지 완료", icon="✅")
-                                st.rerun()
+                                toast_and_rerun("중도해지 완료", icon="✅")
                             else:
                                 st.error(res.get("error", "중도해지 실패"))
 
@@ -14920,8 +14916,7 @@ def _render_mart_admin_ui():
         if st.button("저장", key="mart_limit_save", use_container_width=True):
             out = api_set_mart_weekly_limit(ADMIN_PIN, int(new_limit))
             if out.get("ok"):
-                toast("주간 제한 저장 완료", icon="✅")
-                st.rerun()
+                toast_and_rerun("주간 제한 저장 완료", icon="✅")
             else:
                 st.error(out.get("error", "저장 실패"))
 
@@ -14957,15 +14952,13 @@ def _render_mart_admin_ui():
         if c[1].button("승인", key=f"mart_appr_{r['request_id']}", use_container_width=True):
             out = api_admin_approve_mart_request(ADMIN_PIN, r["request_id"])
             if out.get("ok"):
-                toast("승인 완료", icon="✅")
-                st.rerun()
+                toast_and_rerun("승인 완료", icon="✅")
             else:
                 st.error(out.get("error", "승인 실패"))
         if c[2].button("거절", key=f"mart_rej_{r['request_id']}", use_container_width=True):
             out = api_admin_reject_mart_request(ADMIN_PIN, r["request_id"])
             if out.get("ok"):
-                toast("거절 완료", icon="✅")
-                st.rerun()
+                toast_and_rerun("거절 완료", icon="✅")
             else:
                 st.error(out.get("error", "거절 실패"))
 
@@ -15106,8 +15099,7 @@ def _render_mart_admin_ui():
                         )
                         n += 1
                     _normalize_mart_template_orders()
-                    toast(f"마트 템플릿 반영 완료: {n}건", icon="✅")
-                    st.rerun()
+                    toast_and_rerun(f"마트 템플릿 반영 완료: {n}건", icon="✅")
             except Exception as e:
                 st.error(f"엑셀 반영 실패: {e}")
 
@@ -15144,8 +15136,7 @@ if "🏷️ 경매" in tabs:
                 if st.button("개시", key="auc_admin_open_btn", use_container_width=True):
                     res = api_open_auction(ADMIN_PIN, a_bid_name, a_aff)
                     if res.get("ok"):
-                        toast(f"경매 {int(res.get('round_no', 0) or 0):02d}회 개시", icon="✅")
-                        st.rerun()
+                        toast_and_rerun(f"경매 {int(res.get('round_no', 0) or 0):02d}회 개시", icon="✅")
                     else:
                         st.error(res.get("error", "경매 개시 실패"))
 
@@ -15153,8 +15144,7 @@ if "🏷️ 경매" in tabs:
                 if st.button("마감", key="auc_admin_close_btn", use_container_width=True):
                     res = api_close_auction(ADMIN_PIN)
                     if res.get("ok"):
-                        toast("경매 마감 완료", icon="✅")
-                        st.rerun()
+                        toast_and_rerun("경매 마감 완료", icon="✅")
                     else:
                         st.error(res.get("error", "경매 마감 실패"))
 
@@ -15260,8 +15250,7 @@ if "🏷️ 경매" in tabs:
                                 refund_non_winners = bool(yes_refund_checked)
                                 res = api_apply_auction_ledger(ADMIN_PIN, cl_round_id, refund_non_winners=refund_non_winners)
                                 if res.get("ok"):
-                                    toast("경매 관리장부 + 국고 세입 반영 완료", icon="✅")
-                                    st.rerun()
+                                    toast_and_rerun("경매 관리장부 + 국고 세입 반영 완료", icon="✅")
                                 else:
                                     st.error(res.get("error", "장부 반영 실패"))
 
@@ -15345,8 +15334,7 @@ if "🏷️ 경매" in tabs:
                         else:
                             res = api_submit_auction_bid(login_name, login_pin, int(amt))
                             if res.get("ok"):
-                                toast("입찰표 제출 완료! 제출 즉시 통장에서 차감되었습니다.", icon="✅")
-                                st.rerun()
+                                toast_and_rerun("입찰표 제출 완료! 제출 즉시 통장에서 차감되었습니다.", icon="✅")
                             else:
                                 st.error(res.get("error", "입찰표 제출 실패"))
 
@@ -15388,16 +15376,14 @@ if "🍀 복권" in tabs:
                         },
                     )
                     if res.get("ok"):
-                        toast(f"복권 {int(res.get('round_no', 0) or 0)}회 개시", icon="✅")
-                        st.rerun()
+                        toast_and_rerun(f"복권 {int(res.get('round_no', 0) or 0)}회 개시", icon="✅")
                     else:
                         st.error(res.get("error", "복권 개시 실패"))
             with b2:
                 if st.button("마감", key="lot_admin_close_btn", use_container_width=True):
                     res = api_close_lottery(ADMIN_PIN)
                     if res.get("ok"):
-                        toast("복권 마감 완료", icon="✅")
-                        st.rerun()
+                        toast_and_rerun("복권 마감 완료", icon="✅")
                     else:
                         st.error(res.get("error", "복권 마감 실패"))
 
@@ -15425,8 +15411,7 @@ if "🍀 복권" in tabs:
                             apply_treasury=bool(lot_apply_treasury),
                         )
                         if ares.get("ok"):
-                            toast(f"관리자 복권 {int(ares.get('count', 0) or 0)}게임 참여 완료", icon="✅")
-                            st.rerun()
+                            toast_and_rerun(f"관리자 복권 {int(ares.get('count', 0) or 0)}게임 참여 완료", icon="✅")
                         else:
                             st.error(ares.get("error", "관리자 복권 참여 실패"))
 
@@ -15607,8 +15592,7 @@ if "🍀 복권" in tabs:
                     res = api_draw_lottery(ADMIN_PIN, current_round_id, draw_nums)
                     if res.get("ok"):
                         st.session_state["lottery_winners_visible_round_id"] = str(current_round_id)
-                        toast("복권 추첨 완료", icon="✅")
-                        st.rerun()
+                        toast_and_rerun("복권 추첨 완료", icon="✅")
                     else:
                         st.error(res.get("error", "복권 추첨 실패"))
 
@@ -15686,8 +15670,7 @@ if "🍀 복권" in tabs:
 
                         if finalize_ok:
                             st.session_state["lottery_winners_visible_round_id"] = ""
-                            toast("당첨금 지급 및 장부 반영 완료", icon="✅")
-                            st.rerun()
+                            toast_and_rerun("당첨금 지급 및 장부 반영 완료", icon="✅")
 
                     if payout_done:
                         st.caption("당첨금 지급: 완료")
@@ -15832,7 +15815,7 @@ if "🧾 로그기록" in tabs:
             st.caption("모든 탭의 변경 이력을 분리 없이 하나의 표로 통합해 보여줍니다.")
 
             # ✅ 요청 반영: 탭별 분리 없이 '단일 통합표'만 제공
-            max_log_rows = st.number_input("표시 행 수", min_value=100, max_value=10000, value=3000, step=100, key="audit_max_rows")
+            max_log_rows = st.number_input("표시 행 수", min_value=100, max_value=10000, value=200, step=100, key="audit_max_rows")
             all_rows = _build_activity_log_rows(limit_per_source=800, max_rows=int(max_log_rows))
             if not all_rows:
                 st.info("표시할 로그가 없습니다.")
@@ -16214,8 +16197,7 @@ if "🎯 목표" in tabs and (not is_admin):
         if st.button("목표 저장", key=f"goal_save_{login_name}", use_container_width=True):
             res = api_set_goal(login_name, login_pin, int(g_amt), g_date.isoformat())
             if res.get("ok"):
-                toast("목표 저장 완료!", icon="🎯")
-                st.rerun()
+                toast_and_rerun("목표 저장 완료!", icon="🎯")
             else:
                 st.error(res.get("error", "목표 저장 실패"))
 
