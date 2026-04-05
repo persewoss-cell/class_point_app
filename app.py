@@ -7267,7 +7267,7 @@ if "🏦 내 통장" in tabs:
                             else:
                                 res = api_admin_bulk_withdraw(ADMIN_PIN, wd_bulk, memo_bulk)
                                 if res.get("ok"):
-                                    toast(f"출금 완료! (적용 {res.get('count')}명)", icon="⚠️")
+                                    toast(f"일괄 출금 완료! (적용 {res.get('count')}명)", icon="⚠️")
                                     # ✅ 국고 반영(체크 시): 전체 출금 → 국고 세입(합산)
                                     if tre_apply_bulk:
                                         cnt = int(res.get("count", 0) or 0)
@@ -7431,58 +7431,74 @@ if "🏦 내 통장" in tabs:
                     )
 
                     if st.button("저장", key="admin_personal_reward_save", use_container_width=True):
-                        if not selected_ids:
-                            st.warning("먼저 적용할 학생을 체크해 주세요.")
-                        elif (dep_p > 0 and wd_p > 0) or (dep_p == 0 and wd_p == 0):
+                        if (dep_p > 0 and wd_p > 0) or (dep_p == 0 and wd_p == 0):
                             st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
                         elif not memo_p:
                             st.error("내역(메모)을 입력해 주세요.")
                         else:
-                            ok_cnt = 0
-                            fail = []
+                            checked_cnt = int(len(selected_ids))
+                            is_deposit_mode = bool(dep_p > 0)
+                            toast_msg = (
+                                f"입금 완료! ({checked_cnt}명)"
+                                if is_deposit_mode
+                                else f"출금 완료! (적용 {checked_cnt}명)"
+                            )
+                            toast_icon = "🎉" if is_deposit_mode else "⚠️"
 
-                            tre_apply_personal = bool(st.session_state.get("admin_personal_reward_treasury_apply", False))
-                            sid_to_disp = {}
-                            try:
-                                for _a in (accounts_now or []):
-                                    _sid = str(_a.get("student_id", "") or "")
-                                    if _sid:
-                                        _no = int(_a.get("no", 0) or 0)
-                                        _nm = str(_a.get("name", "") or "")
-                                        if _no > 0:
-                                            sid_to_disp[_sid] = f"{_no}번 {_nm}"
-                                        else:
-                                            sid_to_disp[_sid] = _nm
-                            except Exception:
-                                sid_to_disp = {}
-
-                            for sid in selected_ids:
-                                # ✅ 체크된 학생만 적용 (관리자 출금은 음수 허용)
-                                disp_name = sid_to_disp.get(str(sid), str(sid))
-                                tre_memo = f"{disp_name} {memo_p}".strip()
-
-                                res = api_admin_add_tx_by_student_id_with_treasury(
-                                    ADMIN_PIN,
-                                    sid,
-                                    memo_p,
-                                    int(dep_p),
-                                    int(wd_p),
-                                    tre_apply_personal,
-                                    tre_memo,
-                                    actor=disp_name,
-                                )
-                                if res.get("ok"):
-                                    ok_cnt += 1
-                                else:
-                                    fail.append(res.get("error", "저장 실패"))
-
-                            if ok_cnt > 0:
-                                toast(f"개인 적용 완료! ({ok_cnt}명)", icon="✅")
-                                api_list_accounts_cached.clear()
-                                st.session_state["admin_personal_reward_reset_request"] = True                                
-                                st.rerun()
+                            if checked_cnt == 0:
+                                toast(toast_msg, icon=toast_icon)
                             else:
-                                st.error("적용 실패: " + (fail[0] if fail else "알 수 없는 오류"))                
+                                ok_cnt = 0
+                                fail = []
+
+                                tre_apply_personal = bool(st.session_state.get("admin_personal_reward_treasury_apply", False))
+                                sid_to_disp = {}
+                                try:
+                                    for _a in (accounts_now or []):
+                                        _sid = str(_a.get("student_id", "") or "")
+                                        if _sid:
+                                            _no = int(_a.get("no", 0) or 0)
+                                            _nm = str(_a.get("name", "") or "")
+                                            if _no > 0:
+                                                sid_to_disp[_sid] = f"{_no}번 {_nm}"
+                                            else:
+                                                sid_to_disp[_sid] = _nm
+                                except Exception:
+                                    sid_to_disp = {}
+
+                                for sid in selected_ids:
+                                    # ✅ 체크된 학생만 적용 (관리자 출금은 음수 허용)
+                                    disp_name = sid_to_disp.get(str(sid), str(sid))
+                                    tre_memo = f"{disp_name} {memo_p}".strip()
+
+                                    res = api_admin_add_tx_by_student_id_with_treasury(
+                                        ADMIN_PIN,
+                                        sid,
+                                        memo_p,
+                                        int(dep_p),
+                                        int(wd_p),
+                                        tre_apply_personal,
+                                        tre_memo,
+                                        actor=disp_name,
+                                    )
+                                    if res.get("ok"):
+                                        ok_cnt += 1
+                                    else:
+                                        fail.append(res.get("error", "저장 실패"))
+
+                                if ok_cnt > 0:
+                                    api_list_accounts_cached.clear()
+                                    st.session_state["admin_personal_reward_reset_request"] = True
+                                    toast_and_rerun(
+                                        (
+                                            f"입금 완료! ({ok_cnt}명)"
+                                            if is_deposit_mode
+                                            else f"출금 완료! (적용 {ok_cnt}명)"
+                                        ),
+                                        icon=toast_icon,
+                                    )
+                                else:
+                                    st.error("적용 실패: " + (fail[0] if fail else "알 수 없는 오류"))            
 
                 # -------------------------------------------------
                 # 3) 템플릿 추가/수정/삭제
@@ -8208,58 +8224,74 @@ if "admin::🏦 내 통장" in tabs:
                     )
 
                     if st.button("저장", key="admin_personal_reward_save", use_container_width=True):
-                        if not selected_ids:
-                            st.warning("먼저 적용할 학생을 체크해 주세요.")
-                        elif (dep_p > 0 and wd_p > 0) or (dep_p == 0 and wd_p == 0):
+                        if (dep_p > 0 and wd_p > 0) or (dep_p == 0 and wd_p == 0):
                             st.error("입금/출금은 둘 중 하나만 입력해 주세요.")
                         elif not memo_p:
                             st.error("내역(메모)을 입력해 주세요.")
                         else:
-                            ok_cnt = 0
-                            fail = []
+                            checked_cnt = int(len(selected_ids))
+                            is_deposit_mode = bool(dep_p > 0)
+                            toast_msg = (
+                                f"입금 완료! ({checked_cnt}명)"
+                                if is_deposit_mode
+                                else f"출금 완료! (적용 {checked_cnt}명)"
+                            )
+                            toast_icon = "🎉" if is_deposit_mode else "⚠️"
 
-                            tre_apply_personal = bool(st.session_state.get("admin_personal_reward_treasury_apply", False))
-                            sid_to_disp = {}
-                            try:
-                                for _a in (accounts_now or []):
-                                    _sid = str(_a.get("student_id", "") or "")
-                                    if _sid:
-                                        _no = int(_a.get("no", 0) or 0)
-                                        _nm = str(_a.get("name", "") or "")
-                                        if _no > 0:
-                                            sid_to_disp[_sid] = f"{_no}번 {_nm}"
-                                        else:
-                                            sid_to_disp[_sid] = _nm
-                            except Exception:
-                                sid_to_disp = {}
-
-                            for sid in selected_ids:
-                                # ✅ 체크된 학생만 적용 (관리자 출금은 음수 허용)
-                                disp_name = sid_to_disp.get(str(sid), str(sid))
-                                tre_memo = f"{disp_name} {memo_p}".strip()
-
-                                res = api_admin_add_tx_by_student_id_with_treasury(
-                                    ADMIN_PIN,
-                                    sid,
-                                    memo_p,
-                                    int(dep_p),
-                                    int(wd_p),
-                                    tre_apply_personal,
-                                    tre_memo,
-                                    actor=disp_name,
-                                )
-                                if res.get("ok"):
-                                    ok_cnt += 1
-                                else:
-                                    fail.append(res.get("error", "저장 실패"))
-
-                            if ok_cnt > 0:
-                                toast(f"개인 적용 완료! ({ok_cnt}명)", icon="✅")
-                                api_list_accounts_cached.clear()
-                                st.session_state["admin_personal_reward_reset_request"] = True
-                                st.rerun()
+                            if checked_cnt == 0:
+                                toast(toast_msg, icon=toast_icon)
                             else:
-                                st.error("적용 실패: " + (fail[0] if fail else "알 수 없는 오류"))
+                                ok_cnt = 0
+                                fail = []
+
+                                tre_apply_personal = bool(st.session_state.get("admin_personal_reward_treasury_apply", False))
+                                sid_to_disp = {}
+                                try:
+                                    for _a in (accounts_now or []):
+                                        _sid = str(_a.get("student_id", "") or "")
+                                        if _sid:
+                                            _no = int(_a.get("no", 0) or 0)
+                                            _nm = str(_a.get("name", "") or "")
+                                            if _no > 0:
+                                                sid_to_disp[_sid] = f"{_no}번 {_nm}"
+                                            else:
+                                                sid_to_disp[_sid] = _nm
+                                except Exception:
+                                    sid_to_disp = {}
+
+                                for sid in selected_ids:
+                                    # ✅ 체크된 학생만 적용 (관리자 출금은 음수 허용)
+                                    disp_name = sid_to_disp.get(str(sid), str(sid))
+                                    tre_memo = f"{disp_name} {memo_p}".strip()
+
+                                    res = api_admin_add_tx_by_student_id_with_treasury(
+                                        ADMIN_PIN,
+                                        sid,
+                                        memo_p,
+                                        int(dep_p),
+                                        int(wd_p),
+                                        tre_apply_personal,
+                                        tre_memo,
+                                        actor=disp_name,
+                                    )
+                                    if res.get("ok"):
+                                        ok_cnt += 1
+                                    else:
+                                        fail.append(res.get("error", "저장 실패"))
+
+                                if ok_cnt > 0:
+                                    api_list_accounts_cached.clear()
+                                    st.session_state["admin_personal_reward_reset_request"] = True
+                                    toast_and_rerun(
+                                        (
+                                            f"입금 완료! ({ok_cnt}명)"
+                                            if is_deposit_mode
+                                            else f"출금 완료! (적용 {ok_cnt}명)"
+                                        ),
+                                        icon=toast_icon,
+                                    )
+                                else:
+                                    st.error("적용 실패: " + (fail[0] if fail else "알 수 없는 오류"))
 
                 # -------------------------------------------------
                 # 3) 템플릿 추가/수정/삭제
