@@ -15889,6 +15889,7 @@ if "🧾 로그기록" in tabs:
                                 or kw in str(r.get("대상", "")).lower(),
                                 axis=1,
                             )
+                        ]
                     if not df_logs.empty:
                         df_logs = df_logs.reset_index(drop=True)
                         df_logs.insert(0, "번호", df_logs.index + 1)
