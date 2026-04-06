@@ -6428,6 +6428,7 @@ else:
 
         # ✅ (PATCH) 개별조회 지연로딩 상태 완전 초기화 (로그아웃 후 재로그인 시 자동 로드 방지)
         st.session_state.pop("admin_ind_view_loaded", None)
+        st.session_state.pop("audit_load_requested", None)
 
         st.rerun()
 
@@ -7399,12 +7400,12 @@ if "🏦 내 통장" in tabs:
 
                 accounts_now = sorted(accounts_now, key=_num_key)
 
-                if st.session_state.get("admin_personal_reward_reset_request", False):
+                if st.session_state.get("admin_personal_pick_reset_request", False):
                     for _acc in (accounts_now or []):
                         _sid = str(_acc.get("student_id", "") or "")
                         if _sid:
                             st.session_state[f"admin_personal_pick_{_sid}"] = False
-                    st.session_state["admin_personal_reward_reset_request"] = False
+                    st.session_state["admin_personal_pick_reset_request"] = False
 
                 if not accounts_now:
                     st.info("활성 계정이 없습니다.")
@@ -7506,6 +7507,7 @@ if "🏦 내 통장" in tabs:
 
                                 if ok_cnt > 0:
                                     api_list_accounts_cached.clear()
+                                    st.session_state["admin_personal_pick_reset_request"] = True
                                     st.session_state["admin_personal_reward_reset_request"] = True
                                     toast_and_rerun(
                                         (
@@ -8191,12 +8193,12 @@ if "admin::🏦 내 통장" in tabs:
 
                 accounts_now = sorted(accounts_now, key=_num_key)
 
-                if st.session_state.get("admin_personal_reward_reset_request", False):
+                if st.session_state.get("admin_personal_pick_reset_request", False):
                     for _acc in (accounts_now or []):
                         _sid = str(_acc.get("student_id", "") or "")
                         if _sid:
                             st.session_state[f"admin_personal_pick_{_sid}"] = False
-                    st.session_state["admin_personal_reward_reset_request"] = False
+                    st.session_state["admin_personal_pick_reset_request"] = False
 
                 if not accounts_now:
                     st.info("활성 계정이 없습니다.")
@@ -8298,6 +8300,7 @@ if "admin::🏦 내 통장" in tabs:
 
                                 if ok_cnt > 0:
                                     api_list_accounts_cached.clear()
+                                    st.session_state["admin_personal_pick_reset_request"] = True
                                     st.session_state["admin_personal_reward_reset_request"] = True
                                     toast_and_rerun(
                                         (
@@ -12696,9 +12699,8 @@ if "🏛️ 국세청(국고)" in tabs:
                         actor="treasury",
                     )
                     if res.get("ok"):
-                        toast("국고 저장 완료!", icon="✅")
                         st.session_state["treasury_trade_reset_request"] = True
-                        st.rerun()
+                        toast_and_rerun("국고 저장 완료!", icon="✅")
                     else:
                         st.error(res.get("error", "국고 저장 실패"))
 
@@ -12997,7 +12999,7 @@ if "📊 통계청" in tabs:
         if st.session_state.get("stat_add_reset_req", False):
             st.session_state["stat_add_tpl"] = "(직접 입력)"
             st.session_state["stat_add_tpl_prev"] = "(직접 입력)"
-            st.session_state.pop("stat_add_label", None)
+            st.session_state["stat_add_label"] = ""
 
             # 표 로컬 편집 상태도 새로 로드되게
             st.session_state["stat_loaded_sig"] = ""
@@ -13027,12 +13029,8 @@ if "📊 통계청" in tabs:
                 else:
                     res = api_admin_add_stat_submission(ADMIN_PIN, add_label, active_accounts=stu_rows)
                     if res.get("ok"):
-                        toast("제출물 내역 추가 완료!", icon="✅")
-
-                        # (PATCH) 위젯 key(stat_add_tpl)는 여기서 직접 바꾸면 오류남
-                        # → 리셋 요청만 걸고 rerun (위젯 생성 전에 초기화됨)
                         st.session_state["stat_add_reset_req"] = True
-                        st.rerun()
+                        toast_and_rerun("제출물 내역 추가 완료!", icon="✅")
                     else:
                         st.error(res.get("error", "추가 실패"))
 
@@ -15862,47 +15860,56 @@ if "🧾 로그기록" in tabs:
         else:
             st.markdown("### 🧾 통합 로그기록")
             st.caption("모든 탭의 변경 이력을 분리 없이 하나의 표로 통합해 보여줍니다.")
+            st.session_state.setdefault("audit_load_requested", False)
 
-            # ✅ 요청 반영: 탭별 분리 없이 '단일 통합표'만 제공
-            max_log_rows = st.number_input("표시 행 수", min_value=100, max_value=10000, value=200, step=100, key="audit_max_rows")
-            all_rows = _build_activity_log_rows(limit_per_source=800, max_rows=int(max_log_rows))
-            if not all_rows:
-                st.info("표시할 로그가 없습니다.")
+            if not st.session_state.get("audit_load_requested", False):
+                st.info("로그인 직후 속도 개선을 위해 로그는 필요할 때만 불러옵니다.")
+                if st.button("로그 데이터 불러오기", key="audit_load_btn", use_container_width=True):
+                    st.session_state["audit_load_requested"] = True
+                    toast_and_rerun("로그 데이터를 불러왔습니다.", icon="📚")
             else:
-                df_logs = pd.DataFrame(all_rows)
-                keyword = st.text_input("검색(탭/내역/기록자/대상)", key="audit_keyword").strip()
-                if keyword:
-                    kw = str(keyword).lower()
-                    df_logs = df_logs[
-                        df_logs.apply(
-                            lambda r: kw in str(r.get("탭", "")).lower()
-                            or kw in str(r.get("내역", "")).lower()
-                            or kw in str(r.get("기록자", "")).lower()
-                            or kw in str(r.get("대상", "")).lower(),
-                            axis=1,
-                        )
-                    ]
-                if not df_logs.empty:
-                    df_logs = df_logs.reset_index(drop=True)
-                    df_logs.insert(0, "번호", df_logs.index + 1)
-                st.dataframe(
-                    df_logs[
-                        [
-                            "번호",
-                            "시간",
-                            "대상",
-                            "탭",
-                            "내역",
-                            "입금",
-                            "출금",
-                            "기록자",
-                            "분류",
-                            "변경후잔액",
-                        ]
-                    ],
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                if st.button("로그 새로고침", key="audit_reload_btn", use_container_width=True):
+                    toast_and_rerun("로그를 새로고침합니다.", icon="🔄")
+
+                # ✅ 요청 반영: 탭별 분리 없이 '단일 통합표'만 제공
+                max_log_rows = st.number_input("표시 행 수", min_value=100, max_value=10000, value=200, step=100, key="audit_max_rows")
+                all_rows = _build_activity_log_rows(limit_per_source=800, max_rows=int(max_log_rows))
+                if not all_rows:
+                    st.info("표시할 로그가 없습니다.")
+                else:
+                    df_logs = pd.DataFrame(all_rows)
+                    keyword = st.text_input("검색(탭/내역/기록자/대상)", key="audit_keyword").strip()
+                    if keyword:
+                        kw = str(keyword).lower()
+                        df_logs = df_logs[
+                            df_logs.apply(
+                                lambda r: kw in str(r.get("탭", "")).lower()
+                                or kw in str(r.get("내역", "")).lower()
+                                or kw in str(r.get("기록자", "")).lower()
+                                or kw in str(r.get("대상", "")).lower(),
+                                axis=1,
+                            )
+                    if not df_logs.empty:
+                        df_logs = df_logs.reset_index(drop=True)
+                        df_logs.insert(0, "번호", df_logs.index + 1)
+                    st.dataframe(
+                        df_logs[
+                            [
+                                "번호",
+                                "시간",
+                                "대상",
+                                "탭",
+                                "내역",
+                                "입금",
+                                "출금",
+                                "기록자",
+                                "분류",
+                                "변경후잔액",
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
                     
 # =========================
 # 📊 통계/신용 (학생 전용 · 읽기 전용)
