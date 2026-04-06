@@ -3514,29 +3514,35 @@ def render_treasury_trade_ui(prefix: str, templates_list: list, template_by_disp
         st.session_state[f"{prefix}_skip_once"] = False
         st.session_state[reset_flag_key] = False    
 
+    def _apply_treasury_template_selection(selected_label: str):
+        st.session_state[tpl_prev_key] = selected_label
+        if selected_label == "(직접 입력)":
+            return
+        t = template_by_display.get(selected_label)
+        if not t:
+            return
+        st.session_state[memo_key] = str(t.get("label", "") or "")
+        amt = int(t.get("amount", 0) or 0)
+        if str(t.get("kind")) == "income":
+            st.session_state[inc_key] = amt
+            st.session_state[exp_key] = 0
+        else:
+            st.session_state[inc_key] = 0
+            st.session_state[exp_key] = amt
+    
     _frag = getattr(st, "fragment", None)
     use_fragment = callable(_frag)
     
     def _draw_ui():
         # 템플릿 선택
         tpl_labels = ["(직접 입력)"] + [treasury_template_display(t) for t in templates_list]
-        sel = st.selectbox("국고 템플릿", tpl_labels, key=tpl_key)
+        def _on_treasury_tpl_change():
+            _apply_treasury_template_selection(str(st.session_state.get(tpl_key, "(직접 입력)")))
+        sel = st.selectbox("국고 템플릿", tpl_labels, key=tpl_key, on_change=_on_treasury_tpl_change)
 
-        # 템플릿 바뀌면 내역/금액 자동채움
+        # on_change가 작동하지 않는 환경에서도 즉시 1회 반영 보장
         if sel != st.session_state.get(tpl_prev_key):
-            st.session_state[tpl_prev_key] = sel
-
-            if sel != "(직접 입력)":
-                t = template_by_display.get(sel)
-                if t:
-                    st.session_state[memo_key] = str(t.get("label", "") or "")
-                    amt = int(t.get("amount", 0) or 0)
-                    if str(t.get("kind")) == "income":
-                        st.session_state[inc_key] = amt
-                        st.session_state[exp_key] = 0
-                    else:
-                        st.session_state[inc_key] = 0
-                        st.session_state[exp_key] = amt    
+            _apply_treasury_template_selection(sel)
 
         
         # 내역 입력
@@ -3613,8 +3619,15 @@ def render_admin_trade_ui(prefix: str, templates_list: list, template_by_display
         st.session_state[dep_key] = 0
         st.session_state[wd_key] = 0
         st.session_state[tpl_key] = "(직접 입력)"
+        st.session_state[f"{prefix}_tpl_prev"] = "(직접 입력)"
         st.session_state[mode_key] = "금액(+)"
         st.session_state[prev_key] = None
+        st.session_state[f"{prefix}_quick_pick"] = "0"
+        st.session_state[f"{prefix}_quick_pick_prev"] = "0"
+        st.session_state[f"{prefix}_quick_mode_prev"] = "금액(+)"
+        st.session_state[f"{prefix}_quick_skip_once"] = False
+        st.session_state[f"{prefix}_treasury_apply"] = True
+        st.session_state[out_key] = ("", 0, 0)
         st.session_state[reset_flag_key] = False
 
     def _get_net() -> int:
@@ -3642,6 +3655,27 @@ def render_admin_trade_ui(prefix: str, templates_list: list, template_by_display
         net = _get_net() + (sign * amt)
         _set_by_net(net)
 
+    def _apply_admin_template_selection(selected_label: str):
+        tpl_prev_key = f"{prefix}_tpl_prev"
+        st.session_state[tpl_prev_key] = selected_label
+        st.session_state[f"{prefix}_quick_pick"] = "0"
+        st.session_state[f"{prefix}_quick_pick_prev"] = "0"
+        st.session_state[f"{prefix}_quick_skip_once"] = True
+        if selected_label == "(직접 입력)":
+            return
+        tpl = template_by_display.get(selected_label)
+        if not tpl:
+            return
+        st.session_state[memo_key] = tpl["label"]
+        amt = int(tpl["amount"])
+        if tpl["kind"] == "deposit":
+            _set_by_net(amt)
+            st.session_state[mode_key] = "금액(+)"
+        else:
+            _set_by_net(-amt)
+            st.session_state[mode_key] = "금액(-)"
+        st.session_state[f"{prefix}_quick_skip_once"] = True
+    
     _frag = getattr(st, "fragment", None)
     use_fragment = callable(_frag)
 
@@ -3650,29 +3684,13 @@ def render_admin_trade_ui(prefix: str, templates_list: list, template_by_display
         st.session_state.setdefault(tpl_prev_key, "(직접 입력)")
 
         tpl_labels = ["(직접 입력)"] + [template_display_for_trade(t) for t in templates_list]
-        sel = st.selectbox("내역 템플릿", tpl_labels, key=tpl_key)
+        def _on_admin_tpl_change():
+            _apply_admin_template_selection(str(st.session_state.get(tpl_key, "(직접 입력)")))
+        sel = st.selectbox("내역 템플릿", tpl_labels, key=tpl_key, on_change=_on_admin_tpl_change)
 
+        # on_change가 누락되더라도 1회 선택 즉시 반영 보장
         if sel != st.session_state.get(tpl_prev_key):
-            st.session_state[tpl_prev_key] = sel
-
-            st.session_state[f"{prefix}_quick_pick"] = "0"
-            st.session_state[f"{prefix}_quick_pick_prev"] = "0"
-            st.session_state[f"{prefix}_quick_skip_once"] = True
-
-            if sel != "(직접 입력)":
-                tpl = template_by_display.get(sel)
-                if tpl:
-                    st.session_state[memo_key] = tpl["label"]
-                    amt = int(tpl["amount"])
-
-                    if tpl["kind"] == "deposit":
-                        _set_by_net(amt)
-                        st.session_state[mode_key] = "금액(+)"
-                    else:
-                        _set_by_net(-amt)
-                        st.session_state[mode_key] = "금액(-)"
-
-                    st.session_state[f"{prefix}_quick_skip_once"] = True
+            _apply_admin_template_selection(sel)
 
 
         st.text_input("내역", key=memo_key)
@@ -7888,9 +7906,9 @@ if "🏦 내 통장" in tabs:
                                 treasury_memo=tre_memo,
                             )
                             if res.get("ok"):
-                                toast_and_rerun("입금 요청 완료!", icon="📨")
                                 pfx = f"bank_trade_{login_name}"
                                 st.session_state[f"{pfx}_reset_request"] = True
+                                toast_and_rerun("입금 요청 완료!", icon="📨")
                             else:
                                 st.error(res.get("error", "입금 신청 실패"))
 
