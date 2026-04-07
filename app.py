@@ -2601,8 +2601,8 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
     res = api_list_pending_deposit_requests(limit=300)
     rows = res.get("rows", []) if res.get("ok") else []
 
-    title_col, check_all_col, checked_ok_col, checked_no_col, bulk_ok_col, bulk_no_col = st.columns(
-        [4.0, 1.2, 1.2, 1.2, 1.2, 1.2],
+    title_col, checked_ok_col, checked_no_col, bulk_ok_col, bulk_no_col = st.columns(
+        [4.0, 1.2, 1.2, 1.2, 1.2],
         vertical_alignment="center"
     )
     title_col.markdown("### ✅ 입금 승인(승인 대기 목록)")    
@@ -2619,11 +2619,6 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
         checked_map = {}
     checked_map = {str(k): bool(v) for k, v in checked_map.items()}
     st.session_state[checked_key] = checked_map
-
-    with check_all_col:
-        if st.button("일괄체크", key=f"{prefix}_check_all", use_container_width=True):
-            st.session_state[checked_key] = {rid: True for rid in request_ids}
-            st.rerun()
 
     with checked_ok_col:
         if st.button("체크승인", key=f"{prefix}_checked_ok", use_container_width=True):
@@ -2658,28 +2653,28 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
                     st.error(out.get("error", "체크 거절 실패"))
 
     with bulk_ok_col:
-        if st.button("일괄승인", key=f"{prefix}_bulk_ok", use_container_width=True):
+        if st.button("전체승인", key=f"{prefix}_bulk_ok", use_container_width=True):
             out = api_admin_bulk_process_deposit_requests(admin_pin, request_ids, action="approve")
             if out.get("processed", 0) > 0:
-                msg = f"일괄 승인 완료! ({int(out.get('processed', 0))}건)"
+                msg = f"전체 승인 완료! ({int(out.get('processed', 0))}건)"
                 if int(out.get("failed", 0)) > 0:
                     msg += f" / 실패 {int(out.get('failed', 0))}건"
                 st.session_state[checked_key] = {}
                 toast_and_rerun(msg, icon="✅")
             else:
-                st.error(out.get("error", "일괄 승인 실패"))
+                st.error(out.get("error", "전체 승인 실패"))
 
     with bulk_no_col:
-        if st.button("일괄거절", key=f"{prefix}_bulk_no", use_container_width=True):
+        if st.button("전체거절", key=f"{prefix}_bulk_no", use_container_width=True):
             out = api_admin_bulk_process_deposit_requests(admin_pin, request_ids, action="reject")
             if out.get("processed", 0) > 0:
-                msg = f"일괄 거절 완료! ({int(out.get('processed', 0))}건)"
+                msg = f"전체 거절 완료! ({int(out.get('processed', 0))}건)"
                 if int(out.get("failed", 0)) > 0:
                     msg += f" / 실패 {int(out.get('failed', 0))}건"
                 st.session_state[checked_key] = {}
                 toast_and_rerun(msg, icon="🧾")
             else:
-                st.error(out.get("error", "일괄 거절 실패"))
+                st.error(out.get("error", "전체 거절 실패"))
     
     # 헤더(체크 | 번호 | 이름 | 날짜 | 내역 | 금액 | 국고반영 | 승인여부)
     h = st.columns([0.8, 0.9, 1.4, 2.2, 3.2, 1.2, 1.1, 1.9], vertical_alignment="center")
