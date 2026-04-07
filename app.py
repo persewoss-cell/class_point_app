@@ -2557,22 +2557,82 @@ def api_admin_reject_deposit_request(admin_pin: str, request_id: str):
     except Exception as e:
         return {"ok": False, "error": f"거절 실패: {e}"}
 
+def api_admin_bulk_process_deposit_requests(admin_pin: str, request_ids: list[str], action: str):
+    """✅ (관리자) 입금 신청 일괄 승인/거절 처리"""
+    if not is_admin_pin(admin_pin):
+        return {"ok": False, "error": "관리자 PIN이 틀립니다."}
+
+    ids = [str(x or "").strip() for x in (request_ids or []) if str(x or "").strip()]
+    if not ids:
+        return {"ok": False, "error": "처리할 신청이 없습니다."}
+
+    ok_cnt, fail_cnt = 0, 0
+    errors = []
+
+    for rid in ids:
+        if action == "approve":
+            out = api_admin_approve_deposit_request(admin_pin, rid)
+        elif action == "reject":
+            out = api_admin_reject_deposit_request(admin_pin, rid)
+        else:
+            return {"ok": False, "error": "잘못된 처리 유형입니다."}
+
+        if out.get("ok"):
+            ok_cnt += 1
+        else:
+            fail_cnt += 1
+            err = str(out.get("error", "처리 실패"))
+            errors.append(f"{rid}: {err}")
+
+    return {
+        "ok": ok_cnt > 0 and fail_cnt == 0,
+        "processed": ok_cnt,
+        "failed": fail_cnt,
+        "errors": errors,
+    }
+
 def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allow: bool = False):
     """✅ 관리자 화면: 입금 승인 목록 + 승인/거절 버튼"""
 
     # ✅ 학생 화면에서는 절대 노출하지 않기(관리자만)
     if not bool(allow):
         return
-    
-    st.markdown("### ✅ 입금 승인(승인 대기 목록)")
 
     res = api_list_pending_deposit_requests(limit=300)
     rows = res.get("rows", []) if res.get("ok") else []
+
+    title_col, bulk_ok_col, bulk_no_col = st.columns([6.0, 1.2, 1.2], vertical_alignment="center")
+    title_col.markdown("### ✅ 입금 승인(승인 대기 목록)")    
 
     if not rows:
         st.info("승인 대기 중인 입금 신청이 없습니다.")
         return
 
+    request_ids = [str(r.get("request_id", "") or "").strip() for r in rows]
+    request_ids = [rid for rid in request_ids if rid]
+
+    with bulk_ok_col:
+        if st.button("일괄승인", key=f"{prefix}_bulk_ok", use_container_width=True):
+            out = api_admin_bulk_process_deposit_requests(admin_pin, request_ids, action="approve")
+            if out.get("processed", 0) > 0:
+                msg = f"일괄 승인 완료! ({int(out.get('processed', 0))}건)"
+                if int(out.get("failed", 0)) > 0:
+                    msg += f" / 실패 {int(out.get('failed', 0))}건"
+                toast_and_rerun(msg, icon="✅")
+            else:
+                st.error(out.get("error", "일괄 승인 실패"))
+
+    with bulk_no_col:
+        if st.button("일괄거절", key=f"{prefix}_bulk_no", use_container_width=True):
+            out = api_admin_bulk_process_deposit_requests(admin_pin, request_ids, action="reject")
+            if out.get("processed", 0) > 0:
+                msg = f"일괄 거절 완료! ({int(out.get('processed', 0))}건)"
+                if int(out.get("failed", 0)) > 0:
+                    msg += f" / 실패 {int(out.get('failed', 0))}건"
+                toast_and_rerun(msg, icon="🧾")
+            else:
+                st.error(out.get("error", "일괄 거절 실패"))
+    
     # 헤더(번호 | 이름 | 날짜 | 금액 | 국고반영 | 승인여부)
     h = st.columns([0.9, 1.4, 2.2, 3.2, 1.2, 1.1, 1.9], vertical_alignment="center")
     h[0].markdown("**번호**")
