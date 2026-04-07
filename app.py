@@ -2601,7 +2601,10 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
     res = api_list_pending_deposit_requests(limit=300)
     rows = res.get("rows", []) if res.get("ok") else []
 
-    title_col, bulk_ok_col, bulk_no_col = st.columns([6.0, 1.2, 1.2], vertical_alignment="center")
+    title_col, check_all_col, checked_ok_col, checked_no_col, bulk_ok_col, bulk_no_col = st.columns(
+        [4.0, 1.2, 1.2, 1.2, 1.2, 1.2],
+        vertical_alignment="center"
+    )
     title_col.markdown("### ✅ 입금 승인(승인 대기 목록)")    
 
     if not rows:
@@ -2610,6 +2613,49 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
 
     request_ids = [str(r.get("request_id", "") or "").strip() for r in rows]
     request_ids = [rid for rid in request_ids if rid]
+    checked_key = f"{prefix}_checked_map"
+    checked_map = st.session_state.get(checked_key, {})
+    if not isinstance(checked_map, dict):
+        checked_map = {}
+    checked_map = {str(k): bool(v) for k, v in checked_map.items()}
+    st.session_state[checked_key] = checked_map
+
+    with check_all_col:
+        if st.button("일괄체크", key=f"{prefix}_check_all", use_container_width=True):
+            st.session_state[checked_key] = {rid: True for rid in request_ids}
+            st.rerun()
+
+    with checked_ok_col:
+        if st.button("체크승인", key=f"{prefix}_checked_ok", use_container_width=True):
+            picked_ids = [rid for rid in request_ids if bool(st.session_state.get(checked_key, {}).get(rid, False))]
+            if not picked_ids:
+                st.warning("체크된 승인 신청이 없습니다.")
+            else:
+                out = api_admin_bulk_process_deposit_requests(admin_pin, picked_ids, action="approve")
+                if out.get("processed", 0) > 0:
+                    msg = f"체크 승인 완료! ({int(out.get('processed', 0))}건)"
+                    if int(out.get("failed", 0)) > 0:
+                        msg += f" / 실패 {int(out.get('failed', 0))}건"
+                    st.session_state[checked_key] = {}
+                    toast_and_rerun(msg, icon="✅")
+                else:
+                    st.error(out.get("error", "체크 승인 실패"))
+
+    with checked_no_col:
+        if st.button("체크거절", key=f"{prefix}_checked_no", use_container_width=True):
+            picked_ids = [rid for rid in request_ids if bool(st.session_state.get(checked_key, {}).get(rid, False))]
+            if not picked_ids:
+                st.warning("체크된 승인 신청이 없습니다.")
+            else:
+                out = api_admin_bulk_process_deposit_requests(admin_pin, picked_ids, action="reject")
+                if out.get("processed", 0) > 0:
+                    msg = f"체크 거절 완료! ({int(out.get('processed', 0))}건)"
+                    if int(out.get("failed", 0)) > 0:
+                        msg += f" / 실패 {int(out.get('failed', 0))}건"
+                    st.session_state[checked_key] = {}
+                    toast_and_rerun(msg, icon="🧾")
+                else:
+                    st.error(out.get("error", "체크 거절 실패"))
 
     with bulk_ok_col:
         if st.button("일괄승인", key=f"{prefix}_bulk_ok", use_container_width=True):
@@ -2618,6 +2664,7 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
                 msg = f"일괄 승인 완료! ({int(out.get('processed', 0))}건)"
                 if int(out.get("failed", 0)) > 0:
                     msg += f" / 실패 {int(out.get('failed', 0))}건"
+                st.session_state[checked_key] = {}
                 toast_and_rerun(msg, icon="✅")
             else:
                 st.error(out.get("error", "일괄 승인 실패"))
@@ -2629,19 +2676,21 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
                 msg = f"일괄 거절 완료! ({int(out.get('processed', 0))}건)"
                 if int(out.get("failed", 0)) > 0:
                     msg += f" / 실패 {int(out.get('failed', 0))}건"
+                st.session_state[checked_key] = {}
                 toast_and_rerun(msg, icon="🧾")
             else:
                 st.error(out.get("error", "일괄 거절 실패"))
     
-    # 헤더(번호 | 이름 | 날짜 | 금액 | 국고반영 | 승인여부)
-    h = st.columns([0.9, 1.4, 2.2, 3.2, 1.2, 1.1, 1.9], vertical_alignment="center")
-    h[0].markdown("**번호**")
-    h[1].markdown("**이름**")
-    h[2].markdown("**날짜**")
-    h[3].markdown("**내역**")
-    h[4].markdown("**금액**")
-    h[5].markdown("**국고반영**")
-    h[6].markdown("**승인여부**")
+    # 헤더(체크 | 번호 | 이름 | 날짜 | 내역 | 금액 | 국고반영 | 승인여부)
+    h = st.columns([0.8, 0.9, 1.4, 2.2, 3.2, 1.2, 1.1, 1.9], vertical_alignment="center")
+    h[0].markdown("**체크**")
+    h[1].markdown("**번호**")
+    h[2].markdown("**이름**")
+    h[3].markdown("**날짜**")
+    h[4].markdown("**내역**")
+    h[5].markdown("**금액**")
+    h[6].markdown("**국고반영**")
+    h[7].markdown("**승인여부**")
 
     def _fmt_md(dt_utc):
         try:
@@ -2664,15 +2713,24 @@ def render_deposit_approval_ui(admin_pin: str, prefix: str = "dep_approve", allo
 
         memo = str(r.get("memo", "") or "")
 
-        c = st.columns([0.9, 1.4, 2.2, 3.2, 1.2, 1.1, 1.9], vertical_alignment="center")
-        c[0].write(str(no if no > 0 else i))
-        c[1].write(nm)
-        c[2].write(when)
-        c[3].write(memo)
-        c[4].write(str(amt))
-        c[5].write(tre)
+        c = st.columns([0.8, 0.9, 1.4, 2.2, 3.2, 1.2, 1.1, 1.9], vertical_alignment="center")
+        with c[0]:
+            current_checked = bool(st.session_state.get(checked_key, {}).get(rid, False))
+            checked_now = st.checkbox(
+                "선택",
+                key=f"{prefix}_check_{rid}",
+                value=current_checked,
+                label_visibility="collapsed"
+            )
+            st.session_state[checked_key][rid] = bool(checked_now)
+        c[1].write(str(no if no > 0 else i))
+        c[2].write(nm)
+        c[3].write(when)
+        c[4].write(memo)
+        c[5].write(str(amt))
+        c[6].write(tre)
 
-        b1, b2 = c[6].columns(2)
+        b1, b2 = c[7].columns(2)
         with b1:
             if st.button("승인", key=f"{prefix}_ok_{rid}", use_container_width=True):
                 out = api_admin_approve_deposit_request(admin_pin, rid)
