@@ -8,6 +8,7 @@ import random
 import math
 
 from datetime import datetime, timezone, timedelta, date
+from google.api_core.exceptions import AlreadyExists
 
 from db import build_filter, init_db, mongo
 
@@ -11790,6 +11791,22 @@ if "💼 직업/월급" in tabs:
 
             mkey = _month_key(now)
 
+            # ✅ 중복 실행 방지(동시 실행/연속 rerun 보호)
+            # - 문서 create()는 "이미 존재하면 실패" 하므로
+            #   같은 달 자동지급은 한 번만 실행된다.
+            run_lock_id = f"{mkey}_{pay_day:02d}"
+            try:
+                db.collection("payroll_auto_run").document(run_lock_id).create(
+                    {
+                        "month": mkey,
+                        "pay_day": int(pay_day),
+                        "run_at": datetime.utcnow(),
+                        "source": "auto",
+                    }
+                )
+            except AlreadyExists:
+                return
+                
             # 학생 id -> 이름 맵 (메모용)
             accs = api_list_accounts_cached().get("accounts", []) or []
             id_to_name = {a.get("student_id"): a.get("name") for a in accs if a.get("student_id")}
@@ -11845,6 +11862,168 @@ if "💼 직업/월급" in tabs:
                 api_list_accounts_cached.clear()
             elif err_cnt > 0:
                 st.warning("월급 자동지급 중 일부 오류가 있었어요. (로그 확인)")
+
+        def _find_today_duplicate_salary_txs():
+            """오늘(KST) 발생한 월급 입금 중복 건을 찾아 반환.
+            반환 형식:
+              {
+                "targets": [ {tx_id, student_id, name, memo, amount, created_at}, ... ],  # 정정 대상(중복분)
+                "groups":  [ {student_id, name, memo, amount, count}, ... ],
+                "sum_amount": int
+              }
+            """
+            now_kst = datetime.now(KST)
+            start_kst = datetime(now_kst.year, now_kst.month, now_kst.day, 0, 0, 0, tzinfo=KST)
+            end_kst = start_kst + timedelta(days=1)
+            start_utc = start_kst.astimezone(timezone.utc).replace(tzinfo=None)
+            end_utc = end_kst.astimezone(timezone.utc).replace(tzinfo=None)
+
+            accs = api_list_accounts_cached().get("accounts", []) or []
+            id_to_name = {str(a.get("student_id")): str(a.get("name") or "") for a in accs if a.get("student_id")}
+
+            rows = []
+            q = (
+                db.collection("transactions")
+                .where(filter=build_filter("created_at", ">=", start_utc))
+                .where(filter=build_filter("created_at", "<", end_utc))
+                .stream()
+            )
+            for d in q:
+                tx = d.to_dict() or {}
+                memo = str(tx.get("memo", "") or "").strip()
+                ttype = str(tx.get("type", "") or "")
+                sid = str(tx.get("student_id", "") or "").strip()
+                amount = int(tx.get("amount", 0) or 0)
+
+                if ttype != "deposit":
+                    continue
+                if amount <= 0:
+                    continue
+                if not memo.startswith("월급 "):
+                    continue
+                if "(자동중복정정" in memo:
+                    continue
+                if not sid:
+                    continue
+
+                rows.append(
+                    {
+                        "tx_id": str(d.id),
+                        "student_id": sid,
+                        "name": id_to_name.get(sid, ""),
+                        "memo": memo,
+                        "amount": int(amount),
+                        "created_at": _to_utc_datetime(tx.get("created_at")),
+                    }
+                )
+
+            # 같은 학생/같은 메모/같은 금액은 1회만 정상으로 보고, 2회차부터 중복분으로 간주
+            by_key = {}
+            for r in rows:
+                k = (r["student_id"], r["memo"], int(r["amount"]))
+                by_key.setdefault(k, []).append(r)
+
+            targets, groups = [], []
+            for (sid, memo, amt), arr in by_key.items():
+                arr.sort(key=lambda x: x.get("created_at") or datetime(1970, 1, 1, tzinfo=timezone.utc))
+                if len(arr) <= 1:
+                    continue
+                dup = arr[1:]  # 첫 건 제외 나머지 전부 중복분
+                targets.extend(dup)
+                groups.append(
+                    {
+                        "student_id": sid,
+                        "name": arr[0].get("name", ""),
+                        "memo": memo,
+                        "amount": int(amt),
+                        "count": len(arr),
+                    }
+                )
+
+            return {
+                "targets": targets,
+                "groups": groups,
+                "sum_amount": int(sum(int(x.get("amount", 0) or 0) for x in targets)),
+            }
+
+        def _reverse_duplicate_salary_txs(targets: list[dict], month_key: str, salary_cfg: dict):
+            """중복 월급 입금 정정:
+            1) 학생 통장에서 중복분 출금
+            2) 월급 공제 세입도 중복분만큼 국고에서 환급(지출)
+            """
+            if not targets:
+                return {"ok": True, "fixed": 0, "treasury_fixed": 0, "errors": []}
+
+            # 직업별 공제액 계산용 맵
+            job_rows = []
+            for d in db.collection("job_salary").stream():
+                x = d.to_dict() or {}
+                job_rows.append(
+                    {
+                        "job": str(x.get("job", "") or ""),
+                        "gross": int(x.get("salary", 0) or 0),
+                    }
+                )
+            job_to_deduction = {}
+            for j in job_rows:
+                jn = str(j.get("job", "") or "")
+                gross = int(j.get("gross", 0) or 0)
+                net = int(_calc_net(gross, salary_cfg) or 0)
+                ded = int(max(0, gross - net))
+                if jn and (jn not in job_to_deduction):
+                    job_to_deduction[jn] = ded
+
+            accs = api_list_accounts_cached().get("accounts", []) or []
+            id_to_name = {str(a.get("student_id")): str(a.get("name") or "") for a in accs if a.get("student_id")}
+
+            fixed_cnt, tre_cnt = 0, 0
+            errs = []
+
+            for t in targets:
+                sid = str(t.get("student_id", "") or "").strip()
+                amt = int(t.get("amount", 0) or 0)
+                memo = str(t.get("memo", "") or "").strip()
+                if (not sid) or amt <= 0:
+                    continue
+
+                # 1) 학생 중복입금 회수
+                fix_memo = f"{memo}(자동중복정정 {month_key})"
+                res = api_admin_add_tx_by_student_id(
+                    admin_pin=ADMIN_PIN,
+                    student_id=sid,
+                    memo=fix_memo,
+                    deposit=0,
+                    withdraw=amt,
+                    recorder_override="관리자",
+                )
+                if not res.get("ok"):
+                    errs.append(f"[학생정정실패] sid={sid} memo={memo} err={res.get('error')}")
+                    continue
+                fixed_cnt += 1
+
+                # 2) 국고 공제 세입 중복분 환급(지출)
+                job_name = memo.replace("월급 ", "", 1).strip()
+                ded = int(job_to_deduction.get(job_name, 0) or 0)
+                if ded > 0:
+                    nm = id_to_name.get(sid, "")
+                    tre_res = api_add_treasury_tx(
+                        admin_pin=ADMIN_PIN,
+                        memo=f"월급 공제 세입 중복정정({month_key}) {job_name}" + (f" - {nm}" if nm else ""),
+                        income=0,
+                        expense=ded,
+                        actor="system_salary",
+                        recorder_override="관리자",
+                    )
+                    if tre_res.get("ok"):
+                        tre_cnt += 1
+                    else:
+                        errs.append(f"[국고정정실패] sid={sid} job={job_name} err={tre_res.get('error')}")
+
+            if fixed_cnt > 0:
+                api_list_accounts_cached.clear()
+                api_list_treasury_ledger_cached.clear()
+
+            return {"ok": len(errs) == 0, "fixed": fixed_cnt, "treasury_fixed": tre_cnt, "errors": errs}
 
         payroll_cfg = _get_payroll_cfg()
 
@@ -11972,6 +12151,80 @@ if "💼 직업/월급" in tabs:
                     st.warning(f"일부 지급 실패가 있었어요: {err_cnt}건")
                 st.rerun()
 
+            st.markdown("---")
+            st.markdown("#### 🛠️ 자동지급 중복 회수(정정)")
+            st.caption("오늘(KST) 발생한 월급 입금 내역에서 같은 학생/같은 직업/같은 금액이 2회 이상인 경우, 2회차부터 자동으로 회수합니다.")
+
+            dup_scan = _find_today_duplicate_salary_txs()
+            dup_targets = list(dup_scan.get("targets", []) or [])
+            dup_groups = list(dup_scan.get("groups", []) or [])
+            dup_sum = int(dup_scan.get("sum_amount", 0) or 0)
+
+            if dup_groups:
+                st.warning(
+                    f"중복 의심 {len(dup_groups)}그룹 · 회수 대상 {len(dup_targets)}건 · 예상 회수액 {dup_sum}원"
+                )
+                pv = pd.DataFrame(dup_groups)
+                if not pv.empty:
+                    pv = pv.rename(
+                        columns={
+                            "name": "이름",
+                            "student_id": "학생ID",
+                            "memo": "내역",
+                            "amount": "건당금액",
+                            "count": "발생횟수",
+                        }
+                    )
+                    st.dataframe(pv[["이름", "학생ID", "내역", "건당금액", "발생횟수"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("오늘 기준으로 회수할 자동 월급 중복 건이 없습니다.")
+
+            cfix1, cfix2 = st.columns([1.2, 1.8])
+            with cfix1:
+                if st.button("🔍 중복 다시 검사", use_container_width=True, key="payroll_dup_rescan"):
+                    st.rerun()
+            with cfix2:
+                if st.button(
+                    "♻️ 오늘 중복 월급 자동 회수 실행",
+                    use_container_width=True,
+                    key="payroll_dup_fix_btn",
+                    disabled=(len(dup_targets) == 0),
+                ):
+                    st.session_state["payroll_dup_fix_confirm"] = True
+                    st.rerun()
+
+            if st.session_state.get("payroll_dup_fix_confirm", False):
+                st.error("중복 월급 회수(정정)를 실행합니다. 실행 후에는 되돌릴 수 없으니 관리자 PIN을 입력하세요.")
+                admin_fix_pin = st.text_input(
+                    "관리자 비밀번호(PIN)",
+                    type="password",
+                    key="payroll_dup_fix_pin",
+                )
+                y2, n2 = st.columns(2)
+                with y2:
+                    if st.button("정정 실행", use_container_width=True, key="payroll_dup_fix_yes"):
+                        if str(admin_fix_pin or "").strip() != str(ADMIN_PIN):
+                            st.error("관리자 비밀번호(PIN)가 올바르지 않습니다.")
+                            st.stop()
+                        cur_month_key = _month_key(datetime.now(KST))
+                        fix_res = _reverse_duplicate_salary_txs(dup_targets, cur_month_key, cfg)
+                        st.session_state["payroll_dup_fix_confirm"] = False
+                        if fix_res.get("fixed", 0) > 0:
+                            toast(
+                                f"중복 월급 정정 완료: 학생회수 {int(fix_res.get('fixed', 0))}건 / 국고정정 {int(fix_res.get('treasury_fixed', 0))}건",
+                                icon="♻️",
+                            )
+                        if fix_res.get("errors"):
+                            st.warning(f"일부 정정 실패: {len(fix_res.get('errors', []))}건")
+                            with st.expander("정정 실패 상세", expanded=False):
+                                for e in fix_res.get("errors", []):
+                                    st.write(f"- {e}")
+                        st.rerun()
+                with n2:
+                    if st.button("취소", use_container_width=True, key="payroll_dup_fix_no"):
+                        st.session_state["payroll_dup_fix_confirm"] = False
+                        st.rerun()
+        
         # -------------------------------------------------
         # ✅ 직업/월급 표 데이터 로드 (job_salary 컬렉션)
         # -------------------------------------------------
