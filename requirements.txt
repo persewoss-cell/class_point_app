@@ -5,3 +5,4 @@ dnspython
 pymupdf
 openpyxl
 streamlit-aggrid
+google-api-core
