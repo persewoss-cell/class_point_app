@@ -2,9 +2,11 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from google.api_core.exceptions import AlreadyExists
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
+from pymongo.errors import DuplicateKeyError
 
 _client: Optional[MongoClient] = None
 _db: Optional[Database] = None
@@ -56,6 +58,14 @@ class DocumentReference:
         else:
             payload["_id"] = self.id
             self._collection._col.replace_one({"_id": self.id}, payload, upsert=True)
+
+    def create(self, data: Dict[str, Any]):
+        payload = _normalize_payload(data)
+        payload["_id"] = self.id
+        try:
+            self._collection._col.insert_one(payload)
+        except DuplicateKeyError as exc:
+            raise AlreadyExists(f"Document already exists: {self.id}") from exc
 
     def update(self, data: Dict[str, Any]):
         payload = _normalize_payload(data)
