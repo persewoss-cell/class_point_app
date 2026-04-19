@@ -11863,8 +11863,8 @@ if "💼 직업/월급" in tabs:
             elif err_cnt > 0:
                 st.warning("월급 자동지급 중 일부 오류가 있었어요. (로그 확인)")
 
-        def _find_today_duplicate_salary_txs():
-            """오늘(KST) 발생한 월급 입금 중복 건을 찾아 반환.
+        def _find_month_duplicate_salary_txs():
+            """이번 달(1일 00:00~현재) 발생한 월급 입금 중복 건을 찾아 반환.
             반환 형식:
               {
                 "targets": [ {tx_id, student_id, name, memo, amount, created_at}, ... ],  # 정정 대상(중복분)
@@ -11873,8 +11873,8 @@ if "💼 직업/월급" in tabs:
               }
             """
             now_kst = datetime.now(KST)
-            start_kst = datetime(now_kst.year, now_kst.month, now_kst.day, 0, 0, 0, tzinfo=KST)
-            end_kst = start_kst + timedelta(days=1)
+            start_kst = datetime(now_kst.year, now_kst.month, 1, 0, 0, 0, tzinfo=KST)
+            end_kst = now_kst
             start_utc = start_kst.astimezone(timezone.utc).replace(tzinfo=None)
             end_utc = end_kst.astimezone(timezone.utc).replace(tzinfo=None)
 
@@ -12153,9 +12153,9 @@ if "💼 직업/월급" in tabs:
 
             st.markdown("---")
             st.markdown("#### 🛠️ 자동지급 중복 회수(정정)")
-            st.caption("오늘(KST) 발생한 월급 입금 내역에서 같은 학생/같은 직업/같은 금액이 2회 이상인 경우, 2회차부터 자동으로 회수합니다.")
-
-            dup_scan = _find_today_duplicate_salary_txs()
+            st.caption("이번 달 1일 00:00부터 현재까지 발생한 월급 입금 내역에서 같은 학생/같은 직업/같은 금액이 2회 이상인 경우, 2회차부터 자동으로 회수합니다.")
+            
+            dup_scan = _find_month_duplicate_salary_txs()
             dup_targets = list(dup_scan.get("targets", []) or [])
             dup_groups = list(dup_scan.get("groups", []) or [])
             dup_sum = int(dup_scan.get("sum_amount", 0) or 0)
@@ -12177,7 +12177,7 @@ if "💼 직업/월급" in tabs:
                     )
                     st.dataframe(pv[["이름", "학생ID", "내역", "건당금액", "발생횟수"]], use_container_width=True, hide_index=True)
             else:
-                st.info("오늘 기준으로 회수할 자동 월급 중복 건이 없습니다.")
+                st.info("이번 달 기준으로 회수할 자동 월급 중복 건이 없습니다.")
 
             cfix1, cfix2 = st.columns([1.2, 1.8])
             with cfix1:
@@ -12185,7 +12185,7 @@ if "💼 직업/월급" in tabs:
                     st.rerun()
             with cfix2:
                 if st.button(
-                    "♻️ 오늘 중복 월급 자동 회수 실행",
+                    "♻️ 이번 달 중복 월급 자동 회수 실행",
                     use_container_width=True,
                     key="payroll_dup_fix_btn",
                     disabled=(len(dup_targets) == 0),
