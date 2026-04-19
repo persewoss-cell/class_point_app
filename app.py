@@ -10016,7 +10016,13 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 if int(amt) <= 0:
                     st.warning("투자 금액을 입력해 주세요.")
                 else:
-                    st.session_state["inv_user_confirm"] = True
+                    bal_res = api_get_balance(login_name, login_pin)
+                    cur_bal = int((bal_res or {}).get("balance", 0) or 0)
+                    if (not bal_res.get("ok")) or int(amt) > cur_bal:
+                        st.error("통장 잔액보다 큰 액수는 투자할 수 없어요")
+                        st.session_state["inv_user_confirm"] = False
+                    else:
+                        st.session_state["inv_user_confirm"] = True
     
             if st.session_state.get("inv_user_confirm", False):
                 st.warning("정말로 투자할까요?")
@@ -10024,7 +10030,13 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 with y:
                     if st.button("예", use_container_width=True, key="inv_user_yes"):
                         st.session_state["inv_user_confirm"] = False
-    
+
+                        bal_res = api_get_balance(login_name, login_pin)
+                        cur_bal = int((bal_res or {}).get("balance", 0) or 0)
+                        if (not bal_res.get("ok")) or int(amt) > cur_bal:
+                            st.error("통장 잔액보다 큰 액수는 투자할 수 없어요")
+                            st.stop()
+                            
                         memo = f"투자 매입({sel_prod['name']})"
                         res = api_add_tx(login_name, login_pin, memo=memo, deposit=0, withdraw=int(amt))
                         if res.get("ok"):
