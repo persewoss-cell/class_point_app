@@ -6440,178 +6440,6 @@ with st.sidebar:
 
 
 # =========================
-# 시스템 자동 지급 러너(로그인 무관)
-# =========================
-def _system_month_key(dt: datetime) -> str:
-    return f"{dt.year:04d}-{dt.month:02d}"
-
-
-def _system_paylog_id(month_key: str, student_id: str, job_id: str = "") -> str:
-    return f"{month_key}_{student_id}_{str(job_id or '').strip() or '_'}"
-
-
-def _system_already_paid_this_month(month_key: str, student_id: str, job_id: str = "", job_name: str = "") -> bool:
-    snap = db.collection("payroll_log").document(_system_paylog_id(month_key, student_id, job_id)).get()
-    if bool(snap.exists):
-        return True
-    legacy = db.collection("payroll_log").document(f"{month_key}_{student_id}").get()
-    if not legacy.exists:
-        return False
-    legacy_job = str((legacy.to_dict() or {}).get("job", "") or "")
-    return bool(legacy_job and legacy_job == str(job_name or ""))
-
-
-def _system_write_paylog(month_key: str, student_id: str, amount: int, job_name: str, method: str, job_id: str = ""):
-    db.collection("payroll_log").document(_system_paylog_id(month_key, student_id, job_id)).set(
-        {
-            "month": month_key,
-            "student_id": student_id,
-            "amount": int(amount),
-            "job": str(job_name or ""),
-            "job_id": str(job_id or ""),
-            "method": str(method or ""),
-            "paid_at": datetime.utcnow(),
-        },
-        merge=True,
-    )
-
-
-def _run_system_auto_payouts():
-    """앱 실행 시 자동 적금 만기/월급 지급을 시도한다(관리자 로그인 불필요)."""
-    try:
-        now_utc = datetime.now(timezone.utc)
-        due_docs = []
-        for status in ("running", "active"):
-            for d in db.collection("savings").where(filter=build_filter("status", "==", status)).stream():
-                x = d.to_dict() or {}
-                maturity_dt = _to_utc_datetime(x.get("maturity_utc") or x.get("maturity_date"))
-                if maturity_dt and maturity_dt <= now_utc:
-                    due_docs.append((d.id, x))
-
-        for doc_id, x in due_docs:
-            sid = str(x.get("student_id", "") or "").strip()
-            principal = int(x.get("principal", 0) or 0)
-            interest = int(x.get("interest", 0) or 0)
-            payout = int(x.get("maturity_amount", 0) or 0) or int(principal + interest)
-            weeks = int(x.get("weeks", 0) or 0)
-            if (not sid) or payout <= 0:
-                continue
-
-            @mongo.transactional
-            def _mature_one(transaction, sav_id: str, student_id: str, amount: int, wk: int):
-                sav_ref = db.collection("savings").document(sav_id)
-                stu_ref = db.collection("students").document(student_id)
-                tx_ref = db.collection("transactions").document()
-
-                sav_snap = sav_ref.get(transaction=transaction)
-                if not sav_snap.exists:
-                    return False
-                cur = sav_snap.to_dict() or {}
-                if str(cur.get("status", "")) not in ("running", "active"):
-                    return False
-                maturity2 = _to_utc_datetime(cur.get("maturity_utc") or cur.get("maturity_date"))
-                if (not maturity2) or (maturity2 > datetime.now(timezone.utc)):
-                    return False
-
-                st_snap = stu_ref.get(transaction=transaction)
-                bal = int((st_snap.to_dict() or {}).get("balance", 0) or 0)
-                new_bal = int(bal + amount)
-                transaction.update(stu_ref, {"balance": int(new_bal)})
-                transaction.update(
-                    sav_ref,
-                    {"status": "matured", "result": "matured", "processed_at": datetime.utcnow(), "payout_amount": int(amount)},
-                )
-                transaction.set(
-                    tx_ref,
-                    {
-                        "student_id": str(student_id),
-                        "type": "maturity",
-                        "amount": int(amount),
-                        "balance_after": int(new_bal),
-                        "memo": f"적금 만기 지급 ({int(wk)}주)",
-                        "recorder": "시스템(적금)",
-                        "created_at": datetime.utcnow(),
-                    },
-                )
-                return True
-
-            _mature_one(db.transaction(), doc_id, sid, int(payout), int(weeks))
-
-        payroll_cfg_snap = db.collection("config").document("salary_payroll").get()
-        payroll_cfg = payroll_cfg_snap.to_dict() if payroll_cfg_snap.exists else {}
-        auto_enabled = bool((payroll_cfg or {}).get("auto_enabled", False))
-        pay_day = max(1, min(31, int((payroll_cfg or {}).get("pay_day", 25) or 25)))
-        now_kst = datetime.now(KST)
-        if not (auto_enabled and int(now_kst.day) == int(pay_day)):
-            return
-
-        mkey = _system_month_key(now_kst)
-        run_lock_id = f"{mkey}_{pay_day:02d}"
-        try:
-            db.collection("payroll_auto_run").document(run_lock_id).create(
-                {"month": mkey, "pay_day": int(pay_day), "run_at": datetime.utcnow(), "source": "auto_system"}
-            )
-        except AlreadyExists:
-            return
-
-        salary_cfg_snap = db.collection("config").document("salary_deduction").get()
-        salary_cfg = salary_cfg_snap.to_dict() if salary_cfg_snap.exists else {}
-        accs = api_list_accounts_cached().get("accounts", []) or []
-        id_to_name = {a.get("student_id"): a.get("name") for a in accs if a.get("student_id")}
-
-        for d in db.collection("job_salary").order_by("order").stream():
-            job = d.to_dict() or {}
-            job_id = str(d.id)
-            job_name = str(job.get("job", "") or "")
-            gross = int(job.get("salary", 0) or 0)
-            net_amt = int(_calc_net(gross, salary_cfg) or 0)
-            if net_amt <= 0:
-                continue
-
-            for sid in list(job.get("assigned_ids", []) or []):
-                sid = str(sid or "").strip()
-                if not sid:
-                    continue
-                if _system_already_paid_this_month(mkey, sid, job_id=job_id, job_name=job_name):
-                    continue
-
-                pay_res = api_admin_add_tx_by_student_id_with_treasury(
-                    admin_pin=ADMIN_PIN,
-                    student_id=sid,
-                    memo=f"월급 {job_name}",
-                    deposit=int(net_amt),
-                    withdraw=0,
-                    apply_treasury=False,
-                    treasury_memo="",
-                    actor="system_salary",
-                    recorder_override="관리자",
-                )
-                if not pay_res.get("ok"):
-                    continue
-
-                deduction = int(max(0, gross - net_amt))
-                if deduction > 0:
-                    nm = id_to_name.get(sid, "")
-                    api_add_treasury_tx(
-                        admin_pin=ADMIN_PIN,
-                        memo=f"월급 공제 세입({mkey}) {job_name}" + (f" - {nm}" if nm else ""),
-                        income=deduction,
-                        expense=0,
-                        actor="system_salary",
-                        recorder_override="관리자",
-                    )
-                _system_write_paylog(mkey, sid, int(net_amt), job_name, method="auto", job_id=job_id)
-
-        api_list_accounts_cached.clear()
-    except Exception:
-        # 사용자 화면 진입을 막지 않도록 시스템 자동처리는 조용히 실패 처리
-        pass
-
-
-_run_system_auto_payouts()
-
-
-# =========================
 # Main: 로그인 (너 코드 방식 유지: form)
 # =========================
 # =========================
@@ -10157,14 +9985,6 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         elif not products:
             st.info("투자 종목이 아직 없어요. 관리자에게 종목 추가를 요청해 주세요.")
         else:
-            current_balance = 0
-            try:
-                bal_snap = fs_auth_student(login_name, login_pin)
-                if bal_snap:
-                    current_balance = int((bal_snap.to_dict() or {}).get("balance", 0) or 0)
-            except Exception:
-                current_balance = 0
-                
             prod_choices = [(str(p["product_id"]), f"{p['name']} (현재 {p['current_price']:.2f})") for p in products]
             product_by_id = {str(p["product_id"]): p for p in products}
             labels = [lab for _, lab in prod_choices]
@@ -10191,15 +10011,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             )
             sel_prod = product_by_id.get(st.session_state.get("inv_user_selected_product_id"), products[0])
     
-            st.caption(f"현재 통장 잔액: {int(current_balance):,}드림")
-            amt = st.number_input(
-                "투자 금액",
-                min_value=0,
-                max_value=max(0, int(current_balance)),
-                step=10,
-                value=0,
-                key="inv_user_amt",
-            )
+            amt = st.number_input("투자 금액", min_value=0, step=10, value=0, key="inv_user_amt")
             if st.button("투자하기 (다음 확인창에서 ‘예’를 눌러야 완료, 신중하게 결정하기)", use_container_width=True, key="inv_user_btn"):
                 if int(amt) <= 0:
                     st.warning("투자 금액을 입력해 주세요.")
@@ -10212,19 +10024,7 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 with y:
                     if st.button("예", use_container_width=True, key="inv_user_yes"):
                         st.session_state["inv_user_confirm"] = False
-
-                        latest_balance = 0
-                        try:
-                            latest_snap = fs_auth_student(login_name, login_pin)
-                            if latest_snap:
-                                latest_balance = int((latest_snap.to_dict() or {}).get("balance", 0) or 0)
-                        except Exception:
-                            latest_balance = 0
-
-                        if int(amt) > int(latest_balance):
-                            st.error(f"통장 잔액이 부족해요. 현재 잔액은 {int(latest_balance):,}드림입니다.")
-                            st.stop()
-                            
+    
                         memo = f"투자 매입({sel_prod['name']})"
                         res = api_add_tx(login_name, login_pin, memo=memo, deposit=0, withdraw=int(amt))
                         if res.get("ok"):
@@ -12377,8 +12177,8 @@ if "💼 직업/월급" in tabs:
                 st.rerun()
 
             st.markdown("---")
-            st.markdown("#### 🛠️ 자동지급 중복 회수(정정)")
-            st.caption("이번 달 1일 00:00부터 현재까지 발생한 월급 입금 내역에서 같은 학생/같은 직업/같은 금액이 2회 이상인 경우, 2회차부터 자동으로 회수합니다.")
+            st.markdown("#### 🛠️ 월급 중복 지급 회수(정정)")
+            st.caption("이번 달 1일 00:00부터 현재까지 발생한 월급 입금 내역에서 같은 학생/같은 직업/같은 금액이 2회 이상인 경우")
             
             dup_scan = _find_month_duplicate_salary_txs()
             dup_targets = list(dup_scan.get("targets", []) or [])
@@ -12410,7 +12210,7 @@ if "💼 직업/월급" in tabs:
                     st.rerun()
             with cfix2:
                 if st.button(
-                    "♻️ 이번 달 중복 월급 자동 회수 실행",
+                    "♻️ 이번 달 월급 중복 지급 회수 실행",
                     use_container_width=True,
                     key="payroll_dup_fix_btn",
                     disabled=(len(dup_targets) == 0),
