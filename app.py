@@ -11903,11 +11903,15 @@ if "💼 직업/월급" in tabs:
                     continue
 
                 # 이미 정정(회수)된 건은 검색에서 제외하기 위해 회수 횟수를 먼저 집계
-                if (ttype == "withdraw") and ("(자동중복정정 " in memo) and (amount > 0):
+                if (ttype == "withdraw") and ("(자동중복정정 " in memo):
                     base_memo = memo.split("(자동중복정정 ", 1)[0].strip()
                     # 다른 달 정정 메모는 이번 달 중복 검색에서 제외
                     if f"(자동중복정정 {cur_mkey}" in memo:
-                        k_fix = (sid, base_memo, int(amount))
+                        # withdraw 거래 amount는 음수로 저장되는 경우가 있어 절대값으로 맞춘다.
+                        fixed_amt = abs(int(amount))
+                        if fixed_amt <= 0:
+                            continue
+                        k_fix = (sid, base_memo, int(fixed_amt))
                         corrected_counts[k_fix] = int(corrected_counts.get(k_fix, 0) or 0) + 1
                     continue
 
