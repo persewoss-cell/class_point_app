@@ -5578,6 +5578,9 @@ def api_create_mart_request(name: str, pin: str, item: str, price: int):
     price = int(price or 0)
     if price <= 0:
         return {"ok": False, "error": "금액은 1 이상이어야 합니다."}
+            bal = int((student_doc.to_dict() or {}).get("balance", 0) or 0)
+    if price > bal:
+        return {"ok": False, "error": "통장 잔액이 부족해서 구입할 수 없어요."}
 
     try:
         s = student_doc.to_dict() or {}
