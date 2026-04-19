@@ -9985,6 +9985,14 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
         elif not products:
             st.info("투자 종목이 아직 없어요. 관리자에게 종목 추가를 요청해 주세요.")
         else:
+            current_balance = 0
+            try:
+                bal_snap = fs_auth_student(login_name, login_pin)
+                if bal_snap:
+                    current_balance = int((bal_snap.to_dict() or {}).get("balance", 0) or 0)
+            except Exception:
+                current_balance = 0
+                
             prod_choices = [(str(p["product_id"]), f"{p['name']} (현재 {p['current_price']:.2f})") for p in products]
             product_by_id = {str(p["product_id"]): p for p in products}
             labels = [lab for _, lab in prod_choices]
@@ -10011,7 +10019,15 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
             )
             sel_prod = product_by_id.get(st.session_state.get("inv_user_selected_product_id"), products[0])
     
-            amt = st.number_input("투자 금액", min_value=0, step=10, value=0, key="inv_user_amt")
+            st.caption(f"현재 통장 잔액: {int(current_balance):,}드림")
+            amt = st.number_input(
+                "투자 금액",
+                min_value=0,
+                max_value=max(0, int(current_balance)),
+                step=10,
+                value=0,
+                key="inv_user_amt",
+            )
             if st.button("투자하기 (다음 확인창에서 ‘예’를 눌러야 완료, 신중하게 결정하기)", use_container_width=True, key="inv_user_btn"):
                 if int(amt) <= 0:
                     st.warning("투자 금액을 입력해 주세요.")
@@ -10024,7 +10040,19 @@ def _render_invest_admin_like(*, inv_admin_ok_flag: bool, force_is_admin: bool, 
                 with y:
                     if st.button("예", use_container_width=True, key="inv_user_yes"):
                         st.session_state["inv_user_confirm"] = False
-    
+
+                        latest_balance = 0
+                        try:
+                            latest_snap = fs_auth_student(login_name, login_pin)
+                            if latest_snap:
+                                latest_balance = int((latest_snap.to_dict() or {}).get("balance", 0) or 0)
+                        except Exception:
+                            latest_balance = 0
+
+                        if int(amt) > int(latest_balance):
+                            st.error(f"통장 잔액이 부족해요. 현재 잔액은 {int(latest_balance):,}드림입니다.")
+                            st.stop()
+                            
                         memo = f"투자 매입({sel_prod['name']})"
                         res = api_add_tx(login_name, login_pin, memo=memo, deposit=0, withdraw=int(amt))
                         if res.get("ok"):
