@@ -11882,6 +11882,8 @@ if "💼 직업/월급" in tabs:
             id_to_name = {str(a.get("student_id")): str(a.get("name") or "") for a in accs if a.get("student_id")}
 
             rows = []
+            corrected_counts = {}  # (student_id, 원본메모, amount) -> 정정(회수) 건수
+            cur_mkey = _month_key(now_kst)
             q = (
                 db.collection("transactions")
                 .where(filter=build_filter("created_at", ">=", start_utc))
@@ -11895,15 +11897,25 @@ if "💼 직업/월급" in tabs:
                 sid = str(tx.get("student_id", "") or "").strip()
                 amount = int(tx.get("amount", 0) or 0)
 
+                if not memo.startswith("월급 "):
+                    continue
+                if not sid:
+                    continue
+
+                # 이미 정정(회수)된 건은 검색에서 제외하기 위해 회수 횟수를 먼저 집계
+                if (ttype == "withdraw") and ("(자동중복정정 " in memo) and (amount > 0):
+                    base_memo = memo.split("(자동중복정정 ", 1)[0].strip()
+                    # 다른 달 정정 메모는 이번 달 중복 검색에서 제외
+                    if f"(자동중복정정 {cur_mkey}" in memo:
+                        k_fix = (sid, base_memo, int(amount))
+                        corrected_counts[k_fix] = int(corrected_counts.get(k_fix, 0) or 0) + 1
+                    continue
+
                 if ttype != "deposit":
                     continue
                 if amount <= 0:
                     continue
-                if not memo.startswith("월급 "):
-                    continue
                 if "(자동중복정정" in memo:
-                    continue
-                if not sid:
                     continue
 
                 rows.append(
@@ -11928,7 +11940,14 @@ if "💼 직업/월급" in tabs:
                 arr.sort(key=lambda x: x.get("created_at") or datetime(1970, 1, 1, tzinfo=timezone.utc))
                 if len(arr) <= 1:
                     continue
-                dup = arr[1:]  # 첫 건 제외 나머지 전부 중복분
+                fix_cnt = int(corrected_counts.get((sid, memo, int(amt)), 0) or 0)
+                raw_dup_cnt = max(0, len(arr) - 1)
+                remain_dup_cnt = max(0, raw_dup_cnt - fix_cnt)
+                if remain_dup_cnt <= 0:
+                    continue
+
+                # 첫 건 제외 후, 정정 건수만큼 앞에서 제외한 나머지를 미정정 중복으로 간주
+                dup = arr[1 + min(fix_cnt, raw_dup_cnt) : 1 + min(fix_cnt, raw_dup_cnt) + remain_dup_cnt]
                 targets.extend(dup)
                 groups.append(
                     {
@@ -11937,6 +11956,8 @@ if "💼 직업/월급" in tabs:
                         "memo": memo,
                         "amount": int(amt),
                         "count": len(arr),
+                        "fixed_count": fix_cnt,
+                        "remain_count": remain_dup_cnt,
                     }
                 )
 
